@@ -1,64 +1,94 @@
 # transactions.py
+# Generates synthetic transaction records aligned to raw.transaction_event schema.
+#
+# Column mapping to raw.transaction_event:
+#   tx_id          → uuid (generated here, matches DB default gen_random_uuid())
+#   c_id           → company ID string e.g. "COMP001"
+#   base_cncy      → company's default currency from config.COMPANIES
+#   quote_cncy     → "USD" (fixed — normalization target)
+#   amount         → raw base currency amount (pre-conversion, pre-fee)
+#   fee_amount     → fee in base currency
+#   tx_timestamp   → timestamptz, UTC
+#   source         → system source string (clean — noise applied by noise.py)
 
 import uuid
-import random
-from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+from datetime import timezone
+
+from config import COMPANIES, COMPANY_KEYS, COMPANY_WEIGHTS, CURRENCIES, SOURCE_VALUES
+
 
 def generate_transactions(
     start_ts,
     end_ts,
-    companies,
-    currencies,
-    n_transactions=10000,
+    n_transactions=10_000,
     seed=42
 ):
-    np.random.seed(seed)
+    """
+    Generate a DataFrame of synthetic transactions.
 
-    timestamps = pd.date_range(start_ts, end_ts, freq="S")
-    chosen_times = np.random.choice(timestamps, size=n_transactions)
+    Args:
+        start_ts:       datetime — start of the transaction window
+        end_ts:         datetime — end of the transaction window
+        n_transactions: int — number of rows to generate
+        seed:           int — random seed for reproducibility
 
-    # heavier weight to business hours
-    hours = pd.to_datetime(chosen_times).hour
-    weights = np.where((hours >= 9) & (hours <= 17), 3, 1)
-    weighted_idx = np.random.choice(
-        range(n_transactions),
-        size=n_transactions,
-        p=weights/weights.sum()
-    )
+    Returns:
+        pd.DataFrame with columns matching raw.transaction_event
+    """
+    rng = np.random.default_rng(seed)
 
-    tx_times = chosen_times[weighted_idx]
+    # ── Timestamps ────────────────────────────────────────────────────────────
+    # Sample uniformly across the window, then apply business-hours weighting
+    timestamps = pd.date_range(start_ts, end_ts, freq="s")
+    raw_times = rng.choice(timestamps, size=n_transactions, replace=True)
 
-    company_ids = np.random.choice(
-        companies,
-        size=n_transactions,
-        p=[0.5, 0.3, 0.2]
-    )
+    hours = pd.DatetimeIndex(raw_times).hour
+    weights = np.where((hours >= 9) & (hours <= 17), 3.0, 1.0)
+    weights /= weights.sum()
+    tx_times = rng.choice(raw_times, size=n_transactions, replace=True, p=weights)
 
-    base_currencies = np.random.choice(
-        currencies,
-        size=n_transactions
-    )
+    # Ensure timezone-aware (UTC) to match timestamptz in DB
+    tx_times = pd.DatetimeIndex(tx_times).tz_localize("UTC")
 
-    quote_currency = "USD"
+    # ── Companies + default currency ─────────────────────────────────────────
+    # Sample short keys, then resolve to c_uuid (DB column) and default_cncy.
+    # uuid5 derivation is in config — deterministic, no hardcoding needed.
+    sampled_keys = rng.choice(COMPANY_KEYS, size=n_transactions, p=COMPANY_WEIGHTS)
 
-    base_amount = np.random.lognormal(
-        mean=4,
-        sigma=1,
-        size=n_transactions
-    )
+    c_uuids = np.array([COMPANIES[k]["c_uuid"]       for k in sampled_keys])
+    base_currencies = np.array([COMPANIES[k]["default_cncy"] for k in sampled_keys])
 
-    fee_amount = base_amount * np.random.uniform(0.001, 0.01, size=n_transactions)
+    # ── Amounts ───────────────────────────────────────────────────────────────
+    # Log-normal gives realistic fat-tailed financial amounts.
+    # mean=4, sigma=1 → median ~$55, mean ~$90, occasional large transactions
+    base_amounts = rng.lognormal(mean=4, sigma=1, size=n_transactions).round(4)
+
+    # Fee as small % of base amount, varies by transaction
+    fee_rates = rng.uniform(0.001, 0.01, size=n_transactions)
+    fee_amounts = (base_amounts * fee_rates).round(4)
+
+    # ── Source ────────────────────────────────────────────────────────────────
+    source_keys = list(SOURCE_VALUES.keys())
+    source_weights = np.array(list(SOURCE_VALUES.values()))
+    source_weights /= source_weights.sum()
+    sources = rng.choice(source_keys, size=n_transactions, p=source_weights)
+
+    # ── UUIDs ─────────────────────────────────────────────────────────────────
+    # Generate here so tx_id is available in Python for cross-table linking.
+    # DB also has gen_random_uuid() as default, but explicit is safer for bulk inserts.
+    tx_ids = [str(uuid.uuid4()) for _ in range(n_transactions)]
 
     df = pd.DataFrame({
-        "tx_timestamp": tx_times,
-        "company_id": company_ids,
-        "base_cncy": base_currencies,
-        "quote_cncy": quote_currency,
-        "base_amount": base_amount,
-        "fee_amount": fee_amount
+        "tx_id":         tx_ids,
+        "c_id":          c_uuids,       # uuid — matches raw.transaction_event.c_id
+        "base_cncy":     base_currencies,
+        "quote_cncy":    "USD",
+        "amount":        base_amounts,
+        "fee_amount":    fee_amounts,
+        "tx_timestamp":  tx_times,
+        "source":        sources,
     })
 
     return df
-

@@ -3,48 +3,66 @@
 # Structure is designed for direct consumption by noise.py and pipeline.py.
 # All lookup tables are dicts (O(1)) rather than lists — important at millions of rows.
 
+import uuid as _uuid
+
 # ============================================================
 # COMPANIES
 # ============================================================
 
-# Master company registry — canonical ID is the source of truth.
+# Master company registry — canonical short key is for human readability only.
+# c_uuid is the actual DB identifier — deterministic uuid5 derived from the key.
+# Same key always produces the same UUID across all runs and environments.
+# Use this same namespace + key when seeding analytics.d_company.
+#
 # noise.py will inject: nulls, names instead of IDs, casing variants, whitespace.
 # normalize_receipts() must trim + upper + map through COMPANY_NAME_TO_ID.
 
+# Fixed namespace — do not change after first run or all UUIDs will rotate
+_COMPANY_NS = _uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+
+def _company_uuid(key: str) -> str:
+    """Deterministic UUID from company short key. Stable across runs."""
+    return str(_uuid.uuid5(_COMPANY_NS, key))
+
 COMPANIES = {
-    # id  : { display_name, region, weight (used in transaction sampling) }
-    "COMP001": {"name": "Orion Systems",         "region": "US_TECH",        "weight": 0.18},
-    "COMP002": {"name": "BluePeak Analytics",    "region": "US_TECH",        "weight": 0.12},
-    "COMP003": {"name": "NexaData Corp",         "region": "US_TECH",        "weight": 0.10},
-    "COMP004": {"name": "AlpenMart GmbH",        "region": "EU_RETAIL",      "weight": 0.09},
-    "COMP005": {"name": "Nordic Trade AB",       "region": "EU_RETAIL",      "weight": 0.08},
-    "COMP006": {"name": "Louvre Commerce SARL",  "region": "EU_RETAIL",      "weight": 0.07},
-    "COMP007": {"name": "ZenPay Ltd",            "region": "APAC_FINTECH",   "weight": 0.10},
-    "COMP008": {"name": "Kumo Holdings",         "region": "APAC_FINTECH",   "weight": 0.08},
-    "COMP009": {"name": "Pacific Ledger Co",     "region": "APAC_FINTECH",   "weight": 0.06},
-    "COMP010": {"name": "Andes Logistics",       "region": "LATAM_SERVICES", "weight": 0.05},
-    "COMP011": {"name": "RioSoft Tecnologia",    "region": "LATAM_SERVICES", "weight": 0.04},
-    "COMP012": {"name": "Patagonia Digital",     "region": "LATAM_SERVICES", "weight": 0.03},
+    # key   : { c_uuid, name, region, default_cncy, weight }
+    # c_uuid = what gets written to raw.transaction_event.c_id (uuid column)
+    # default_cncy = currency raw.transaction_event.amount is denominated in
+    "COMP001": {"c_uuid": _company_uuid("COMP001"), "name": "Orion Systems",         "region": "US_TECH",        "default_cncy": "USD", "weight": 0.18},
+    "COMP002": {"c_uuid": _company_uuid("COMP002"), "name": "BluePeak Analytics",    "region": "US_TECH",        "default_cncy": "USD", "weight": 0.12},
+    "COMP003": {"c_uuid": _company_uuid("COMP003"), "name": "NexaData Corp",         "region": "US_TECH",        "default_cncy": "USD", "weight": 0.10},
+    "COMP004": {"c_uuid": _company_uuid("COMP004"), "name": "AlpenMart GmbH",        "region": "EU_RETAIL",      "default_cncy": "EUR", "weight": 0.09},
+    "COMP005": {"c_uuid": _company_uuid("COMP005"), "name": "Nordic Trade AB",       "region": "EU_RETAIL",      "default_cncy": "SEK", "weight": 0.08},
+    "COMP006": {"c_uuid": _company_uuid("COMP006"), "name": "Louvre Commerce SARL",  "region": "EU_RETAIL",      "default_cncy": "EUR", "weight": 0.07},
+    "COMP007": {"c_uuid": _company_uuid("COMP007"), "name": "ZenPay Ltd",            "region": "APAC_FINTECH",   "default_cncy": "SGD", "weight": 0.10},
+    "COMP008": {"c_uuid": _company_uuid("COMP008"), "name": "Kumo Holdings",         "region": "APAC_FINTECH",   "default_cncy": "JPY", "weight": 0.08},
+    "COMP009": {"c_uuid": _company_uuid("COMP009"), "name": "Pacific Ledger Co",     "region": "APAC_FINTECH",   "default_cncy": "HKD", "weight": 0.06},
+    "COMP010": {"c_uuid": _company_uuid("COMP010"), "name": "Andes Logistics",       "region": "LATAM_SERVICES", "default_cncy": "MXN", "weight": 0.05},
+    "COMP011": {"c_uuid": _company_uuid("COMP011"), "name": "RioSoft Tecnologia",    "region": "LATAM_SERVICES", "default_cncy": "BRL", "weight": 0.04},
+    "COMP012": {"c_uuid": _company_uuid("COMP012"), "name": "Patagonia Digital",     "region": "LATAM_SERVICES", "default_cncy": "USD", "weight": 0.03},
 }
 
-# Flat list of IDs — use for np.random.choice() with COMPANY_WEIGHTS
-COMPANY_IDS = list(COMPANIES.keys())
+# Flat list of short keys — used internally for sampling
+COMPANY_KEYS = list(COMPANIES.keys())
 
-# Parallel weights list — must stay in sync with COMPANY_IDS
-COMPANY_WEIGHTS = [COMPANIES[c]["weight"] for c in COMPANY_IDS]
+# Parallel weights — must stay in sync with COMPANY_KEYS
+COMPANY_WEIGHTS = [COMPANIES[k]["weight"] for k in COMPANY_KEYS]
 
-# Reverse lookup: normalized name → canonical ID
-# Used by normalize_receipts() to recover company_id from injected name noise
-COMPANY_NAME_TO_ID = {
-    v["name"].upper(): k for k, v in COMPANIES.items()
+# Flat list of UUIDs — what actually gets written to the DB
+# transactions.py samples from COMPANY_KEYS then resolves via COMPANIES[key]["c_uuid"]
+COMPANY_IDS = [COMPANIES[k]["c_uuid"] for k in COMPANY_KEYS]
+
+# Reverse lookup: normalized name → c_uuid
+# Used by normalize_receipts() to recover c_id from injected name noise
+COMPANY_NAME_TO_UUID = {
+    v["name"].upper(): v["c_uuid"] for v in COMPANIES.values()
 }
-# Also add common dirty variants manually if needed:
-COMPANY_NAME_TO_ID.update({
-    "ORION SYSTEMS INC": "COMP001",
-    "BLUEPEAK":          "COMP002",
-    "NEXADATA":          "COMP003",
-    "ALPENMART":         "COMP004",
-    "ZENPAY":            "COMP007",
+COMPANY_NAME_TO_UUID.update({
+    "ORION SYSTEMS INC":  COMPANIES["COMP001"]["c_uuid"],
+    "BLUEPEAK":           COMPANIES["COMP002"]["c_uuid"],
+    "NEXADATA":           COMPANIES["COMP003"]["c_uuid"],
+    "ALPENMART":          COMPANIES["COMP004"]["c_uuid"],
+    "ZENPAY":             COMPANIES["COMP007"]["c_uuid"],
 })
 
 
@@ -273,4 +291,30 @@ NOISE_RATES = {
     "fee_in_base":       0.02,   # 2%  of rows have fee bundled into base_amount
     "malformed_row":     0.05,   # 5%  of rows are structurally broken
     "missing_fields":    0.03,   # 3%  of rows have one or more fields dropped
+    "source_dirty":      0.08,   # 8%  of rows get a dirty source variant
+}
+
+
+# ============================================================
+# SOURCE VALUES
+# ============================================================
+# Clean source system names — used by transactions.py for generation.
+# Weights control how often each source appears in clean data.
+# noise.py injects dirty variants from SOURCE_NOISE_VARIANTS.
+
+SOURCE_VALUES = {
+    "api":           0.60,
+    "manual_upload": 0.15,
+    "batch_csv":     0.12,
+    "sftp_feed":     0.08,
+    "webhook":       0.05,
+}
+
+# Dirty variants noise.py can inject per canonical source value
+SOURCE_NOISE_VARIANTS = {
+    "api":           ["API", "Api", "api ", " api", None],
+    "manual_upload": ["Manual Upload", "manual upload", "MANUAL_UPLOAD", "manual-upload"],
+    "batch_csv":     ["Batch CSV", "batch_CSV", "batchcsv", "BATCH_CSV"],
+    "sftp_feed":     ["SFTP", "sftp feed", "sftp-feed", "SFTPFeed"],
+    "webhook":       ["Webhook", "WEBHOOK", "web_hook", "Web Hook"],
 }
