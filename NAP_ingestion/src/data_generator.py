@@ -17,6 +17,7 @@ companies = [
 
 # ======= TIME-BASED FUNCTIONS ====== #
 
+# Will replace this with tradingview data
 def generate_fx_series(
     start_time,
     end_time,
