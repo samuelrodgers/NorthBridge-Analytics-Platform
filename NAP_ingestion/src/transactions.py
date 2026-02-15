@@ -14,9 +14,8 @@
 import uuid
 import numpy as np
 import pandas as pd
-from datetime import timezone
 
-from config import COMPANIES, COMPANY_KEYS, COMPANY_WEIGHTS, CURRENCIES, SOURCE_VALUES
+from config import COMPANIES, COMPANY_KEYS, COMPANY_WEIGHTS
 
 
 def generate_transactions(
@@ -49,8 +48,13 @@ def generate_transactions(
     weights /= weights.sum()
     tx_times = rng.choice(raw_times, size=n_transactions, replace=True, p=weights)
 
-    # Ensure timezone-aware (UTC) to match timestamptz in DB
-    tx_times = pd.DatetimeIndex(tx_times).tz_localize("UTC")
+    # Ensure timezone-aware UTC to match timestamptz in DB.
+    # date_range inherits tz from start_ts if tz-aware; normalize either way.
+    tx_index = pd.DatetimeIndex(tx_times)
+    if tx_index.tz is None:
+        tx_times = tx_index.tz_localize("UTC")
+    else:
+        tx_times = tx_index.tz_convert("UTC")
 
     # ── Companies + default currency ─────────────────────────────────────────
     # Sample short keys, then resolve to c_uuid (DB column) and default_cncy.
@@ -69,26 +73,19 @@ def generate_transactions(
     fee_rates = rng.uniform(0.001, 0.01, size=n_transactions)
     fee_amounts = (base_amounts * fee_rates).round(4)
 
-    # ── Source ────────────────────────────────────────────────────────────────
-    source_keys = list(SOURCE_VALUES.keys())
-    source_weights = np.array(list(SOURCE_VALUES.values()))
-    source_weights /= source_weights.sum()
-    sources = rng.choice(source_keys, size=n_transactions, p=source_weights)
-
     # ── UUIDs ─────────────────────────────────────────────────────────────────
     # Generate here so tx_id is available in Python for cross-table linking.
     # DB also has gen_random_uuid() as default, but explicit is safer for bulk inserts.
     tx_ids = [str(uuid.uuid4()) for _ in range(n_transactions)]
 
     df = pd.DataFrame({
-        "tx_id":         tx_ids,
-        "c_id":          c_uuids,       # uuid — matches raw.transaction_event.c_id
-        "base_cncy":     base_currencies,
-        "quote_cncy":    "USD",
-        "amount":        base_amounts,
-        "fee_amount":    fee_amounts,
-        "tx_timestamp":  tx_times,
-        "source":        sources,
+        "tx_id":        tx_ids,
+        "c_id":         c_uuids,       # uuid — matches raw.transaction_event.c_id
+        "base_cncy":    base_currencies,
+        "quote_cncy":   "USD",
+        "amount":       base_amounts,
+        "fee_amount":   fee_amounts,
+        "tx_timestamp": tx_times,
     })
 
     return df

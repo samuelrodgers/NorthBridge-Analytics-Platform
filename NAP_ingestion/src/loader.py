@@ -107,14 +107,14 @@ def load_transactions(conn, tx_df, batch_size=10_000):
     sql = """
         INSERT INTO raw.transaction_event
             (tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
-             tx_timestamp, source)
+             tx_timestamp)
         VALUES %s
         ON CONFLICT (tx_id) DO NOTHING
     """
 
     cols = [
         "tx_id", "c_id", "base_cncy", "quote_cncy",
-        "amount", "fee_amount", "tx_timestamp", "source"
+        "amount", "fee_amount", "tx_timestamp"
     ]
 
     # Validate required columns are present
