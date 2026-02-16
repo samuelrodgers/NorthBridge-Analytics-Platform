@@ -3,13 +3,13 @@
 #
 # Column mapping to raw.transaction_event:
 #   tx_id          → uuid (generated here, matches DB default gen_random_uuid())
-#   c_id           → company ID string e.g. "COMP001"
-#   base_cncy      → company's default currency from config.COMPANIES
-#   quote_cncy     → "USD" (fixed — normalization target)
+#   c_id           → company uuid (uuid5-derived, matches analytics.d_company.c_id)
+#   base_cncy      → customer payment currency (company default in clean data)
+#   quote_cncy     → NULL if base_cncy == company default (no conversion needed)
+#                    "USD" if base_cncy != company default (conversion required)
 #   amount         → raw base currency amount (pre-conversion, pre-fee)
 #   fee_amount     → fee in base currency
 #   tx_timestamp   → timestamptz, UTC
-#   source         → system source string (clean — noise applied by noise.py)
 
 import uuid
 import numpy as np
@@ -78,11 +78,21 @@ def generate_transactions(
     # DB also has gen_random_uuid() as default, but explicit is safer for bulk inserts.
     tx_ids = [str(uuid.uuid4()) for _ in range(n_transactions)]
 
+    # ── Quote currency ────────────────────────────────────────────────────────
+    # quote_cncy is NULL when the customer pays in the company's own currency —
+    # no conversion event occurs. It is "USD" only when base_cncy differs from
+    # the company default, meaning a real currency conversion is needed.
+    # In clean generated data base_cncy always equals the company default,
+    # so quote_cncy will always be NULL here. Noise injection will later
+    # introduce foreign payment currencies to produce conversion events.
+    company_defaults = np.array([COMPANIES[k]["default_cncy"] for k in sampled_keys])
+    quote_currencies = np.where(base_currencies != company_defaults, "USD", None)
+
     df = pd.DataFrame({
         "tx_id":        tx_ids,
-        "c_id":         c_uuids,       # uuid — matches raw.transaction_event.c_id
+        "c_id":         c_uuids,
         "base_cncy":    base_currencies,
-        "quote_cncy":   "USD",
+        "quote_cncy":   quote_currencies,   # NULL = no conversion, "USD" = convert
         "amount":       base_amounts,
         "fee_amount":   fee_amounts,
         "tx_timestamp": tx_times,

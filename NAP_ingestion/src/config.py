@@ -25,21 +25,22 @@ def _company_uuid(key: str) -> str:
     return str(_uuid.uuid5(_COMPANY_NS, key))
 
 COMPANIES = {
-    # key   : { c_uuid, name, region, default_cncy, weight }
-    # c_uuid = what gets written to raw.transaction_event.c_id (uuid column)
-    # default_cncy = currency raw.transaction_event.amount is denominated in
-    "COMP001": {"c_uuid": _company_uuid("COMP001"), "name": "Orion Systems",         "region": "US_TECH",        "default_cncy": "USD", "weight": 0.18},
-    "COMP002": {"c_uuid": _company_uuid("COMP002"), "name": "BluePeak Analytics",    "region": "US_TECH",        "default_cncy": "USD", "weight": 0.12},
-    "COMP003": {"c_uuid": _company_uuid("COMP003"), "name": "NexaData Corp",         "region": "US_TECH",        "default_cncy": "USD", "weight": 0.10},
-    "COMP004": {"c_uuid": _company_uuid("COMP004"), "name": "AlpenMart GmbH",        "region": "EU_RETAIL",      "default_cncy": "EUR", "weight": 0.09},
-    "COMP005": {"c_uuid": _company_uuid("COMP005"), "name": "Nordic Trade AB",       "region": "EU_RETAIL",      "default_cncy": "SEK", "weight": 0.08},
-    "COMP006": {"c_uuid": _company_uuid("COMP006"), "name": "Louvre Commerce SARL",  "region": "EU_RETAIL",      "default_cncy": "EUR", "weight": 0.07},
-    "COMP007": {"c_uuid": _company_uuid("COMP007"), "name": "ZenPay Ltd",            "region": "APAC_FINTECH",   "default_cncy": "SGD", "weight": 0.10},
-    "COMP008": {"c_uuid": _company_uuid("COMP008"), "name": "Kumo Holdings",         "region": "APAC_FINTECH",   "default_cncy": "JPY", "weight": 0.08},
-    "COMP009": {"c_uuid": _company_uuid("COMP009"), "name": "Pacific Ledger Co",     "region": "APAC_FINTECH",   "default_cncy": "HKD", "weight": 0.06},
-    "COMP010": {"c_uuid": _company_uuid("COMP010"), "name": "Andes Logistics",       "region": "LATAM_SERVICES", "default_cncy": "MXN", "weight": 0.05},
-    "COMP011": {"c_uuid": _company_uuid("COMP011"), "name": "RioSoft Tecnologia",    "region": "LATAM_SERVICES", "default_cncy": "BRL", "weight": 0.04},
-    "COMP012": {"c_uuid": _company_uuid("COMP012"), "name": "Patagonia Digital",     "region": "LATAM_SERVICES", "default_cncy": "USD", "weight": 0.03},
+    # key   : { c_uuid, name, industry, hq_country, region, default_cncy, weight }
+    # c_uuid    = DB identifier written to raw.transaction_event.c_id and analytics.d_company.c_id
+    # industry  = required NOT NULL in analytics.d_company
+    # hq_country= required NOT NULL in analytics.d_company
+    "COMP001": {"c_uuid": _company_uuid("COMP001"), "name": "Orion Systems",        "industry": "Technology", "hq_country": "United States", "region": "US_TECH",        "default_cncy": "USD", "weight": 0.18},
+    "COMP002": {"c_uuid": _company_uuid("COMP002"), "name": "BluePeak Analytics",   "industry": "Technology", "hq_country": "United States", "region": "US_TECH",        "default_cncy": "USD", "weight": 0.12},
+    "COMP003": {"c_uuid": _company_uuid("COMP003"), "name": "NexaData Corp",        "industry": "Technology", "hq_country": "United States", "region": "US_TECH",        "default_cncy": "USD", "weight": 0.10},
+    "COMP004": {"c_uuid": _company_uuid("COMP004"), "name": "AlpenMart GmbH",       "industry": "Retail",     "hq_country": "Germany",       "region": "EU_RETAIL",      "default_cncy": "EUR", "weight": 0.09},
+    "COMP005": {"c_uuid": _company_uuid("COMP005"), "name": "Nordic Trade AB",      "industry": "Retail",     "hq_country": "Sweden",        "region": "EU_RETAIL",      "default_cncy": "SEK", "weight": 0.08},
+    "COMP006": {"c_uuid": _company_uuid("COMP006"), "name": "Louvre Commerce SARL", "industry": "Retail",     "hq_country": "France",        "region": "EU_RETAIL",      "default_cncy": "EUR", "weight": 0.07},
+    "COMP007": {"c_uuid": _company_uuid("COMP007"), "name": "ZenPay Ltd",           "industry": "Fintech",    "hq_country": "Singapore",     "region": "APAC_FINTECH",   "default_cncy": "SGD", "weight": 0.10},
+    "COMP008": {"c_uuid": _company_uuid("COMP008"), "name": "Kumo Holdings",        "industry": "Fintech",    "hq_country": "Japan",         "region": "APAC_FINTECH",   "default_cncy": "JPY", "weight": 0.08},
+    "COMP009": {"c_uuid": _company_uuid("COMP009"), "name": "Pacific Ledger Co",    "industry": "Fintech",    "hq_country": "Hong Kong",     "region": "APAC_FINTECH",   "default_cncy": "HKD", "weight": 0.06},
+    "COMP010": {"c_uuid": _company_uuid("COMP010"), "name": "Andes Logistics",      "industry": "Logistics",  "hq_country": "Mexico",        "region": "LATAM_SERVICES", "default_cncy": "MXN", "weight": 0.05},
+    "COMP011": {"c_uuid": _company_uuid("COMP011"), "name": "RioSoft Tecnologia",   "industry": "Technology", "hq_country": "Brazil",        "region": "LATAM_SERVICES", "default_cncy": "BRL", "weight": 0.04},
+    "COMP012": {"c_uuid": _company_uuid("COMP012"), "name": "Patagonia Digital",    "industry": "Logistics",  "hq_country": "Argentina",     "region": "LATAM_SERVICES", "default_cncy": "USD", "weight": 0.03},
 }
 
 # Flat list of short keys — used internally for sampling
