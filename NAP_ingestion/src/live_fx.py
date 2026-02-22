@@ -125,12 +125,14 @@ def fetch_rates():
         rates_eur_based = data.get("rates", {})
 
         if not rates_eur_based:
+            failure_counters["malformed_responses"] += 1
             logger.error("API response missing rates")
             return None
 
-        # Extract EUR→USD rate (we need this to convert everything to USD-based)
+            # Extract EUR→USD rate (we need this to convert everything to USD-based)
         eur_to_usd = rates_eur_based.get("USD")
         if not eur_to_usd:
+            failure_counters["malformed_responses"] += 1
             logger.error("API response missing USD rate")
             return None
 
@@ -165,12 +167,15 @@ def fetch_rates():
         return {"timestamp": ts, "rates": rates_usd_based}
 
     except requests.exceptions.Timeout:
+        failure_counters["api_errors"] += 1
         logger.error("API request timed out")
         return None
     except requests.exceptions.RequestException as e:
+        failure_counters["api_errors"] += 1
         logger.error(f"API request failed: {e}")
         return None
     except (KeyError, ValueError, ZeroDivisionError) as e:
+        failure_counters["malformed_responses"] += 1
         logger.error(f"Malformed API response or rate conversion error: {e}")
         return None
 
