@@ -50,6 +50,13 @@ POLL_INTERVAL = 5
 # We need USD in the response so we can calculate the EUR→USD rate
 SYMBOLS = ",".join(CURRENCY_CODES)
 
+# Failure tracking for monitoring
+failure_counters = {
+    "api_errors": 0,
+    "db_errors": 0,
+    "rate_limit_hits": 0,
+    "malformed_responses": 0,
+}
 
 # ============================================================
 # DATABASE CONNECTION
@@ -251,6 +258,7 @@ def run():
                 time.sleep(sleep_time)
 
         logger.info("Shutdown complete")
+        logger.info(f"Failure counters: {failure_counters}")
 
     finally:
         conn.close()
