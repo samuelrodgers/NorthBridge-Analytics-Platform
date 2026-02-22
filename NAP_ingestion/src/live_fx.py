@@ -58,6 +58,15 @@ failure_counters = {
     "malformed_responses": 0,
 }
 
+# Latency tracking
+LATENCY_THRESHOLD = 2.0  # seconds — warn if loop exceeds this
+
+latency_stats = {
+    "fetch_times": [],
+    "insert_times": [],
+    "total_times": [],
+}
+
 # ============================================================
 # DATABASE CONNECTION
 # ============================================================
@@ -91,6 +100,9 @@ def fetch_rates():
         Returns None on failure (API down, timeout, malformed response).
     """
     try:
+
+        fetch_start = time.time() # For latency tracking
+
         # Build request URL
         params = {
             "from": API_BASE,
@@ -160,9 +172,12 @@ def fetch_rates():
 
         # Log success with sample rates for verification
         sample_rates = {k: rates_usd_based[k] for k in list(rates_usd_based.keys())[:3]}
+        fetch_time = time.time() - fetch_start
+        latency_stats["fetch_times"].append(fetch_time)
+
         logger.info(
             f"Fetched {len(rates_usd_based)} USD-based rates at {ts.isoformat()} "
-            f"(sample: {sample_rates})"
+            f"(sample: {sample_rates}) [fetch: {fetch_time:.3f}s]"
         )
         return {"timestamp": ts, "rates": rates_usd_based}
 
@@ -196,6 +211,9 @@ def insert_rates(conn, timestamp, rates):
     Returns:
         int — number of rows inserted (may be 0 if all conflict)
     """
+
+    insert_start = time.time() # For latency tracking
+
     # Build rows: (base_cncy, quote_cncy, fx_timestamp, rate)
     # All our rates are vs. USD, so quote_cncy is always USD
     rows = [
@@ -214,9 +232,11 @@ def insert_rates(conn, timestamp, rates):
         inserted = cur.rowcount
 
     conn.commit()
+    insert_time = time.time() - insert_start
+    latency_stats["insert_times"].append(insert_time)
 
     if inserted > 0:
-        logger.info(f"Inserted {inserted} rates into raw.fx_rate")
+        logger.info(f"Inserted {inserted} rates into raw.fx_rate [insert: {insert_time:.3f}s]")
     else:
         logger.debug("All rates already exist (conflict)")
 
@@ -278,6 +298,19 @@ def run():
             else:
                 logger.warning("Skipping insert due to fetch failure")
 
+                # Track total loop latency (runs every loop, success or failure)
+            total_time = time.time() - loop_start
+            latency_stats["total_times"].append(total_time)
+
+            if total_time > LATENCY_THRESHOLD:
+                logger.warning(
+                    f"⚠️  High latency: loop took {total_time:.3f}s "
+                    f"(threshold: {LATENCY_THRESHOLD}s)"
+                )
+
+            # Sleep for remaining interval time
+            elapsed = total_time
+
             # Sleep for remaining interval time
             elapsed = time.time() - loop_start
             sleep_time = max(0, POLL_INTERVAL - elapsed)
@@ -287,6 +320,15 @@ def run():
 
         logger.info("Shutdown complete")
         logger.info(f"Failure counters: {failure_counters}")
+
+        # Log latency statistics
+        if latency_stats["total_times"]:
+            avg_total = sum(latency_stats["total_times"]) / len(latency_stats["total_times"])
+            max_total = max(latency_stats["total_times"])
+            logger.info(
+                f"Latency summary: avg={avg_total:.3f}s, max={max_total:.3f}s, "
+                f"loops={len(latency_stats['total_times'])}"
+            )
 
     finally:
         conn.close()
