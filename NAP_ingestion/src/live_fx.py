@@ -71,6 +71,9 @@ latency_stats = {
 consecutive_failures = 0
 MAX_BACKOFF = 60  # seconds — cap backoff at 1 minute
 
+# Metrics persistence
+METRICS_FILE = "live_fx_metrics.jsonl"  # JSONL = one JSON object per line
+
 # ============================================================
 # DATABASE CONNECTION
 # ============================================================
@@ -328,6 +331,23 @@ def run():
                     f"⚠️  High latency: loop took {total_time:.3f}s "
                     f"(threshold: {LATENCY_THRESHOLD}s)"
                 )
+
+            # Persist metrics to file for retrospective analysis
+            try:
+                import json
+                metric_entry = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "fetch_time": latency_stats["fetch_times"][-1] if latency_stats["fetch_times"] else None,
+                    "insert_time": latency_stats["insert_times"][-1] if latency_stats["insert_times"] else None,
+                    "total_time": total_time,
+                    "success": result is not None,
+                    "consecutive_failures": consecutive_failures,
+                    "failure_counters": failure_counters.copy(),
+                }
+                with open(METRICS_FILE, "a") as f:
+                    f.write(json.dumps(metric_entry) + "\n")
+            except Exception as e:
+                logger.warning(f"Failed to write metrics: {e}")
 
             # Sleep for remaining interval time
             elapsed = total_time
