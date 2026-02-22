@@ -348,9 +348,13 @@ def run():
                         f"(consecutive failures: {consecutive_failures}, "
                         f"backoff: {backoff_delay}s)"
                     )
-                    # Apply backoff delay before next poll
+                    # Apply backoff delay before next poll, but check shutdown flag periodically
                     if not shutdown_requested:
-                        time.sleep(backoff_delay)
+                        # Sleep in 1s chunks so Ctrl+C is responsive
+                        for _ in range(int(backoff_delay)):
+                            if shutdown_requested:
+                                break
+                            time.sleep(1)
                 # else: skipped duplicate, don't backoff, just continue normal polling
 
                 # Track total loop latency (runs every loop, success or failure)
