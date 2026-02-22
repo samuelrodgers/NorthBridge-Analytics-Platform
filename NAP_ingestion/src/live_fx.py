@@ -156,7 +156,12 @@ def fetch_rates():
             ts = datetime.now(timezone.utc)
             logger.warning("API response missing date, using current time")
 
-        logger.info(f"Fetched {len(rates_usd_based)} USD-based rates at {ts.isoformat()}")
+        # Log success with sample rates for verification
+        sample_rates = {k: rates_usd_based[k] for k in list(rates_usd_based.keys())[:3]}
+        logger.info(
+            f"Fetched {len(rates_usd_based)} USD-based rates at {ts.isoformat()} "
+            f"(sample: {sample_rates})"
+        )
         return {"timestamp": ts, "rates": rates_usd_based}
 
     except requests.exceptions.Timeout:
