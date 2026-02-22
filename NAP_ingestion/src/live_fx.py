@@ -1,4 +1,16 @@
-# live_fx.py - basic structure, no API yet
+# live_fx.py
+# Real-time FX rate ingestion — polls frankfurter.app API every 5 seconds
+# and inserts rates into raw.fx_rate.
+#
+# Usage:
+#   python live_fx.py
+#
+# Stop with Ctrl+C (sends SIGINT for graceful shutdown).
+#
+# API: https://www.frankfurter.app/latest
+# Free, no API key required, no explicit rate limits (fair use).
+# Maintained by European Central Bank. Returns rates vs. EUR as base.
+# We invert the rates to get USD as base before inserting into DB.
 
 import os
 import sys
@@ -13,10 +25,13 @@ from psycopg2.extras import execute_values
 
 from config import CURRENCY_CODES
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger(__name__)
+load_dotenv()
 
-POLL_INTERVAL = 5
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # CONFIGURATION
@@ -25,8 +40,8 @@ POLL_INTERVAL = 5
 # API endpoint — frankfurter.app returns rates vs. EUR
 # We'll fetch EUR → USD and all other currencies, then invert to get USD-based rates
 API_URL = "https://api.frankfurter.app/latest"
-API_BASE = "EUR"      # API's base currency
-TARGET_BASE = "USD"   # What we want as base in our DB
+API_BASE = "EUR"  # API's base currency
+TARGET_BASE = "USD"  # What we want as base in our DB
 
 # Polling interval in seconds
 POLL_INTERVAL = 5
@@ -34,6 +49,20 @@ POLL_INTERVAL = 5
 # Build symbols list (all currencies we care about)
 # We need USD in the response so we can calculate the EUR→USD rate
 SYMBOLS = ",".join(CURRENCY_CODES)
+
+
+# ============================================================
+# DATABASE CONNECTION
+# ============================================================
+
+def get_connection():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT", 5432),
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"),
+    )
 
 
 # ============================================================
@@ -92,11 +121,14 @@ def fetch_rates():
             return None
 
         # Convert all rates to USD-based by inverting through USD
+        # Example: EUR→GBP = 0.86, EUR→USD = 1.09
+        #   → USD→GBP = (EUR→GBP) / (EUR→USD) = 0.86 / 1.09 = 0.789
+        #   → USD→EUR = 1 / (EUR→USD) = 1 / 1.09 = 0.917
         rates_usd_based = {}
 
         for currency, rate_from_eur in rates_eur_based.items():
             if currency == "USD":
-                # USD→EUR is the inverse of EUR→USD
+                # USD→EUR is just the inverse of EUR→USD
                 rates_usd_based["EUR"] = round(1.0 / eur_to_usd, 7)
             else:
                 # Cross rate: USD→X = (EUR→X) / (EUR→USD)
@@ -105,7 +137,7 @@ def fetch_rates():
         # Timestamp: API returns date string, convert to datetime
         date_str = data.get("date")
         if date_str:
-            # frankfurter returns YYYY-MM-DD, treat as EOD UTC
+            # frankfurter returns YYYY-MM-DD, treat as end-of-day UTC
             ts = datetime.strptime(date_str, "%Y-%m-%d").replace(
                 hour=23, minute=59, second=59, tzinfo=timezone.utc
             )
@@ -133,30 +165,48 @@ def fetch_rates():
 # Global flag for graceful shutdown
 shutdown_requested = False
 
+
 def signal_handler(signum, frame):
     global shutdown_requested
     logger.info(f"Received signal {signum}, shutting down gracefully...")
     shutdown_requested = True
 
+
 # Register signal handlers for Ctrl+C and kill
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
+
 def run():
     """
-        Main polling loop — fetch rates every POLL_INTERVAL seconds.
-        Runs until SIGINT/SIGTERM received.
-        """
+    Main polling loop — fetch rates every POLL_INTERVAL seconds.
+    Runs until SIGINT/SIGTERM received.
+    """
     logger.info(f"Starting live FX ingestion (polling every {POLL_INTERVAL}s)")
     logger.info(f"Fetching {len(SYMBOLS.split(','))} currencies, converting to {TARGET_BASE}-based rates")
     logger.info(f"API endpoint: {API_URL} (base: {API_BASE})")
     logger.info("Press Ctrl+C to stop")
 
-    # Fetch rates from API
-    result = fetch_rates()
+    conn = get_connection()
 
-    logger.info(f"FETCHED: {result}")
+    try:
+        while not shutdown_requested:
+            loop_start = time.time()
 
+            # Fetch rates from API
+            result = fetch_rates()
+
+            # Sleep for remaining interval time
+            elapsed = time.time() - loop_start
+            sleep_time = max(0, POLL_INTERVAL - elapsed)
+
+            if sleep_time > 0 and not shutdown_requested:
+                time.sleep(sleep_time)
+
+        logger.info("Shutdown complete")
+
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
