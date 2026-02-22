@@ -98,6 +98,13 @@ def fetch_rates():
         }
 
         response = requests.get(API_URL, params=params, timeout=10)
+
+        # Specifically check for rate limiting
+        if response.status_code == 429:
+            failure_counters["rate_limit_hits"] += 1
+            logger.error("API rate limit hit (HTTP 429) — too many requests")
+            return None
+
         response.raise_for_status()
 
         data = response.json()
