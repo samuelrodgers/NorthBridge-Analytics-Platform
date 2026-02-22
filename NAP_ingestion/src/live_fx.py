@@ -74,6 +74,8 @@ MAX_BACKOFF = 60  # seconds — cap backoff at 1 minute
 # Metrics persistence
 METRICS_FILE = "NAP_ingestion\out\live_fx_metrics.jsonl"  # JSONL = one JSON object per line
 
+CHECKPOINT_FILE = "NAP_ingestion\out\live_fx_checkpoint.txt"  # Stores last successful fx_timestamp
+
 # ============================================================
 # DATABASE CONNECTION
 # ============================================================
@@ -283,12 +285,30 @@ def run():
 
     conn = get_connection()
 
+    # Load last checkpoint if exists
+    last_checkpoint = None
+    try:
+        with open(CHECKPOINT_FILE, "r") as f:
+            checkpoint_str = f.read().strip()
+            if checkpoint_str:
+                last_checkpoint = datetime.fromisoformat(checkpoint_str)
+                logger.info(f"Resuming from checkpoint: {last_checkpoint.isoformat()}")
+    except FileNotFoundError:
+        logger.info("No checkpoint found, starting fresh")
+    except Exception as e:
+        logger.warning(f"Failed to read checkpoint: {e}")
+
     try:
         while not shutdown_requested:
             loop_start = time.time()
 
             # Fetch rates from API
             result = fetch_rates()
+
+            # Skip if we've already processed this timestamp
+            if result and last_checkpoint and result["timestamp"] <= last_checkpoint:
+                logger.debug(f"Skipping already-processed timestamp: {result['timestamp'].isoformat()}")
+                result = None  # Treat as if fetch failed, don't insert
 
             if result:
                 # Insert into DB with error handling
@@ -307,6 +327,14 @@ def run():
 
                 # Reset failure counter on successful fetch + insert
                 consecutive_failures = 0
+                # Update checkpoint file
+                try:
+                    with open(CHECKPOINT_FILE, "w") as f:
+                        f.write(result["timestamp"].isoformat())
+                    last_checkpoint = result["timestamp"]
+                except Exception as e:
+                    logger.warning(f"Failed to write checkpoint: {e}")
+
             else:
                 # Increment failure counter and calculate backoff
                 consecutive_failures += 1
