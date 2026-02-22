@@ -72,7 +72,7 @@ consecutive_failures = 0
 MAX_BACKOFF = 60  # seconds — cap backoff at 1 minute
 
 # Metrics persistence
-METRICS_FILE = "live_fx_metrics.jsonl"  # JSONL = one JSON object per line
+METRICS_FILE = "NAP_ingestion\out\live_fx_metrics.jsonl"  # JSONL = one JSON object per line
 
 # ============================================================
 # DATABASE CONNECTION
