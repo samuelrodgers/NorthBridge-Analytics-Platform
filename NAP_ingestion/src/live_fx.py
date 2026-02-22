@@ -67,6 +67,10 @@ latency_stats = {
     "total_times": [],
 }
 
+# Exponential backoff for API failures
+consecutive_failures = 0
+MAX_BACKOFF = 60  # seconds — cap backoff at 1 minute
+
 # ============================================================
 # DATABASE CONNECTION
 # ============================================================
@@ -267,6 +271,8 @@ def run():
     Main polling loop — fetch rates every POLL_INTERVAL seconds.
     Runs until SIGINT/SIGTERM received.
     """
+    global consecutive_failures  # Allow modification of module-level variable
+
     logger.info(f"Starting live FX ingestion (polling every {POLL_INTERVAL}s)")
     logger.info(f"Fetching {len(SYMBOLS.split(','))} currencies, converting to {TARGET_BASE}-based rates")
     logger.info(f"API endpoint: {API_URL} (base: {API_BASE})")
@@ -295,8 +301,23 @@ def run():
                         logger.info("Reconnected to database")
                     except Exception as reconnect_err:
                         logger.error(f"Failed to reconnect: {reconnect_err}")
+
+                # Reset failure counter on successful fetch + insert
+                consecutive_failures = 0
             else:
-                logger.warning("Skipping insert due to fetch failure")
+                # Increment failure counter and calculate backoff
+                consecutive_failures += 1
+                backoff_delay = min(2 ** (consecutive_failures - 1), MAX_BACKOFF)
+
+                logger.warning(
+                    f"Skipping insert due to fetch failure "
+                    f"(consecutive failures: {consecutive_failures}, "
+                    f"backoff: {backoff_delay}s)"
+                )
+
+                # Apply backoff delay before next poll
+                if not shutdown_requested:
+                    time.sleep(backoff_delay)
 
                 # Track total loop latency (runs every loop, success or failure)
             total_time = time.time() - loop_start
@@ -329,7 +350,6 @@ def run():
                 f"Latency summary: avg={avg_total:.3f}s, max={max_total:.3f}s, "
                 f"loops={len(latency_stats['total_times'])}"
             )
-
 
     finally:
         conn.close()
