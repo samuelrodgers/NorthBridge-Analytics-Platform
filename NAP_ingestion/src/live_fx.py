@@ -1,21 +1,28 @@
-import requests
+# live_fx.py - basic structure, no API yet
+
 import time
-from datetime import datetime, timezone
-import psycopg2
+import logging
 
-API_URL = "https://api.exchangerate.host/latest?base=EUR&symbols=USD"
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
-def fetch_rate():
-    response = requests.get(API_URL)
-    data = response.json()
-    return data["rates"]["USD"]
+POLL_INTERVAL = 5
 
-def insert_rate(rate):
-    # insert into raw.fx_rate
-    pass
 
-while True:
-    rate = fetch_rate()
-    timestamp = datetime.now(timezone.utc)
-    insert_rate(rate)
-    time.sleep(5)
+def run():
+    logger.info(f"Starting live FX ingestion (polling every {POLL_INTERVAL}s)")
+
+    while True:
+        loop_start = time.time()
+
+        logger.info("Fetching rates...")  # placeholder
+
+        # Sleep for remaining interval
+        elapsed = time.time() - loop_start
+        sleep_time = max(0, POLL_INTERVAL - elapsed)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+
+
+if __name__ == "__main__":
+    run()
