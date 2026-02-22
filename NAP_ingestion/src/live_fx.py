@@ -330,6 +330,7 @@ def run():
                 f"loops={len(latency_stats['total_times'])}"
             )
 
+
     finally:
         conn.close()
 
