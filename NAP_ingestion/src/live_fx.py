@@ -28,7 +28,7 @@ from config import CURRENCY_CODES
 load_dotenv()
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s %(levelname)s %(message)s"
 )
 logger = logging.getLogger(__name__)
@@ -179,10 +179,30 @@ def fetch_rates():
             ts = datetime.now(timezone.utc)
             logger.warning("API response missing date, using current time")
 
+        # Validate timestamp isn't too far in the future (clock skew protection)
+        now = datetime.now(timezone.utc)
+        time_diff = (ts - now).total_seconds()
+        MAX_FUTURE_SECONDS = 86400  # 24 hours
+
+        if time_diff > MAX_FUTURE_SECONDS:
+            failure_counters["malformed_responses"] += 1
+            logger.error(
+                f"API timestamp too far in future: {ts.isoformat()} "
+                f"(server time: {now.isoformat()}, diff: {time_diff / 3600:.1f}h)"
+            )
+            return None
+
         # Log success with sample rates for verification
         sample_rates = {k: rates_usd_based[k] for k in list(rates_usd_based.keys())[:3]}
         fetch_time = time.time() - fetch_start
         latency_stats["fetch_times"].append(fetch_time)
+
+        # Validate rates are plausible
+        validation_errors = validate_rates(rates_usd_based)
+        if validation_errors:
+            failure_counters["malformed_responses"] += 1
+            logger.error(f"Rate validation failed: {'; '.join(validation_errors)}")
+            return None
 
         logger.info(
             f"Fetched {len(rates_usd_based)} USD-based rates at {ts.isoformat()} "
@@ -202,6 +222,47 @@ def fetch_rates():
         failure_counters["malformed_responses"] += 1
         logger.error(f"Malformed API response or rate conversion error: {e}")
         return None
+
+
+# ============================================================
+# RATE VALIDATION
+# ============================================================
+
+# Plausible rate ranges (USD as quote currency)
+RATE_BOUNDS = {
+    "EUR": (0.5, 2.0),  # 1 EUR should be 0.5-2.0 USD
+    "GBP": (0.5, 2.5),
+    "JPY": (50, 200),  # 1 JPY is small, expect 100-150 range
+    "AUD": (0.5, 2.0),
+    "CAD": (0.5, 2.0),
+    "CHF": (0.5, 2.0),
+    "SEK": (5, 15),
+    "NOK": (5, 15),
+    "MXN": (10, 25),
+    "BRL": (2, 10),
+    "SGD": (0.8, 2.0),
+    "HKD": (5, 10),
+    "AED": (2, 5),
+}
+
+
+def validate_rates(rates):
+    """
+    Check if rates are within plausible bounds.
+
+    Returns:
+        list of validation errors (empty if all rates valid)
+    """
+    errors = []
+    for currency, rate in rates.items():
+        if currency in RATE_BOUNDS:
+            min_rate, max_rate = RATE_BOUNDS[currency]
+            if not (min_rate <= rate <= max_rate):
+                errors.append(
+                    f"{currency}: {rate:.4f} outside plausible range "
+                    f"[{min_rate}, {max_rate}]"
+                )
+    return errors
 
 
 # ============================================================
