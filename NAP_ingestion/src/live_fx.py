@@ -262,8 +262,19 @@ def run():
             result = fetch_rates()
 
             if result:
-                # Insert into DB
-                insert_rates(conn, result["timestamp"], result["rates"])
+                # Insert into DB with error handling
+                try:
+                    insert_rates(conn, result["timestamp"], result["rates"])
+                except psycopg2.Error as e:
+                    failure_counters["db_errors"] += 1
+                    logger.error(f"Database insert failed: {e}")
+                    # Try to reconnect on next loop
+                    try:
+                        conn.close()
+                        conn = get_connection()
+                        logger.info("Reconnected to database")
+                    except Exception as reconnect_err:
+                        logger.error(f"Failed to reconnect: {reconnect_err}")
             else:
                 logger.warning("Skipping insert due to fetch failure")
 
