@@ -306,9 +306,11 @@ def run():
             result = fetch_rates()
 
             # Skip if we've already processed this timestamp
+            skipped_duplicate = False
             if result and last_checkpoint and result["timestamp"] <= last_checkpoint:
                 logger.debug(f"Skipping already-processed timestamp: {result['timestamp'].isoformat()}")
-                result = None  # Treat as if fetch failed, don't insert
+                skipped_duplicate = True
+                result = None  # Don't insert, but don't treat as a failure
 
             if result:
                 # Insert into DB with error handling
@@ -335,20 +337,21 @@ def run():
                 except Exception as e:
                     logger.warning(f"Failed to write checkpoint: {e}")
 
+
             else:
-                # Increment failure counter and calculate backoff
-                consecutive_failures += 1
-                backoff_delay = min(2 ** (consecutive_failures - 1), MAX_BACKOFF)
-
-                logger.warning(
-                    f"Skipping insert due to fetch failure "
-                    f"(consecutive failures: {consecutive_failures}, "
-                    f"backoff: {backoff_delay}s)"
-                )
-
-                # Apply backoff delay before next poll
-                if not shutdown_requested:
-                    time.sleep(backoff_delay)
+                if not skipped_duplicate:
+                    # Real fetch failure — increment counter and backoff
+                    consecutive_failures += 1
+                    backoff_delay = min(2 ** (consecutive_failures - 1), MAX_BACKOFF)
+                    logger.warning(
+                        f"Skipping insert due to fetch failure "
+                        f"(consecutive failures: {consecutive_failures}, "
+                        f"backoff: {backoff_delay}s)"
+                    )
+                    # Apply backoff delay before next poll
+                    if not shutdown_requested:
+                        time.sleep(backoff_delay)
+                # else: skipped duplicate, don't backoff, just continue normal polling
 
                 # Track total loop latency (runs every loop, success or failure)
             total_time = time.time() - loop_start
@@ -376,9 +379,6 @@ def run():
                     f.write(json.dumps(metric_entry) + "\n")
             except Exception as e:
                 logger.warning(f"Failed to write metrics: {e}")
-
-            # Sleep for remaining interval time
-            elapsed = total_time
 
             # Sleep for remaining interval time
             elapsed = time.time() - loop_start
