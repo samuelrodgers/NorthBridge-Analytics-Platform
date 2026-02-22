@@ -121,9 +121,6 @@ def fetch_rates():
             return None
 
         # Convert all rates to USD-based by inverting through USD
-        # Example: EUR→GBP = 0.86, EUR→USD = 1.09
-        #   → USD→GBP = (EUR→GBP) / (EUR→USD) = 0.86 / 1.09 = 0.789
-        #   → USD→EUR = 1 / (EUR→USD) = 1 / 1.09 = 0.917
         rates_usd_based = {}
 
         for currency, rate_from_eur in rates_eur_based.items():
@@ -137,7 +134,7 @@ def fetch_rates():
         # Timestamp: API returns date string, convert to datetime
         date_str = data.get("date")
         if date_str:
-            # frankfurter returns YYYY-MM-DD, treat as end-of-day UTC
+            # frankfurter returns YYYY-MM-DD, treat as EOD UTC
             ts = datetime.strptime(date_str, "%Y-%m-%d").replace(
                 hour=23, minute=59, second=59, tzinfo=timezone.utc
             )
@@ -157,6 +154,50 @@ def fetch_rates():
     except (KeyError, ValueError, ZeroDivisionError) as e:
         logger.error(f"Malformed API response or rate conversion error: {e}")
         return None
+
+
+# ============================================================
+# DATABASE INSERT
+# ============================================================
+
+def insert_rates(conn, timestamp, rates):
+    """
+    Insert FX rates into raw.fx_rate.
+
+    Args:
+        conn:      psycopg2 connection
+        timestamp: datetime (UTC) — fx_timestamp
+        rates:     dict {currency: rate} — USD-based rates e.g. {"EUR": 0.92, ...}
+
+    Returns:
+        int — number of rows inserted (may be 0 if all conflict)
+    """
+    # Build rows: (base_cncy, quote_cncy, fx_timestamp, rate)
+    # All our rates are vs. USD, so quote_cncy is always USD
+    rows = [
+        (currency, TARGET_BASE, timestamp, rate)
+        for currency, rate in rates.items()
+    ]
+
+    sql = """
+        INSERT INTO raw.fx_rate (base_cncy, quote_cncy, fx_timestamp, rate)
+        VALUES %s
+        ON CONFLICT ON CONSTRAINT fx_unique DO NOTHING
+    """
+
+    with conn.cursor() as cur:
+        execute_values(cur, sql, rows)
+        inserted = cur.rowcount
+
+    conn.commit()
+
+    if inserted > 0:
+        logger.info(f"Inserted {inserted} rates into raw.fx_rate")
+    else:
+        logger.debug("All rates already exist (conflict)")
+
+    return inserted
+
 
 # ============================================================
 # MAIN LOOP
@@ -195,6 +236,12 @@ def run():
 
             # Fetch rates from API
             result = fetch_rates()
+
+            if result:
+                # Insert into DB
+                insert_rates(conn, result["timestamp"], result["rates"])
+            else:
+                logger.warning("Skipping insert due to fetch failure")
 
             # Sleep for remaining interval time
             elapsed = time.time() - loop_start
