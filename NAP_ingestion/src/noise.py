@@ -5,7 +5,7 @@
 # Usage:
 #   from noise import apply_noise
 #   clean_frame = generate_transactions(...)
-#   noisey_frame = apply_noise(clean_frame, noise_level="medium")
+#   noisy_frame = apply_noise(clean_frame, noise_level="medium")
 
 import numpy as np
 import pandas as pd
@@ -70,7 +70,20 @@ def inject_currency_noise(df, rate=None):
     Returns:
         DataFrame with dirty currency codes
     """
-    pass
+    if rate is None:
+        rate = NOISE_RATES["timestamp_format"]
+
+    df = df.copy()
+    n_noisy = int(len(df) * rate)
+    noisy_indices = np.random.choice(df.index, size=n_noisy, replace=False)
+
+    # TODO: Implement timestamp format conversion
+    # For each noisy index:
+    #   - Sample a format from TIMESTAMP_NOISE_FORMATS with TIMESTAMP_NOISE_WEIGHTS
+    #   - Convert the datetime to that format string
+    #   - Store back in df.loc[idx, "tx_timestamp"]
+
+    return df
 
 # ============================================================
 # NOISE INJECTION — AMOUNTS
@@ -215,4 +228,4 @@ if __name__ == "__main__":
     end = start + timedelta(minutes=10)
 
     clean_frame = generate_transactions(start, end, n_transactions=100)
-    noisey_frame = apply_noise(clean_frame, noise_level="medium")
+    noisy_frame = apply_noise(clean_frame, noise_level="medium")
