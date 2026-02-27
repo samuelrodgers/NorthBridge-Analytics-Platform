@@ -46,7 +46,20 @@ def inject_timestamp_noise(df, rate=None):
     Returns:
         DataFrame with noisy timestamps (still in object dtype, not datetime)
     """
-    pass
+    if rate is None:
+        rate = NOISE_RATES["timestamp_format"]
+
+    df = df.copy()
+    n_noisy = int(len(df) * rate)
+    noisy_indices = np.random.choice(df.index, size=n_noisy, replace=False)
+
+    # TODO: Implement timestamp format conversion
+    # For each noisy index:
+    #   - Sample a format from TIMESTAMP_NOISE_FORMATS with TIMESTAMP_NOISE_WEIGHTS
+    #   - Convert the datetime to that format string
+    #   - Store back in df.loc[idx, "tx_timestamp"]
+
+    return df
 
 
 # ============================================================
@@ -70,19 +83,12 @@ def inject_currency_noise(df, rate=None):
     Returns:
         DataFrame with dirty currency codes
     """
+
     if rate is None:
-        rate = NOISE_RATES["timestamp_format"]
+        rate = NOISE_RATES["currency_dirty"]
 
     df = df.copy()
-    n_noisy = int(len(df) * rate)
-    noisy_indices = np.random.choice(df.index, size=n_noisy, replace=False)
-
-    # TODO: Implement timestamp format conversion
-    # For each noisy index:
-    #   - Sample a format from TIMESTAMP_NOISE_FORMATS with TIMESTAMP_NOISE_WEIGHTS
-    #   - Convert the datetime to that format string
-    #   - Store back in df.loc[idx, "tx_timestamp"]
-
+    # TODO: Implement currency alias injection
     return df
 
 # ============================================================
