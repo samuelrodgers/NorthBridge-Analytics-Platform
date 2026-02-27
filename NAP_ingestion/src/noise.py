@@ -168,8 +168,40 @@ def inject_amount_noise(df, rate=None):
         rate = NOISE_RATES["amount_dirty"]
 
     df = df.copy()
-    df["amount"] = df["amount"].astype(str)  # Convert all to string first
-    # TODO: Implement amount formatting
+    df["amount"] = df["amount"].astype(str)  # Convert all to string
+
+    n_noisy = int(len(df) * rate)
+    if n_noisy == 0:
+        return df
+
+    noisy_indices = np.random.choice(df.index, size=n_noisy, replace=False)
+
+    for idx in noisy_indices:
+        clean_amount = float(df.loc[idx, "amount"])
+        format_type = random.choices(AMOUNT_NOISE_FORMATS, weights=AMOUNT_NOISE_WEIGHTS, k=1)[0]
+
+        match format_type:
+            case "standard":
+                dirty = f"{clean_amount:.2f}"
+            case "comma_thousands":
+                dirty = f"{clean_amount:,.2f}"
+            case "eu_decimal":
+                int_part = int(clean_amount)
+                dec_part = int((clean_amount - int_part) * 100)
+                dirty = f"{int_part:,}".replace(",", ".") + f",{dec_part:02d}"
+            case "space_thousands":
+                dirty = f"{clean_amount:,.2f}".replace(",", " ")
+            case "negative":
+                dirty = f"-{abs(clean_amount):.2f}"
+            case "parentheses":
+                dirty = f"({abs(clean_amount):.2f})"
+            case "with_symbol":
+                dirty = f"${clean_amount:.2f}"
+            case _:
+                dirty = f"{clean_amount:.2f}"
+
+        df.loc[idx, "amount"] = dirty
+
     return df
 
 # ============================================================
@@ -200,7 +232,42 @@ def inject_company_id_noise(df, rate_null=None, rate_name=None):
         rate_name = NOISE_RATES["company_id_name"]
 
     df = df.copy()
-    # TODO: Implement company ID variants
+
+    # Build reverse lookup: UUID -> company name
+    from config import COMPANIES
+    uuid_to_name = {meta["c_uuid"]: meta["name"] for meta in COMPANIES.values()}
+
+    # Apply null noise
+    n_null = int(len(df) * rate_null)
+    if n_null > 0:
+        null_indices = np.random.choice(df.index, size=n_null, replace=False)
+        df.loc[null_indices, "c_id"] = None
+
+    # Apply name noise (but not on already-nulled rows)
+    remaining_indices = df[df["c_id"].notna()].index
+    n_name = int(len(remaining_indices) * rate_name)
+    if n_name > 0:
+        name_indices = np.random.choice(remaining_indices, size=n_name, replace=False)
+
+        for idx in name_indices:
+            clean_uuid = df.loc[idx, "c_id"]
+            if clean_uuid in uuid_to_name:
+                name = uuid_to_name[clean_uuid]
+
+                # Apply random variant
+                variant = random.choice(["clean", "lowercase", "whitespace", "uppercase"])
+                match variant:
+                    case "clean":
+                        dirty = name
+                    case "lowercase":
+                        dirty = name.lower()
+                    case "whitespace":
+                        dirty = f" {name} "
+                    case "uppercase":
+                        dirty = name.upper()
+
+                df.loc[idx, "c_id"] = dirty
+
     return df
 
 # ============================================================
@@ -221,7 +288,42 @@ def inject_fee_noise(df):
         DataFrame with dirty fee column
     """
     df = df.copy()
-    # TODO: Implement fee variants
+
+    rate_missing = NOISE_RATES.get("fee_missing", 0.05)
+    rate_percent = NOISE_RATES.get("fee_as_percent", 0.03)
+    rate_bundled = NOISE_RATES.get("fee_in_base", 0.02)
+
+    # Missing fees
+    n_missing = int(len(df) * rate_missing)
+    if n_missing > 0:
+        missing_indices = np.random.choice(df.index, size=n_missing, replace=False)
+        df.loc[missing_indices, "fee_amount"] = None
+
+    # Percent string fees
+    remaining = df[df["fee_amount"].notna()].index
+    n_percent = int(len(remaining) * rate_percent)
+    if n_percent > 0:
+        percent_indices = np.random.choice(remaining, size=n_percent, replace=False)
+        for idx in percent_indices:
+            # Convert fee to percentage of amount
+            fee = df.loc[idx, "fee_amount"]
+            amount = df.loc[idx, "amount"]
+            if pd.notna(amount):
+                amount_val = float(amount) if isinstance(amount, str) else amount
+                percent = (fee / amount_val) * 100
+                df.loc[idx, "fee_amount"] = f"{percent:.1f}%"
+
+    # Bundled fees
+    remaining = df[df["fee_amount"].notna()].index
+    n_bundled = int(len(remaining) * rate_bundled)
+    if n_bundled > 0:
+        bundled_indices = np.random.choice(remaining, size=n_bundled, replace=False)
+        for idx in bundled_indices:
+            fee = float(df.loc[idx, "fee_amount"])
+            amount = float(df.loc[idx, "amount"]) if isinstance(df.loc[idx, "amount"], str) else df.loc[idx, "amount"]
+            df.loc[idx, "amount"] = str(amount + fee)
+            df.loc[idx, "fee_amount"] = 0.0
+
     return df
 
 # ============================================================
@@ -270,8 +372,28 @@ def inject_foreign_payments(df, rate=0.15):
     Returns:
         DataFrame with quote_cncy set for foreign payments
     """
+    from config import CURRENCY_CODES
+
     df = df.copy()
-    # TODO: Sample a different currency for base_cncy, set quote_cncy = "USD"
+
+    n_foreign = int(len(df) * rate)
+    if n_foreign == 0:
+        return df
+
+    foreign_indices = np.random.choice(df.index, size=n_foreign, replace=False)
+
+    # Available foreign currencies (exclude USD since that's the quote)
+    foreign_currencies = [c for c in CURRENCY_CODES if c != "USD"]
+
+    for idx in foreign_indices:
+        # Pick a different currency than the current base
+        current_base = df.loc[idx, "base_cncy"]
+        available = [c for c in foreign_currencies if c != current_base]
+
+        if available:
+            df.loc[idx, "base_cncy"] = random.choice(available)
+            df.loc[idx, "quote_cncy"] = "USD"  # Signal conversion needed
+
     return df
 
 # ============================================================
@@ -298,7 +420,7 @@ def apply_noise(df, noise_level="medium"):
     df = inject_amount_noise(df, rate=NOISE_RATES["amount_dirty"] * scale)
     df = inject_company_id_noise(df)
     df = inject_fee_noise(df)
-    # df = inject_column_name_noise(df)  # TODO: This one is complex, defer
+    # df = inject_column_name_noise(df)  # TODO: This one is complex, defer for now
 
     return df
 
@@ -307,12 +429,22 @@ def apply_noise(df, noise_level="medium"):
 # ============================================================
 
 if __name__ == "__main__":
-
+    # Quick test — generate clean data and apply noise
     from datetime import timedelta
     from transactions import generate_transactions
 
     start = datetime.now(timezone.utc)
     end = start + timedelta(minutes=10)
 
-    clean_frame = generate_transactions(start, end, n_transactions=100)
-    noisy_frame = apply_noise(clean_frame, noise_level="medium")
+    clean_df = generate_transactions(start, end, n_transactions=100)
+    noisy_df = apply_noise(clean_df, noise_level="medium")
+
+    print("Clean DataFrame:")
+    print(clean_df.head())
+    print()
+    print("Noisy DataFrame:")
+    print(noisy_df.head())
+    print()
+    print("Noise applied:")
+    print(f"  - Timestamps: {(noisy_df['tx_timestamp'] != clean_df['tx_timestamp']).sum()} changed")
+    print(f"  - Foreign payments: {noisy_df['quote_cncy'].notna().sum()} conversions")
