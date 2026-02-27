@@ -114,7 +114,13 @@ def inject_amount_noise(df, rate=None):
     Returns:
         DataFrame with 'amount' as string (mixed clean/dirty)
     """
-    pass
+    if rate is None:
+        rate = NOISE_RATES["amount_dirty"]
+
+    df = df.copy()
+    df["amount"] = df["amount"].astype(str)  # Convert all to string first
+    # TODO: Implement amount formatting
+    return df
 
 # ============================================================
 # NOISE INJECTION — COMPANY IDs
@@ -138,7 +144,14 @@ def inject_company_id_noise(df, rate_null=None, rate_name=None):
     Returns:
         DataFrame with dirty c_id column (mixed types)
     """
-    pass
+    if rate_null is None:
+        rate_null = NOISE_RATES["company_id_null"]
+    if rate_name is None:
+        rate_name = NOISE_RATES["company_id_name"]
+
+    df = df.copy()
+    # TODO: Implement company ID variants
+    return df
 
 # ============================================================
 # NOISE INJECTION — FEES
@@ -157,7 +170,9 @@ def inject_fee_noise(df):
     Returns:
         DataFrame with dirty fee column
     """
-    pass
+    df = df.copy()
+    # TODO: Implement fee variants
+    return df
 
 # ============================================================
 # NOISE INJECTION — COLUMN NAMES
@@ -176,7 +191,10 @@ def inject_column_name_noise(df):
     Returns:
         DataFrame with renamed columns (schema varies by company)
     """
-    pass
+    df = df.copy()
+    # TODO: For each unique c_id, apply that company's schema
+    # This is complex — might need to group by company and rename separately
+    return df
 
 # ============================================================
 # NOISE INJECTION — FOREIGN PAYMENT CURRENCIES
@@ -202,7 +220,9 @@ def inject_foreign_payments(df, rate=0.15):
     Returns:
         DataFrame with quote_cncy set for foreign payments
     """
-    pass
+    df = df.copy()
+    # TODO: Sample a different currency for base_cncy, set quote_cncy = "USD"
+    return df
 
 # ============================================================
 # MAIN NOISE APPLICATION
@@ -219,7 +239,18 @@ def apply_noise(df, noise_level="medium"):
     Returns:
         Noisy DataFrame ready to test pipeline robustness
     """
-    pass
+    scale = {"low": 0.5, "medium": 1.0, "high": 2.0}.get(noise_level, 1.0)
+
+    # Apply noise in order
+    df = inject_foreign_payments(df, rate=0.15 * scale)
+    df = inject_timestamp_noise(df, rate=NOISE_RATES["timestamp_format"] * scale)
+    df = inject_currency_noise(df, rate=NOISE_RATES["currency_dirty"] * scale)
+    df = inject_amount_noise(df, rate=NOISE_RATES["amount_dirty"] * scale)
+    df = inject_company_id_noise(df)
+    df = inject_fee_noise(df)
+    # df = inject_column_name_noise(df)  # TODO: This one is complex, defer
+
+    return df
 
 # ============================================================
 # TESTING HARNESS
