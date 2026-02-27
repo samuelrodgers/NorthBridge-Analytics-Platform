@@ -182,9 +182,9 @@ PRODUCT_CODES = list(PRODUCTS.keys())
 # ============================================================
 # noise.py draws from TIMESTAMP_NOISE_FORMATS to replace clean ISO timestamps.
 # normalize_receipts() must attempt each parser in TIMESTAMP_PARSE_ORDER.
+# Clean format: "{iso}" "2026-02-14 13:45:00"
 
 TIMESTAMP_NOISE_FORMATS = [
-    "{iso}",                  # clean baseline: "2026-02-14 13:45:00"
     "{mm}/{dd}/{yyyy} {h}:{mm_t} {ampm}",  # "02/14/2026 1:45 PM"
     "{dd}-{mm}-{yyyy} {HH}:{MM}",          # "14-02-2026 13:45"
     "{excel_serial}",                       # "44589.572"  (Excel float)
@@ -193,7 +193,7 @@ TIMESTAMP_NOISE_FORMATS = [
 
 # Weights for how often each format is injected (must sum to 1.0)
 # Order matches TIMESTAMP_NOISE_FORMATS
-TIMESTAMP_NOISE_WEIGHTS = [0.80, 0.07, 0.05, 0.03, 0.05]
+TIMESTAMP_NOISE_WEIGHTS = [0.35, 0.30, 0.25, 0.10]
 
 # Ordered list of strptime format strings for multi-format parsing fallback
 TIMESTAMP_PARSE_ORDER = [

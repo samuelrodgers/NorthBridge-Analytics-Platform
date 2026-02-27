@@ -6,11 +6,14 @@
 #   from noise import apply_noise
 #   clean_frame = generate_transactions(...)
 #   noisy_frame = apply_noise(clean_frame, noise_level="medium")
+from traceback import format_tb
 
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
 import random
+import logging
+logger = logging.getLogger(__name__)
 
 from config import (
     CURRENCY_ALIAS_MAP,
@@ -51,13 +54,36 @@ def inject_timestamp_noise(df, rate=None):
 
     df = df.copy()
     n_noisy = int(len(df) * rate)
+    if n_noisy == 0:
+        return df
+    # Select random rows to apply noise
     noisy_indices = np.random.choice(df.index, size=n_noisy, replace=False)
 
-    # TODO: Implement timestamp format conversion
-    # For each noisy index:
-    #   - Sample a format from TIMESTAMP_NOISE_FORMATS with TIMESTAMP_NOISE_WEIGHTS
-    #   - Convert the datetime to that format string
-    #   - Store back in df.loc[idx, "tx_timestamp"]
+    for idx in noisy_indices:
+        # Sample a format
+        format_idx = random.choices(range(len(TIMESTAMP_NOISE_WEIGHTS)), weights=TIMESTAMP_NOISE_WEIGHTS, k=1)[0]
+        # We don't actually use the written formats for this part
+        # format = TIMESTAMP_NOISE_FORMATS[format_idx]
+
+        # Convert DataFrame datetime to selected format
+        clean_time = df.loc[idx, "tx_timestamp"]
+        match format_idx:
+            case 0:
+                dirty_time = clean_time.strftime("%m/%d/%Y %I:%M %p")
+            case 1:
+                dirty_time = clean_time.strftime("%d-%m-%Y %H:%M")
+            case 2:
+                excel_epoch = pd.Timestamp("1900-01-01", tz="UTC")
+                days_since = (clean_time - excel_epoch).total_seconds() / 86400
+                dirty_time = f"{days_since:.3f}"
+            case 3:
+                dirty_time = None
+            case _:  # The default case (wildcard)
+                dirty_time = clean_time
+                logger.debug(f"Unknown format index {format_idx} for row {idx}, keeping clean")
+
+        # Store back in df.loc[idx, "tx_timestamp"]
+        df.loc[idx, "tx_timestamp"] = dirty_time
 
     return df
 
@@ -88,7 +114,31 @@ def inject_currency_noise(df, rate=None):
         rate = NOISE_RATES["currency_dirty"]
 
     df = df.copy()
-    # TODO: Implement currency alias injection
+    # Determine how many rows to make noisy
+    n_noisy = int(len(df) * rate)
+    if n_noisy == 0:
+        return df
+
+    # Select random rows to apply noise
+    noisy_indices = np.random.choice(df.index, size=n_noisy, replace=False)
+
+    # Build reverse lookup: ISO code -> list of dirty aliases
+    # CURRENCY_ALIAS_MAP maps dirty -> clean, we need clean -> dirty
+    iso_to_aliases = {}
+    for dirty, clean in CURRENCY_ALIAS_MAP.items():
+        if clean not in iso_to_aliases:
+            iso_to_aliases[clean] = []
+        iso_to_aliases[clean].append(dirty)
+
+    # For each noisy row, replace the clean ISO code with a random alias
+    for idx in noisy_indices:
+        clean_code = df.loc[idx, "base_cncy"]
+
+        # If this currency has aliases defined, pick one randomly
+        if clean_code in iso_to_aliases:
+            dirty_variant = random.choice(iso_to_aliases[clean_code])
+            df.loc[idx, "base_cncy"] = dirty_variant
+
     return df
 
 # ============================================================
