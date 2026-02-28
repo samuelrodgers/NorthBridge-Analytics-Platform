@@ -169,6 +169,7 @@ def _parse_single_amount(raw) -> float | None:
     - Currency symbol prefix: "$1200.50" → 1200.50
     - Comma thousands: "1,200.50" → 1200.50
     - EU decimal: "1.200,50" → 1200.50
+    - EU decimal < 1000: "12,50" → quarantine
     - Space thousands: "1 200.50" → 1200.50
     - Plain negative: "-1200.50" → -1200.50
     """
@@ -261,20 +262,53 @@ def _resolve_company_ids(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── 0f: Fee parsing ───────────────────────────────────────────────────────────
 
-def _parse_fee(row) -> float:
+def _parse_fee(row) -> float | None:
     """
     Resolve fee_amount for a single row.
 
     Handles:
-    - None / NaN → 0.0 (treat missing fee as zero)
-    - Percent string "2.5%" → compute 2.5% of amount
+    - None / NaN → 0.0 (missing fee assumed zero)
+    - Percent string "2.5%" → compute against row's amount
     - Already numeric → cast to float
+    - fee > amount → quarantine (return None)
+
+    Args:
+        row: a single DataFrame row (needs both fee_amount and amount)
+
+    Returns:
+        float if resolvable, None if fee exceeds amount (quarantine downstream)
     """
-    pass
+    raw = row.get("fee_amount")
+    amount = row.get("amount")
+
+    if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+        return 0.0
+
+    if isinstance(raw, str) and raw.strip().endswith("%"):
+        try:
+            pct = float(raw.strip().rstrip("%")) / 100.0
+            base = float(amount) if amount is not None else 0.0
+            fee = round(base * pct, 4)
+        except (ValueError, TypeError):
+            logger.warning(f"Could not parse fee percent: {raw!r}")
+            return 0.0
+    else:
+        try:
+            fee = float(raw)
+        except (ValueError, TypeError):
+            logger.warning(f"Could not parse fee: {raw!r}")
+            return 0.0
+
+    if amount is not None and fee > float(amount):
+        logger.warning(f"Fee {fee} exceeds amount {amount}, quarantining")
+        return None
+
+    return fee
 
 def _parse_fees(df: pd.DataFrame) -> pd.DataFrame:
-    pass
-
+    df = df.copy()
+    df["fee_amount"] = df.apply(_parse_fee, axis=1)
+    return df
 
 # ── 0g: Final type coercion ───────────────────────────────────────────────────
 
