@@ -291,6 +291,7 @@ def inject_fee_noise(df):
     """
     df = df.copy()
     df["fee_amount"] = df["fee_amount"].astype(object)
+    df["amount"] = df["amount"].astype(object)
 
     rate_missing = NOISE_RATES.get("fee_missing", 0.05)
     rate_percent = NOISE_RATES.get("fee_as_percent", 0.03)
@@ -313,19 +314,26 @@ def inject_fee_noise(df):
             amount = df.loc[idx, "amount"]
             if pd.notna(amount):
                 amount_val = float(amount) if isinstance(amount, str) else amount
-                percent = (fee / amount_val) * 100
+                if amount_val != 0:
+                    percent = (fee / amount_val) * 100
                 df.loc[idx, "fee_amount"] = f"{percent:.1f}%"
 
-    # Bundled fees
-    remaining = df[df["fee_amount"].notna()].index
-    n_bundled = int(len(remaining) * rate_bundled)
-    if n_bundled > 0:
-        bundled_indices = np.random.choice(remaining, size=n_bundled, replace=False)
-        for idx in bundled_indices:
-            fee = float(df.loc[idx, "fee_amount"])
-            amount = float(df.loc[idx, "amount"]) if isinstance(df.loc[idx, "amount"], str) else df.loc[idx, "amount"]
-            df.loc[idx, "amount"] = str(amount + fee)
-            df.loc[idx, "fee_amount"] = 0.0
+        # Bundled fees - Only target numeric fees
+        is_numeric_fee = df["fee_amount"].apply(lambda x: isinstance(x, (int, float)))
+        remaining = df[is_numeric_fee & df["fee_amount"].notna()].index
+
+        n_bundled = int(len(remaining) * rate_bundled)
+        if n_bundled > 0:
+            bundled_indices = np.random.choice(remaining, size=n_bundled, replace=False)
+            for idx in bundled_indices:
+                fee = float(df.at[idx, "fee_amount"])
+                # Ensure amount is treated as float for math
+                curr_amt = df.at[idx, "amount"]
+                amount = float(curr_amt) if isinstance(curr_amt, (str, float, int)) else 0.0
+
+                # Now update (since amount is object-dtype, it accepts the string)
+                df.at[idx, "amount"] = str(amount + fee)
+                df.at[idx, "fee_amount"] = 0.0
 
     return df
 
