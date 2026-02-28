@@ -2,6 +2,7 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 import pandas as pd
+from pandas.api.types import is_string_dtype
 import re
 
 from transactions import generate_transactions
@@ -107,7 +108,7 @@ class TestCurrencyNoise:
         """Verify dirty currencies are strings."""
         noisy = inject_currency_noise(clean_transactions, rate=0.10)
         # Accept either object or StringDtype
-        assert noisy['base_cncy'].dtype in ['object', pd.StringDtype()]
+        assert is_string_dtype(noisy['base_cncy'])
 
 
 class TestAmountNoise:
@@ -125,7 +126,7 @@ class TestAmountNoise:
 
         # Flags anything that isn't JUST digits or a single dot
         formatted = noisy['amount'].str.contains(r'[^0-9.]', regex=True, na=False).sum()
-        print(f"Number of formatted: {formatted}")
+        print(f"\nNumber of formatted: {formatted}")
         assert formatted >= 10  # At least some should have format noise
 
 

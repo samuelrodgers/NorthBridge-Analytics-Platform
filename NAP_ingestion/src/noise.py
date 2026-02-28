@@ -116,6 +116,7 @@ def inject_currency_noise(df, rate=None):
         rate = NOISE_RATES["currency_dirty"]
 
     df = df.copy()
+    df["base_cncy"] = df["base_cncy"].astype(str)
     # Determine how many rows to make noisy
     n_noisy = int(len(df) * rate)
     if n_noisy == 0:
@@ -188,7 +189,8 @@ def inject_amount_noise(df, rate=None):
                 # Format as standard comma-thousands first: "1,200.50"
                 standard = f"{clean_amount:,.2f}"
                 # Swap dots and commas: "1.200,50"
-                dirty = standard.replace(",", "TEMP").replace(".", ",").replace("TEMP", ".")
+                dirty = standard.replace(",", "TEMP").replace(
+                    ".", ",").replace("TEMP", ".")
             case "space_thousands":
                 dirty = f"{clean_amount:,.2f}".replace(",", " ")
             case "negative":
