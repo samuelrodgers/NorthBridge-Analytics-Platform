@@ -68,6 +68,7 @@ def _parse_single_timestamp(raw) -> pd.Timestamp | None:
     - ISO string and known format variants → strptime fallback chain
     - Excel serial float string (e.g. "45327.572") → days-since-epoch math
     - None / NaN → return None (quarantine downstream)
+    - Timezone-naive datetime → return None (ambiguous, quarantine downstream)
     """
     if raw is None or (isinstance(raw, float) and np.isnan(raw)):
         return None
@@ -75,10 +76,10 @@ def _parse_single_timestamp(raw) -> pd.Timestamp | None:
     # Already a datetime-like
     if isinstance(raw, (pd.Timestamp, datetime)):
         ts = pd.Timestamp(raw)
-        # Setting to UTC if tz is empty might cause downstream bugs -
-        #    quarantining these would be too aggressive, but
-        #    once stretch goals are implemented it could work
-        return ts.tz_localize("UTC") if ts.tz is None else ts.tz_convert("UTC")
+        if ts.tz is None:
+            logger.warning(f"Timestamp has no timezone info, quarantining: {raw!r}")
+            return None
+        return ts.tz_convert("UTC")
 
     raw_str = str(raw).strip()
 
@@ -171,7 +172,12 @@ def _parse_single_amount(raw) -> float | None:
     - Space thousands: "1 200.50" → 1200.50
     - Plain negative: "-1200.50" → -1200.50
     """
-    pass
+    if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+
+    s = str(raw).strip()
 
 def _parse_amounts(df: pd.DataFrame) -> pd.DataFrame:
     """Parse amount column to float for every row."""
