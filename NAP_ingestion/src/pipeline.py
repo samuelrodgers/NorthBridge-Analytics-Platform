@@ -75,7 +75,9 @@ def _parse_single_timestamp(raw) -> pd.Timestamp | None:
     # Already a datetime-like
     if isinstance(raw, (pd.Timestamp, datetime)):
         ts = pd.Timestamp(raw)
-        # TODO: Setting to UTC if tz is empty might be wrong
+        # Setting to UTC if tz is empty might cause downstream bugs -
+        #    quarantining these would be too aggressive, but
+        #    once stretch goals are implemented it could work
         return ts.tz_localize("UTC") if ts.tz is None else ts.tz_convert("UTC")
 
     raw_str = str(raw).strip()
@@ -106,7 +108,9 @@ def _parse_single_timestamp(raw) -> pd.Timestamp | None:
 
 def _parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
     """Parse tx_timestamp column to UTC pd.Timestamp for every row."""
-    pass
+    df = df.copy()
+    df["tx_timestamp"] = df["tx_timestamp"].apply(_parse_single_timestamp)
+    return df
 
 
 # ── 0c: Currency resolution ───────────────────────────────────────────────────

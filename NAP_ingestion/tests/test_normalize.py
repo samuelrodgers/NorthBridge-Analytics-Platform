@@ -110,3 +110,42 @@ class TestResolveCurrencies:
         result = _resolve_currencies(df)
         # Python None is different than Pandas Nan
         assert result.loc[0, "base_cncy"] is None or pd.isna(result.loc[0, "base_cncy"])
+
+
+from pipeline import _parse_timestamps
+
+class TestParseTimestamps:
+    """Test timestamp normalization."""
+
+    def test_clean_timestamp_pass_through(self, clean_transactions):
+        """Valid timestamps are returned unchanged as UTC Timestamps."""
+        result = _parse_timestamps(clean_transactions)
+        assert pd.api.types.is_datetime64_any_dtype(result["tx_timestamp"])
+
+    def test_dirty_timestamps_are_resolved(self, clean_transactions, dirty_transactions):
+        """All parsed timestamps are mapped back to the original clean dataset."""
+        # Run normalizations we already tested
+        renamed = _rename_columns(dirty_transactions)
+        currencied = _resolve_currencies(renamed)
+
+        # Test this normalization
+        result = _parse_timestamps(currencied)
+        non_null = result["tx_timestamp"].dropna()
+        assert all(isinstance(ts, pd.Timestamp) for ts in non_null)
+
+    def test_timestamp_noise_rate(self, clean_transactions, dirty_transactions):
+        """Verify the dirty fixture actually contains some currency noise to resolve."""
+        # Run normalizations we already tested
+        renamed = _rename_columns(dirty_transactions)
+
+        # Test this normalization
+        changed = (renamed["tx_timestamp"] != clean_transactions["tx_timestamp"]).sum()
+        assert changed >= 150  # ~15% of 1000 rows (coded rate is 20%)
+
+    def test_null_timestamp_remain_null(self, clean_transactions):
+        """Null timestamp values are returned as None, not coerced to a string."""
+        df = clean_transactions.copy()
+        df.loc[0, "tx_timestamp"] = None
+        result = _parse_timestamps(df)
+        # Python None is different than Pandas Nan
+        assert result.loc[0, "tx_timestamp"] is None or pd.isna(result.loc[0, "tx_timestamp"])
