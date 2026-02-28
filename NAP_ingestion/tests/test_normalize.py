@@ -284,3 +284,27 @@ class TestParseFees:
         # Anything that survived should be non-negative
         non_null = result["fee_amount"].dropna()
         assert (non_null >= 0).all()
+
+
+from pipeline import _coerce_types
+
+class TestCoerceTypes:
+    """Test final type enforcement."""
+
+    def test_amount_is_numeric(self, clean_transactions):
+        """Amount column is numeric dtype after coercion."""
+        result = _coerce_types(clean_transactions)
+        assert pd.api.types.is_numeric_dtype(result["amount"])
+
+    def test_fee_amount_is_numeric(self, clean_transactions):
+        """Fee amount column is numeric dtype after coercion."""
+        result = _coerce_types(clean_transactions)
+        assert pd.api.types.is_numeric_dtype(result["fee_amount"])
+
+    def test_non_numeric_amount_raises(self, clean_transactions):
+        """A non-numeric amount that slipped through raises rather than silently coercing."""
+        df = clean_transactions.copy()
+        df["amount"] = df["amount"].astype(object)
+        df.loc[0, "amount"] = "not_a_number"
+        with pytest.raises(ValueError):
+            _coerce_types(df)

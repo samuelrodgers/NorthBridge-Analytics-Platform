@@ -313,8 +313,13 @@ def _parse_fees(df: pd.DataFrame) -> pd.DataFrame:
 # ── 0g: Final type coercion ───────────────────────────────────────────────────
 
 def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
-    """Enforce expected dtypes for clean DB insert."""
-    pass
+    """Enforce expected dtypes for DB insert."""
+    df = df.copy()
+    if "amount" in df.columns:
+        df["amount"] = pd.to_numeric(df["amount"], errors="raise")
+    if "fee_amount" in df.columns:
+        df["fee_amount"] = pd.to_numeric(df["fee_amount"], errors="raise").fillna(0.0)
+    return df
 
 
 # ── QUARANTINE LOGIC ──────────────────────────────────────────────────────────
