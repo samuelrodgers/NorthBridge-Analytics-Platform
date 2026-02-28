@@ -69,7 +69,40 @@ def _parse_single_timestamp(raw) -> pd.Timestamp | None:
     - Excel serial float string (e.g. "45327.572") → days-since-epoch math
     - None / NaN → return None (quarantine downstream)
     """
-    pass
+    if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+        return None
+
+    # Already a datetime-like
+    if isinstance(raw, (pd.Timestamp, datetime)):
+        ts = pd.Timestamp(raw)
+        # TODO: Setting to UTC if tz is empty might be wrong
+        return ts.tz_localize("UTC") if ts.tz is None else ts.tz_convert("UTC")
+
+    raw_str = str(raw).strip()
+
+    # Excel serial: purely numeric (may have decimal), no alpha chars
+    if re.fullmatch(r"\d{4,6}(\.\d+)?", raw_str):
+        try:
+            days = float(raw_str)
+            return _EXCEL_EPOCH + pd.to_timedelta(days, unit="D")
+        except Exception:
+            pass
+
+    # Multi-format strptime chain
+    for fmt in TIMESTAMP_PARSE_ORDER:
+        try:
+            dt = datetime.strptime(raw_str, fmt)
+            return pd.Timestamp(dt, tz="UTC") if dt.tzinfo is None else pd.Timestamp(dt).tz_convert("UTC")
+        except ValueError:
+            continue
+
+    # Last resort: pandas infer
+    try:
+        ts = pd.to_datetime(raw_str, utc=True)
+        return ts
+    except Exception:
+        logger.warning(f"Could not parse timestamp: {raw!r}")
+        return None
 
 def _parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
     """Parse tx_timestamp column to UTC pd.Timestamp for every row."""

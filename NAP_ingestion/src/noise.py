@@ -71,14 +71,18 @@ def inject_timestamp_noise(df, rate=None):
         clean_time = df.loc[idx, "tx_timestamp"]
         match format_idx:
             case 0:
+                # Time format includes AM/PM "02/14/2026 1:45 PM"
                 dirty_time = clean_time.strftime("%m/%d/%Y %I:%M %p")
             case 1:
+                # Time format is d/m/y "14-02-2026 13:45"
                 dirty_time = clean_time.strftime("%d-%m-%Y %H:%M")
             case 2:
+                # Time format is Excel Serial "44589.572"
                 excel_epoch = pd.Timestamp("1900-01-01", tz="UTC")
                 days_since = (clean_time - excel_epoch).total_seconds() / 86400
                 dirty_time = f"{days_since:.3f}"
             case 3:
+                # Time is empty
                 dirty_time = None
             case _:  # The default case (wildcard)
                 dirty_time = clean_time
