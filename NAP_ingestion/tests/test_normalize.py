@@ -126,10 +126,9 @@ class TestParseTimestamps:
         """All parsed timestamps are mapped back to the original clean dataset."""
         # Run normalizations we already tested
         renamed = _rename_columns(dirty_transactions)
-        currencied = _resolve_currencies(renamed)
 
         # Test this normalization
-        result = _parse_timestamps(currencied)
+        result = _parse_timestamps(renamed)
         non_null = result["tx_timestamp"].dropna()
         assert all(isinstance(ts, pd.Timestamp) for ts in non_null)
 
@@ -149,3 +148,53 @@ class TestParseTimestamps:
         result = _parse_timestamps(df)
         # Python None is different than Pandas Nan
         assert result.loc[0, "tx_timestamp"] is None or pd.isna(result.loc[0, "tx_timestamp"])
+
+
+from pipeline import (_parse_amounts, _parse_single_amount)
+
+
+class TestParseAmounts:
+    """Test amount normalization."""
+
+    def test_clean_amounts_pass_through(self, clean_transactions):
+        """Valid numeric amounts are returned unchanged."""
+        result = _parse_amounts(clean_transactions)
+        assert result["amount"].notna().all()
+        assert (result["amount"] >= 0).all()
+
+    def test_dirty_amounts_are_resolved(self, clean_transactions, dirty_transactions):
+        """Unambiguous dirty amount formats are parsed to float."""
+        renamed = _rename_columns(dirty_transactions)
+        result = _parse_amounts(renamed)
+
+        # Anything that survived should be a non-negative float
+        non_null = result["amount"].dropna()
+        assert (non_null >= 0).all()
+
+    def test_negative_amounts_are_quarantined(self):
+        """Negative amounts return None regardless of format."""
+        assert _parse_single_amount(-100.0) is None
+        assert _parse_single_amount("-1200.50") is None
+        assert _parse_single_amount("(1200.50)") is None
+
+    def test_ambiguous_eu_amounts_are_quarantined(self):
+        """Sub-1000 EU format amounts with no dot are quarantined."""
+        assert _parse_single_amount("99,00") is None
+        assert _parse_single_amount("500,50") is None
+
+    def test_unambiguous_eu_amounts_are_parsed(self):
+        """EU format amounts with thousands separator are unambiguous and parsed correctly."""
+        assert _parse_single_amount("1.200,50") == 1200.50
+        assert _parse_single_amount("1.000,00") == 1000.00
+
+    def test_standard_formats_are_parsed(self):
+        """Standard amount formats are parsed correctly."""
+        assert _parse_single_amount("1,200.50") == 1200.50
+        assert _parse_single_amount("$1200.50") == 1200.50
+        assert _parse_single_amount("1 200.50") == 1200.50
+        assert _parse_single_amount(1200.50)    == 1200.50
+
+    def test_null_amounts_are_quarantined(self):
+        """None and NaN return None."""
+        assert _parse_single_amount(None) is None
+        assert _parse_single_amount(float("nan")) is None

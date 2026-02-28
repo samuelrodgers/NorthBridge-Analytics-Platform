@@ -204,7 +204,8 @@ def _parse_single_amount(raw) -> float | None:
         else:
             # This fixes the Euro format "1.234,56"
             s = s.replace(".", "").replace(",", ".")
-    # The only case left is just a period, where nothing needs to be changed "12.34"
+    # The only case left is just a period or spaces — strip and parse
+    s = s.replace(" ", "")
 
     try:
         return float(s)
