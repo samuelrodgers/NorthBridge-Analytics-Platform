@@ -50,7 +50,11 @@ _EXCEL_EPOCH = pd.Timestamp("1899-12-30", tz="UTC")
 
 def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Map any dirty column names → canonical names using CANONICAL_COLUMN_MAP."""
-    pass
+    rename = {col: CANONICAL_COLUMN_MAP[col] for col in df.columns if col in CANONICAL_COLUMN_MAP}
+    if rename:
+        logger.debug(f"Renaming columns: {rename}")
+        df = df.rename(columns=rename)
+    return df
 
 
 # ── 0b: Timestamp parsing ─────────────────────────────────────────────────────
