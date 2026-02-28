@@ -7,8 +7,133 @@
 #   2. NaN rates    — are any currency pairs missing FX coverage?
 #   3. normalized_amount_usd — is the calculation correct for USD and non-USD?
 
+import logging
+import re
+import uuid as _uuid
+from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
+
+from config import (
+    CANONICAL_COLUMN_MAP,
+    COMPANY_NAME_TO_UUID,
+    CURRENCY_ALIAS_MAP,
+    CURRENCY_CODES,
+    TIMESTAMP_PARSE_ORDER,
+)
+
+logger = logging.getLogger(__name__)
+
+# Excel epoch — days since 1900-01-01 (with Lotus 1-2-3 leap-year bug offset)
+_EXCEL_EPOCH = pd.Timestamp("1899-12-30", tz="UTC")
+
+# ============================================================
+# STEP 0 — NORMALIZE RECEIPTS
+# ============================================================
+# Reverses all noise injected by noise.py and brings the DataFrame
+# into a canonical, DB-ready state before any joins or transforms.
+#
+# Sub-steps (each isolated so failures are traceable):
+#   0a. Rename columns         — map dirty column names → canonical names
+#   0b. Parse timestamps       — multi-format fallback + Excel serial
+#   0c. Resolve currencies     — alias map + upper + strip
+#   0d. Parse amounts          — strip symbols/commas/parens → float
+#   0e. Resolve company IDs    — names → UUIDs; drop unresolvable nulls
+#   0f. Parse fees             — percent strings, bundled fees, nulls
+#   0g. Final type coercion    — enforce expected dtypes for DB insert
+#
+# Rows that cannot be normalized are quarantined (returned separately)
+# rather than silently dropped, so the caller can log/alert on them.
+
+# ── 0a: Column renaming ───────────────────────────────────────────────────────
+
+def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
+    pass
+
+
+# ── 0b: Timestamp parsing ─────────────────────────────────────────────────────
+
+def _parse_single_timestamp(raw) -> pd.Timestamp | None:
+    pass
+
+def _parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+    pass
+
+
+# ── 0c: Currency resolution ───────────────────────────────────────────────────
+
+def _resolve_currency(raw) -> str | None:
+    pass
+
+def _resolve_currencies(df: pd.DataFrame) -> pd.DataFrame:
+    pass
+
+
+# ── 0d: Amount parsing ────────────────────────────────────────────────────────
+
+def _parse_single_amount(raw) -> float | None:
+    pass
+
+def _parse_amounts(df: pd.DataFrame) -> pd.DataFrame:
+    pass
+
+
+# ── 0e: Company ID resolution ─────────────────────────────────────────────────
+
+def _resolve_company_id(raw) -> str | None:
+    pass
+
+def _resolve_company_ids(df: pd.DataFrame) -> pd.DataFrame:
+    pass
+
+
+# ── 0f: Fee parsing ───────────────────────────────────────────────────────────
+
+def _parse_fee(row) -> float:
+    pass
+
+def _parse_fees(df: pd.DataFrame) -> pd.DataFrame:
+    pass
+
+
+# ── 0g: Final type coercion ───────────────────────────────────────────────────
+
+def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
+    pass
+
+
+# ── QUARANTINE LOGIC ──────────────────────────────────────────────────────────
+
+_REQUIRED_FIELDS = ["tx_timestamp", "base_cncy", "amount", "c_id"]
+
+def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    pass
+
+
+# ── PUBLIC ENTRY POINT ────────────────────────────────────────────────────────
+
+def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Normalize a noisy transaction DataFrame into DB-ready canonical form.
+
+    Applies all cleaning sub-steps in order:
+      0a  rename_columns      — map dirty column names → canonical
+      0b  parse_timestamps    — multi-format + Excel serial → UTC Timestamp
+      0c  resolve_currencies  — aliases/symbols → ISO codes
+      0d  parse_amounts       — formatted strings → float
+      0e  resolve_company_ids — names → UUIDs
+      0f  parse_fees          — percent strings / nulls → float
+      0g  coerce_types        — enforce dtypes for DB insert
+
+    Args:
+        df: pd.DataFrame — noisy input (from apply_noise() or raw DB read)
+
+    Returns:
+        (clean_df, quarantine_df) — rows that passed all checks, rows that failed
+    """
+    pass
+
 
 
 # ============================================================
