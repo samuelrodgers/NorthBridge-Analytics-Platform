@@ -49,39 +49,80 @@ _EXCEL_EPOCH = pd.Timestamp("1899-12-30", tz="UTC")
 # ── 0a: Column renaming ───────────────────────────────────────────────────────
 
 def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Map any dirty column names → canonical names using CANONICAL_COLUMN_MAP."""
     pass
 
 
 # ── 0b: Timestamp parsing ─────────────────────────────────────────────────────
 
 def _parse_single_timestamp(raw) -> pd.Timestamp | None:
+    """
+    Attempt to parse one raw timestamp value into a UTC pd.Timestamp.
+
+    Handles:
+    - Already a Timestamp / datetime → convert to UTC
+    - ISO string and known format variants → strptime fallback chain
+    - Excel serial float string (e.g. "45327.572") → days-since-epoch math
+    - None / NaN → return None (quarantine downstream)
+    """
     pass
 
 def _parse_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse tx_timestamp column to UTC pd.Timestamp for every row."""
     pass
 
 
 # ── 0c: Currency resolution ───────────────────────────────────────────────────
 
 def _resolve_currency(raw) -> str | None:
+    """
+    Resolve a raw currency value to a canonical ISO code.
+
+    Resolution order:
+    1. Strip + upper → already a valid ISO code → return as-is
+    2. Strip + lower → check CURRENCY_ALIAS_MAP
+    3. Return None if unresolvable (quarantine downstream)
+    """
     pass
 
 def _resolve_currencies(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply _resolve_currency to base_cncy (and quote_cncy if present)."""
     pass
 
 
 # ── 0d: Amount parsing ────────────────────────────────────────────────────────
 
 def _parse_single_amount(raw) -> float | None:
+    """
+    Parse a raw amount string to float.
+
+    Handles:
+    - Already numeric → cast directly
+    - Parentheses accounting negative: "(1200.50)" → -1200.50
+    - Currency symbol prefix: "$1200.50" → 1200.50
+    - Comma thousands: "1,200.50" → 1200.50
+    - EU decimal: "1.200,50" → 1200.50
+    - Space thousands: "1 200.50" → 1200.50
+    - Plain negative: "-1200.50" → -1200.50
+    """
     pass
 
 def _parse_amounts(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse amount column to float for every row."""
     pass
 
 
 # ── 0e: Company ID resolution ─────────────────────────────────────────────────
 
 def _resolve_company_id(raw) -> str | None:
+    """
+    Resolve a raw c_id value to a UUID string.
+
+    Handles:
+    - Already a valid UUID string → return as-is
+    - Company name (clean, cased, whitespace variants) → UUID via COMPANY_NAME_TO_UUID
+    - None / NaN → return None (quarantine downstream)
+    """
     pass
 
 def _resolve_company_ids(df: pd.DataFrame) -> pd.DataFrame:
@@ -91,6 +132,14 @@ def _resolve_company_ids(df: pd.DataFrame) -> pd.DataFrame:
 # ── 0f: Fee parsing ───────────────────────────────────────────────────────────
 
 def _parse_fee(row) -> float:
+    """
+    Resolve fee_amount for a single row.
+
+    Handles:
+    - None / NaN → 0.0 (treat missing fee as zero)
+    - Percent string "2.5%" → compute 2.5% of amount
+    - Already numeric → cast to float
+    """
     pass
 
 def _parse_fees(df: pd.DataFrame) -> pd.DataFrame:
@@ -100,6 +149,7 @@ def _parse_fees(df: pd.DataFrame) -> pd.DataFrame:
 # ── 0g: Final type coercion ───────────────────────────────────────────────────
 
 def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
+    """Enforce expected dtypes for clean DB insert."""
     pass
 
 
@@ -108,6 +158,15 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
 _REQUIRED_FIELDS = ["tx_timestamp", "base_cncy", "amount", "c_id"]
 
 def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Split DataFrame into clean rows and quarantined rows.
+
+    A row is quarantined if ANY required field is null after normalization.
+    Quarantined rows are tagged with a 'quarantine_reason' column.
+
+    Returns:
+        (clean_df, quarantine_df)
+    """
     pass
 
 
