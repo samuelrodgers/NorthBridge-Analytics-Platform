@@ -308,3 +308,45 @@ class TestCoerceTypes:
         df.loc[0, "amount"] = "not_a_number"
         with pytest.raises(ValueError):
             _coerce_types(df)
+
+
+from pipeline import _split_quarantine
+
+class TestSplitQuarantine:
+    """Test quarantine splitting logic."""
+
+    def test_clean_transactions_have_no_quarantine(self, clean_transactions):
+        """A fully clean DataFrame produces zero quarantined rows."""
+        clean, quarantine = _split_quarantine(clean_transactions)
+        assert len(quarantine) == 0
+        assert len(clean) == len(clean_transactions)
+
+    def test_null_required_field_is_quarantined(self, clean_transactions):
+        """A row with a null required field is moved to quarantine."""
+        df = clean_transactions.copy()
+        df.loc[0, "tx_timestamp"] = None
+        clean, quarantine = _split_quarantine(df)
+        assert len(quarantine) == 1
+        assert "null_tx_timestamp" in quarantine.iloc[0]["quarantine_reason"]
+
+    def test_multiple_null_fields_tagged(self, clean_transactions):
+        """A row with multiple null required fields has all reasons listed."""
+        df = clean_transactions.copy()
+        df.loc[0, "tx_timestamp"] = None
+        df.loc[0, "base_cncy"] = None
+        clean, quarantine = _split_quarantine(df)
+        reason = quarantine.iloc[0]["quarantine_reason"]
+        assert "null_tx_timestamp" in reason
+        assert "null_base_cncy" in reason
+
+    def test_quarantine_reason_column_not_in_clean(self, clean_transactions):
+        """The quarantine_reason column is not present in the clean DataFrame."""
+        clean, _ = _split_quarantine(clean_transactions)
+        assert "quarantine_reason" not in clean.columns
+
+    def test_all_rows_accounted_for(self, clean_transactions):
+        """Total rows in clean and quarantine always equals input rows."""
+        df = clean_transactions.copy()
+        df.loc[0, "amount"] = None
+        clean, quarantine = _split_quarantine(df)
+        assert len(clean) + len(quarantine) == len(df)

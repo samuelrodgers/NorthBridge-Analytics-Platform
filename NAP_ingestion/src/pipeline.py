@@ -328,15 +328,31 @@ _REQUIRED_FIELDS = ["tx_timestamp", "base_cncy", "amount", "c_id"]
 
 def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Split DataFrame into clean rows and quarantined rows.
+    Split DataFrame into clean and quarantined rows.
 
     A row is quarantined if ANY required field is null after normalization.
-    Quarantined rows are tagged with a 'quarantine_reason' column.
+    Quarantined rows are tagged with a 'quarantine_reason' column describing
+    which fields failed, so the caller can log or review them.
 
     Returns:
         (clean_df, quarantine_df)
     """
-    pass
+    reasons = []
+    for _, row in df.iterrows():
+        row_reasons = []
+        for field in _REQUIRED_FIELDS:
+            val = row.get(field)
+            if val is None or pd.isna(val):
+                row_reasons.append(f"null_{field}")
+        reasons.append(", ".join(row_reasons) if row_reasons else "")
+
+    df = df.copy()
+    df["_quarantine_reason"] = reasons
+
+    clean = df[df["_quarantine_reason"] == ""].drop(columns=["_quarantine_reason"])
+    quarantine = df[df["_quarantine_reason"] != ""].rename(columns={"_quarantine_reason": "quarantine_reason"})
+
+    return clean, quarantine
 
 
 # ── PUBLIC ENTRY POINT ────────────────────────────────────────────────────────
