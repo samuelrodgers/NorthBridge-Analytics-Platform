@@ -13,8 +13,9 @@ from noise import (
     inject_amount_noise,
     inject_company_id_noise,
     inject_fee_noise,
+    inject_column_name_noise
 )
-
+from config import COMPANY_COLUMN_SCHEMAS
 
 @pytest.fixture
 def clean_transactions():
@@ -169,4 +170,34 @@ class TestFeeNoise:
         nulls = noisy['fee_amount'].isna().sum()
         assert nulls >= 3  # Should have some missing fees
 
+
+class TestColumnNameNoise:
+    """Test company-specific column schema injection."""
+
+    def test_dirty_columns_replace_canonical(self, clean_transactions):
+        """Canonical column names are replaced with company-specific dirty names."""
+        dirty = inject_column_name_noise(clean_transactions, company_key="COMP001")
+        schema = COMPANY_COLUMN_SCHEMAS["COMP001"]
+
+        for canonical, dirty_name in schema.items():
+            if canonical in clean_transactions.columns:
+                assert dirty_name in dirty.columns
+                assert canonical not in dirty.columns
+
+    def test_unknown_company_uses_default_schema(self, clean_transactions):
+        """An unrecognised company key falls back to the default schema."""
+        result = inject_column_name_noise(clean_transactions, company_key="COMP999")
+        # Default schema is identity — columns should be unchanged
+        assert set(result.columns) == set(clean_transactions.columns)
+
+    def test_all_non_default_schemas(self, clean_transactions):
+        """Every explicitly defined company schema produces at least one rename."""
+        non_default = [k for k in COMPANY_COLUMN_SCHEMAS if k != "_default"]
+
+        for company_key in non_default:
+            dirty = inject_column_name_noise(clean_transactions, company_key=company_key)
+            schema = COMPANY_COLUMN_SCHEMAS[company_key]
+            renamed = {c: d for c, d in schema.items() if c != d and c in clean_transactions.columns}
+            for canonical, dirty_name in renamed.items():
+                assert dirty_name in dirty.columns, f"{company_key}: expected '{dirty_name}', not found"
 # Run with: pytest tests/test_noise.py -v

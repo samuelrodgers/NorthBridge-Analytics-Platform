@@ -256,6 +256,20 @@ COMPANY_COLUMN_SCHEMAS = {
         "base_amount":  "gross_value",
         "fee_amount":   "charges",
     },
+    "COMP009": {
+        "tx_timestamp": "transaction_date",
+        "company_id":   "client_id",
+        "base_cncy":    "payment_currency",
+        "base_amount":  "transaction_amount",
+        "fee_amount":   "processing_fee",
+    },
+    "COMP011": {
+        "tx_timestamp": "data_hora",
+        "company_id":   "empresa_id",
+        "base_cncy":    "moeda",
+        "base_amount":  "valor",
+        "fee_amount":   "taxa",
+    },
     # All other companies use canonical names by default
     "_default": {
         "tx_timestamp": "tx_timestamp",

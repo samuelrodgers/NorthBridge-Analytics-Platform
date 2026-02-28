@@ -341,23 +341,25 @@ def inject_fee_noise(df):
 # NOISE INJECTION — COLUMN NAMES
 # ============================================================
 
-def inject_column_name_noise(df):
+def inject_column_name_noise(df: pd.DataFrame, company_key: str) -> pd.DataFrame:
     """
-    Rename columns to company-specific schemas.
+    Rename columns to match a specific company's schema.
 
-    Uses COMPANY_COLUMN_SCHEMAS from config to map canonical names
-    to company-specific variants (e.g., "tx_timestamp" → "tx_time").
+    Simulates receiving a file from a company that uses non-canonical
+    column names. Uses COMPANY_COLUMN_SCHEMAS to look up the mapping
+    for company_key, falling back to _default if not found.
 
     Args:
-        df: DataFrame with canonical column names
+        df:          DataFrame with canonical column names
+        company_key: COMP001–COMP012 key from COMPANY_COLUMN_SCHEMAS
 
     Returns:
-        DataFrame with renamed columns (schema varies by company)
+        DataFrame with columns renamed to that company's schema
     """
-    df = df.copy()
-    # TODO: For each unique c_id, apply that company's schema
-    # This is complex — might need to group by company and rename separately
-    return df
+    schema = COMPANY_COLUMN_SCHEMAS.get(company_key, COMPANY_COLUMN_SCHEMAS["_default"])
+    # schema maps canonical → dirty
+    rename = {canonical: dirty for canonical, dirty in schema.items() if canonical in df.columns}
+    return df.rename(columns=rename)
 
 # ============================================================
 # NOISE INJECTION — FOREIGN PAYMENT CURRENCIES
