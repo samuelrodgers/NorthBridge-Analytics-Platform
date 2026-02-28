@@ -238,3 +238,49 @@ class TestResolveCompanyIds:
         df.loc[0, "c_id"] = "not_a_company"
         result = _resolve_company_ids(df)
         assert result.loc[0, "c_id"] is None or pd.isna(result.loc[0, "c_id"])
+
+
+from pipeline import _parse_fees
+
+class TestParseFees:
+    """Test fee normalization."""
+
+    def test_clean_fees_pass_through(self, clean_transactions):
+        """Valid numeric fees are returned unchanged."""
+        result = _parse_fees(clean_transactions)
+        assert result["fee_amount"].notna().all()
+        assert (result["fee_amount"] >= 0).all()
+
+    def test_missing_fees_default_to_zero(self, clean_transactions):
+        """Null fee values default to 0.0 rather than being quarantined."""
+        df = clean_transactions.copy()
+        df.loc[0, "fee_amount"] = None
+        result = _parse_fees(df)
+        assert result.loc[0, "fee_amount"] == 0.0
+
+    def test_percent_fees_are_resolved(self, clean_transactions):
+        """Percent string fees are computed against the row's amount."""
+        df = clean_transactions.copy()
+        df["fee_amount"] = df["fee_amount"].astype(object)
+        df.loc[0, "fee_amount"] = "2.5%"
+        df.loc[0, "amount"] = 1000.0
+        result = _parse_fees(df)
+        assert result.loc[0, "fee_amount"] == 25.0
+
+    def test_fee_exceeding_amount_is_quarantined(self, clean_transactions):
+        """A fee larger than its amount returns None for quarantine."""
+        df = clean_transactions.copy()
+        df["fee_amount"] = df["fee_amount"].astype(object)
+        df.loc[0, "fee_amount"] = 99999.0
+        df.loc[0, "amount"] = 1.0
+        result = _parse_fees(df)
+        assert result.loc[0, "fee_amount"] is None or pd.isna(result.loc[0, "fee_amount"])
+
+    def test_dirty_fees_are_resolved(self, clean_transactions, dirty_transactions):
+        """Noisy fee variants are resolved without errors."""
+        renamed = _rename_columns(dirty_transactions)
+        parsed_amounts = _parse_amounts(renamed)
+        result = _parse_fees(parsed_amounts)
+        # Anything that survived should be non-negative
+        non_null = result["fee_amount"].dropna()
+        assert (non_null >= 0).all()
