@@ -87,12 +87,37 @@ def _resolve_currency(raw) -> str | None:
     2. Strip + lower → check CURRENCY_ALIAS_MAP
     3. Return None if unresolvable (quarantine downstream)
     """
-    pass
+    if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+        return None
+
+    s = str(raw).strip()
+
+    # Direct ISO match (most rows after strip+upper)
+    upper = s.upper()
+    if upper in CURRENCY_CODES:
+        return upper
+
+    # Alias map lookup (lowercase key)
+    lower = s.lower()
+    if lower in CURRENCY_ALIAS_MAP:
+        return CURRENCY_ALIAS_MAP[lower]
+
+    # Try the original string in alias map
+    if s in CURRENCY_ALIAS_MAP:
+        return CURRENCY_ALIAS_MAP[s]
+
+    logger.warning(f"Unresolvable currency: {raw!r}")
+    return None
 
 def _resolve_currencies(df: pd.DataFrame) -> pd.DataFrame:
     """Apply _resolve_currency to base_cncy (and quote_cncy if present)."""
-    pass
-
+    df = df.copy()
+    df["base_cncy"] = df["base_cncy"].apply(_resolve_currency)
+    if "quote_cncy" in df.columns:
+        df["quote_cncy"] = df["quote_cncy"].apply(
+            lambda x: None if (x is None or (isinstance(x, float) and np.isnan(x))) else _resolve_currency(x)
+        )
+    return df
 
 # ── 0d: Amount parsing ────────────────────────────────────────────────────────
 
