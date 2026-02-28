@@ -188,7 +188,8 @@ class TestColumnNameNoise:
         for canonical, dirty_name in schema.items():
             if canonical in clean_transactions.columns:
                 assert dirty_name in dirty.columns
-                assert canonical not in dirty.columns
+                if canonical != dirty_name:
+                    assert canonical not in dirty.columns
 
     def test_unknown_company_uses_default_schema(self, clean_transactions):
         """An unrecognised company key falls back to the default schema."""
