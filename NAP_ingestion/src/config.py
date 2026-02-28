@@ -213,9 +213,9 @@ TIMESTAMP_PARSE_ORDER = [
 # ============================================================
 # noise.py uses these templates to format clean float amounts as dirty strings.
 # normalize_receipts() must strip and parse back to float.
+# Clean version:     "standard",         # 1200.50
 
 AMOUNT_NOISE_FORMATS = [
-    "standard",         # 1200.50
     "comma_thousands",  # 1,200.50
     "eu_decimal",       # 1.200,50  (European locale)
     "space_thousands",  # 1 200.50
@@ -224,7 +224,7 @@ AMOUNT_NOISE_FORMATS = [
     "with_symbol",      # $1200.50
 ]
 
-AMOUNT_NOISE_WEIGHTS = [0.70, 0.10, 0.05, 0.03, 0.05, 0.03, 0.04]
+AMOUNT_NOISE_WEIGHTS = [0.25, 0.25, 0.20, 0.20, 0.05, 0.05]
 
 
 # ============================================================

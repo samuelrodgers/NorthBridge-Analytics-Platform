@@ -53,6 +53,8 @@ def inject_timestamp_noise(df, rate=None):
         rate = NOISE_RATES["timestamp_format"]
 
     df = df.copy()
+    # Convert to object dtype
+    df["tx_timestamp"] = df["tx_timestamp"].astype(object)
     n_noisy = int(len(df) * rate)
     if n_noisy == 0:
         return df
@@ -168,27 +170,25 @@ def inject_amount_noise(df, rate=None):
         rate = NOISE_RATES["amount_dirty"]
 
     df = df.copy()
-    df["amount"] = df["amount"].astype(str)  # Convert all to string
+    df["amount"] = df["amount"].astype(str)
 
     n_noisy = int(len(df) * rate)
     if n_noisy == 0:
         return df
 
     noisy_indices = np.random.choice(df.index, size=n_noisy, replace=False)
-
     for idx in noisy_indices:
-        clean_amount = float(df.loc[idx, "amount"])
+        clean_amount = float(df.at[idx, "amount"])
         format_type = random.choices(AMOUNT_NOISE_FORMATS, weights=AMOUNT_NOISE_WEIGHTS, k=1)[0]
 
         match format_type:
-            case "standard":
-                dirty = f"{clean_amount:.2f}"
             case "comma_thousands":
                 dirty = f"{clean_amount:,.2f}"
             case "eu_decimal":
-                int_part = int(clean_amount)
-                dec_part = int((clean_amount - int_part) * 100)
-                dirty = f"{int_part:,}".replace(",", ".") + f",{dec_part:02d}"
+                # Format as standard comma-thousands first: "1,200.50"
+                standard = f"{clean_amount:,.2f}"
+                # Swap dots and commas: "1.200,50"
+                dirty = standard.replace(",", "TEMP").replace(".", ",").replace("TEMP", ".")
             case "space_thousands":
                 dirty = f"{clean_amount:,.2f}".replace(",", " ")
             case "negative":
@@ -288,6 +288,7 @@ def inject_fee_noise(df):
         DataFrame with dirty fee column
     """
     df = df.copy()
+    df["fee_amount"] = df["fee_amount"].astype(object)
 
     rate_missing = NOISE_RATES.get("fee_missing", 0.05)
     rate_percent = NOISE_RATES.get("fee_as_percent", 0.03)

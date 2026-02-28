@@ -67,7 +67,7 @@ def generate_transactions(
     # ── Amounts ───────────────────────────────────────────────────────────────
     # Log-normal gives realistic fat-tailed financial amounts.
     # mean=4, sigma=1 → median ~$55, mean ~$90, occasional large transactions
-    base_amounts = rng.lognormal(mean=4, sigma=1, size=n_transactions).round(4)
+    base_amounts = rng.lognormal(mean=8, sigma=1.2, size=n_transactions).round(4)
 
     # Fee as small % of base amount, varies by transaction
     fee_rates = rng.uniform(0.001, 0.01, size=n_transactions)
