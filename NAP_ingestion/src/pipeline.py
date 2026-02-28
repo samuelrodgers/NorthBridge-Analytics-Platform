@@ -376,7 +376,25 @@ def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     Returns:
         (clean_df, quarantine_df) — rows that passed all checks, rows that failed
     """
-    pass
+    logger.info(f"normalize_receipts: starting with {len(df):,} rows")
+    df = df.copy()
+
+    df = _rename_columns(df)
+    df = _parse_timestamps(df)
+    df = _resolve_currencies(df)
+    df = _parse_amounts(df)
+    df = _resolve_company_ids(df)
+    df = _parse_fees(df)
+    df = _coerce_types(df)
+
+    clean, quarantine = _split_quarantine(df)
+
+    logger.info(
+        f"normalize_receipts: {len(clean):,} clean rows, "
+        f"{len(quarantine):,} quarantined rows"
+    )
+
+    return clean, quarantine
 
 
 
