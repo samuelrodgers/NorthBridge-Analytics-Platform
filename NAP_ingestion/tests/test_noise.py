@@ -170,6 +170,12 @@ class TestFeeNoise:
         nulls = noisy['fee_amount'].isna().sum()
         assert nulls >= 3  # Should have some missing fees
 
+    def test_fee_noise_handles_formatted_amounts(self, clean_transactions):
+        """Fee percent calculation doesn't break when amount has already been formatted."""
+        pre_formatted = inject_amount_noise(clean_transactions, rate=1.0)
+        result = inject_fee_noise(pre_formatted)
+        assert result is not None
+
 
 class TestColumnNameNoise:
     """Test company-specific column schema injection."""

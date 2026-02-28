@@ -313,7 +313,16 @@ def inject_fee_noise(df):
             fee = df.loc[idx, "fee_amount"]
             amount = df.loc[idx, "amount"]
             if pd.notna(amount):
-                amount_val = float(amount) if isinstance(amount, str) else amount
+                if pd.notna(amount):
+                    amount_val = 0.0
+                    try:
+                        amount_str = str(amount).strip()
+                        if amount_str.startswith("(") and amount_str.endswith(")"):
+                            amount_val = -float(amount_str[1:-1])
+                        else:
+                            amount_val = float(str(amount).replace(",", "").replace("$", "").replace(" ", ""))
+                    except ValueError:
+                        continue
                 if amount_val != 0:
                     percent = (fee / amount_val) * 100
                 df.loc[idx, "fee_amount"] = f"{percent:.1f}%"
@@ -329,7 +338,14 @@ def inject_fee_noise(df):
                 fee = float(df.at[idx, "fee_amount"])
                 # Ensure amount is treated as float for math
                 curr_amt = df.at[idx, "amount"]
-                amount = float(curr_amt) if isinstance(curr_amt, (str, float, int)) else 0.0
+                try:
+                    curr_str = str(curr_amt).strip()
+                    if curr_str.startswith("(") and curr_str.endswith(")"):
+                        amount = -float(curr_str[1:-1])
+                    else:
+                        amount = float(curr_str.replace(",", "").replace("$", "").replace(" ", ""))
+                except ValueError:
+                    continue
 
                 # Now update (since amount is object-dtype, it accepts the string)
                 df.at[idx, "amount"] = str(amount + fee)
@@ -433,7 +449,8 @@ def apply_noise(df, noise_level="medium"):
     df = inject_amount_noise(df, rate=NOISE_RATES["amount_dirty"] * scale)
     df = inject_company_id_noise(df)
     df = inject_fee_noise(df)
-    # df = inject_column_name_noise(df)  # TODO: This one is complex, defer for now
+    company_key = random.choice([k for k in COMPANY_COLUMN_SCHEMAS if k != "_default"])
+    df = inject_column_name_noise(df, company_key=company_key)
 
     return df
 
