@@ -2,12 +2,19 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 import pandas as pd
+import uuid as _uuid
 from pandas.api.types import is_string_dtype
 import re
 
 from transactions import generate_transactions
 import noise
 
+def _is_valid_uuid(val):
+    try:
+        _uuid.UUID(str(val))
+        return True
+    except (ValueError, AttributeError):
+        return False
 
 @pytest.fixture
 def clean_transactions():
@@ -198,3 +205,36 @@ class TestParseAmounts:
         """None and NaN return None."""
         assert _parse_single_amount(None) is None
         assert _parse_single_amount(float("nan")) is None
+
+
+from pipeline import _resolve_company_ids
+
+class TestResolveCompanyIds:
+    """Test company ID normalization."""
+
+    def test_clean_company_ids_pass_through(self, clean_transactions):
+        """Valid UUID company IDs are returned unchanged."""
+        result = _resolve_company_ids(clean_transactions)
+        assert result["c_id"].notna().all()
+        assert all(_is_valid_uuid(v) for v in result["c_id"])
+
+    def test_company_names_are_resolved(self, clean_transactions, dirty_transactions):
+        """Company name variants are mapped back to their UUID."""
+        renamed = _rename_columns(dirty_transactions)
+        result = _resolve_company_ids(renamed)
+        non_null = result["c_id"].dropna()
+        assert all(_is_valid_uuid(v) for v in non_null)
+
+    def test_null_company_ids_are_quarantined(self, clean_transactions):
+        """Null company IDs return None."""
+        df = clean_transactions.copy()
+        df.loc[0, "c_id"] = None
+        result = _resolve_company_ids(df)
+        assert result.loc[0, "c_id"] is None or pd.isna(result.loc[0, "c_id"])
+
+    def test_unresolvable_company_ids_are_quarantined(self, clean_transactions):
+        """Company IDs that are neither a valid UUID nor a known name return None."""
+        df = clean_transactions.copy()
+        df.loc[0, "c_id"] = "not_a_company"
+        result = _resolve_company_ids(df)
+        assert result.loc[0, "c_id"] is None or pd.isna(result.loc[0, "c_id"])

@@ -232,10 +232,31 @@ def _resolve_company_id(raw) -> str | None:
     - Company name (clean, cased, whitespace variants) → UUID via COMPANY_NAME_TO_UUID
     - None / NaN → return None (quarantine downstream)
     """
-    pass
+    if raw is None or (isinstance(raw, float) and np.isnan(raw)):
+        return None
+
+    s = str(raw).strip()
+
+    # Valid UUID → pass through
+    try:
+        _uuid.UUID(s)
+        return s
+    except ValueError:
+        pass
+
+    # Name lookup (normalize to upper for map key)
+    upper = s.upper()
+    if upper in COMPANY_NAME_TO_UUID:
+        return COMPANY_NAME_TO_UUID[upper]
+
+    logger.warning(f"Unresolvable company id: {raw!r}")
+    return None
+
 
 def _resolve_company_ids(df: pd.DataFrame) -> pd.DataFrame:
-    pass
+    df = df.copy()
+    df["c_id"] = df["c_id"].apply(_resolve_company_id)
+    return df
 
 
 # ── 0f: Fee parsing ───────────────────────────────────────────────────────────
