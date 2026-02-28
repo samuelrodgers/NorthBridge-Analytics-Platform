@@ -118,7 +118,7 @@ class TestAmountNoise:
         """Verify amounts become strings after noise."""
         noisy = inject_amount_noise(clean_transactions, rate=0.15)
         # Accept either object or StringDtype
-        assert is_string_dtype(noisy['base_cncy'])
+        assert is_string_dtype(noisy['amount'])
 
     def test_amount_noise_rate(self, clean_transactions):
         """Verify correct percentage of amounts get formatted."""
@@ -127,7 +127,6 @@ class TestAmountNoise:
 
         # Flags anything that isn't JUST digits or a single dot
         formatted = noisy['amount'].str.contains(r'[^0-9.]', regex=True, na=False).sum()
-        print(f"\nNumber of formatted: {formatted}")
         assert formatted >= 10  # At least some should have format noise
 
 
