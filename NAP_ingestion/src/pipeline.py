@@ -175,13 +175,49 @@ def _parse_single_amount(raw) -> float | None:
     if raw is None or (isinstance(raw, float) and np.isnan(raw)):
         return None
     if isinstance(raw, (int, float)):
+        if raw < 0:
+            return None  # Quarantine negatives
         return float(raw)
 
     s = str(raw).strip()
 
+    # Strip currency symbols before any other checks
+    s = re.sub(r"^[£$€¥₹\s]+", "", s).strip()
+
+    # Accounting negative — quarantine
+    if s.startswith("(") and s.endswith(")"):
+        return None
+
+    # Plain negative — quarantine
+    if s.startswith("-"):
+        return None
+
+    # Ambiguous EU sub-1000: "99,00" — quarantine
+    if "," in s and "." not in s:
+        return None
+
+    # Detect: has at least one comma and at least one period
+    elif "," in s and "." in s:
+        # Detect: comma comes first (standard format)
+        if s.find(",") < s.find("."):
+            s = s.replace(",", "").replace(" ", "")
+        else:
+            # This fixes the Euro format "1.234,56"
+            s = s.replace(".", "").replace(",", ".")
+    # The only case left is just a period, where nothing needs to be changed "12.34"
+
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    logger.warning(f"Could not parse amount: {raw!r}")
+    return None
+
 def _parse_amounts(df: pd.DataFrame) -> pd.DataFrame:
     """Parse amount column to float for every row."""
-    pass
+    df = df.copy()
+    df["amount"] = df["amount"].apply(_parse_single_amount)
+    return df
 
 
 # ── 0e: Company ID resolution ─────────────────────────────────────────────────
