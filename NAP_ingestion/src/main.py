@@ -6,6 +6,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from config import CURRENCIES, CURRENCY_CODES
+from noise import apply_noise
+from src.pipeline import normalize_receipts
 from synthetic_fx import generate_all_fx_series
 from transactions import generate_transactions
 from loader import get_connection, load_all
@@ -17,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run(n_transactions=10_000, window_minutes=10, batch_size=10_000):
+def run(n_transactions=10_000, window_minutes=10, batch_size=10_000, noise_level = "medium"):
     """
     Generate synthetic FX and transaction data and load into raw schema.
 
@@ -25,6 +27,7 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000):
         n_transactions: number of transaction rows to generate
         window_minutes: length of the synthetic time window
         batch_size:     rows per DB insert batch (tune for memory vs. throughput)
+        noise_level:    noise level to apply to transactions ("low", "medium", "high")
     """
     start = datetime.now(timezone.utc)
     end   = start + timedelta(minutes=window_minutes)
@@ -41,12 +44,24 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000):
 
     logger.info(f"FX rows: {len(fx):,} | TX rows: {len(tx):,}")
 
+    # ── Add Noise ───────────────────────────────────────────────────────────────────
+
+    logger.info(f"Adding noise at {noise_level} level...")
+    noisy_tx = apply_noise(tx, noise_level)
+    logger.info(f"TX rows after noise: {len(noisy_tx):,} | (original: {len(tx):,})")
+
+    # ── Normalize ───────────────────────────────────────────────────────────────────
+
+    logger.info(f"Normalizing {len(noisy_tx):,} rows...")
+    cleaned_tx, quarantined = normalize_receipts(noisy_tx)
+    logger.info(f"{len(cleaned_tx):,} clean rows | {len(quarantined):,} quarantined rows")
+
     # ── Load ───────────────────────────────────────────────────────────────────
     logger.info("Connecting to database...")
     conn = get_connection()
 
     try:
-        counts = load_all(conn, fx, tx, batch_size=batch_size)
+        counts = load_all(conn, fx, cleaned_tx, batch_size=batch_size)
         logger.info(
             f"✅ Load complete — "
             f"fx_rate: {counts['fx_rates']:,} rows, "
