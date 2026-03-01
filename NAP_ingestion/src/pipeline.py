@@ -676,12 +676,15 @@ def transform(tx_df, fx_df, validate=True):
     print("\n🔄 Starting pipeline transform...")
     print(f"   Input: {len(tx_df):,} transactions, {len(fx_df):,} FX rows")
 
-    # Step 1: join
-    matched = match_fx_rates(tx_df, fx_df)
+    # Step 0: normalize
+    clean_tx, quarantine = normalize_receipts(tx_df)
+
+    # Step 1: FX join
+    matched = match_fx_rates(clean_tx, fx_df)
     if validate:
         validate_join(matched)
 
-    # Step 2: normalize
+    # Step 2: amount normalization
     normalized = normalize_amounts(matched)
     if validate:
         validate_normalization(normalized)
@@ -691,5 +694,5 @@ def transform(tx_df, fx_df, validate=True):
     if validate:
         validate_split(f_transaction, f_conversion)
 
-    print("\n✅ Transform complete.")
-    return f_transaction, f_conversion
+    print(f"\n✅ Transform complete. ({len(quarantine):,} rows quarantined)")
+    return f_transaction, f_conversion, quarantine
