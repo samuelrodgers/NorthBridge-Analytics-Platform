@@ -8,6 +8,7 @@
 #   noisy_frame = apply_noise(clean_frame, noise_level="medium")
 from traceback import format_tb
 
+import re
 import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
@@ -301,6 +302,24 @@ def inject_fee_noise(df):
     rate_percent = NOISE_RATES.get("fee_as_percent", 0.03)
     rate_bundled = NOISE_RATES.get("fee_in_base", 0.02)
 
+    def _parse_amount_str(amount) -> float | None:
+        """Parse a potentially noisy amount string to float. Returns None on failure."""
+        try:
+            s = str(amount).strip()
+            s = re.sub(r"^[£$€¥₹\s]+", "", s)
+            if s.startswith("(") and s.endswith(")"):
+                return -float(s[1:-1])
+            if "," in s and "." in s:
+                if s.find(",") < s.find("."):
+                    s = s.replace(",", "").replace(" ", "")
+                else:
+                    s = s.replace(".", "").replace(",", ".")
+            else:
+                s = s.replace(",", "").replace(" ", "")
+            return float(s)
+        except (ValueError, TypeError):
+            return None
+
     # Missing fees
     n_missing = int(len(df) * rate_missing)
     if n_missing > 0:
@@ -313,47 +332,33 @@ def inject_fee_noise(df):
     if n_percent > 0:
         percent_indices = np.random.choice(remaining, size=n_percent, replace=False)
         for idx in percent_indices:
-            # Convert fee to percentage of amount
             fee = df.loc[idx, "fee_amount"]
             amount = df.loc[idx, "amount"]
-            if pd.notna(amount):
-                if pd.notna(amount):
-                    amount_val = 0.0
-                    try:
-                        amount_str = str(amount).strip()
-                        if amount_str.startswith("(") and amount_str.endswith(")"):
-                            amount_val = -float(amount_str[1:-1])
-                        else:
-                            amount_val = float(str(amount).replace(",", "").replace("$", "").replace(" ", ""))
-                    except ValueError:
-                        continue
-                if amount_val != 0:
-                    percent = (fee / amount_val) * 100
-                df.loc[idx, "fee_amount"] = f"{percent:.1f}%"
+            if pd.isna(amount):
+                continue
+            amount_val = _parse_amount_str(amount)
+            if amount_val is None or amount_val == 0:
+                continue
+            percent = (fee / amount_val) * 100
+            df.loc[idx, "fee_amount"] = f"{percent:.1f}%"
 
-        # Bundled fees - Only target numeric fees
-        is_numeric_fee = df["fee_amount"].apply(lambda x: isinstance(x, (int, float)))
-        remaining = df[is_numeric_fee & df["fee_amount"].notna()].index
+    # Bundled fees - Only target numeric fees
+    is_numeric_fee = df["fee_amount"].apply(lambda x: isinstance(x, (int, float)))
+    remaining = df[is_numeric_fee & df["fee_amount"].notna()].index
 
-        n_bundled = int(len(remaining) * rate_bundled)
-        if n_bundled > 0:
-            bundled_indices = np.random.choice(remaining, size=n_bundled, replace=False)
-            for idx in bundled_indices:
-                fee = float(df.at[idx, "fee_amount"])
-                # Ensure amount is treated as float for math
-                curr_amt = df.at[idx, "amount"]
-                try:
-                    curr_str = str(curr_amt).strip()
-                    if curr_str.startswith("(") and curr_str.endswith(")"):
-                        amount = -float(curr_str[1:-1])
-                    else:
-                        amount = float(curr_str.replace(",", "").replace("$", "").replace(" ", ""))
-                except ValueError:
-                    continue
-
-                # Now update (since amount is object-dtype, it accepts the string)
-                df.at[idx, "amount"] = str(amount + fee)
-                df.at[idx, "fee_amount"] = 0.0
+    n_bundled = int(len(remaining) * rate_bundled)
+    if n_bundled > 0:
+        bundled_indices = np.random.choice(remaining, size=n_bundled, replace=False)
+        for idx in bundled_indices:
+            fee = float(df.at[idx, "fee_amount"])
+            amount = df.at[idx, "amount"]
+            if pd.isna(amount):
+                continue
+            amount_val = _parse_amount_str(amount)
+            if amount_val is None:
+                continue
+            df.at[idx, "amount"] = str(amount_val + fee)
+            df.at[idx, "fee_amount"] = 0.0
 
     return df
 
