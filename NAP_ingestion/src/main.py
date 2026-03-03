@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from config import CURRENCIES, CURRENCY_CODES
 from noise import apply_noise
-from src.pipeline import normalize_receipts
+from src.pipeline import (normalize_receipts, validate_normalization_report)
 from synthetic_fx import generate_all_fx_series
 from transactions import generate_transactions
 from loader import get_connection, load_all
@@ -53,7 +53,9 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000, noise_level
     # ── Normalize ───────────────────────────────────────────────────────────────────
 
     logger.info(f"Normalizing {len(noisy_tx):,} rows...")
-    cleaned_tx, quarantined = normalize_receipts(noisy_tx)
+    cleaned_tx, quarantined, stats = normalize_receipts(noisy_tx, collect_stats=True)
+    if stats:
+        validate_normalization_report(stats)
     logger.info(f"{len(cleaned_tx):,} clean rows | {len(quarantined):,} quarantined rows")
 
     # ── Load ───────────────────────────────────────────────────────────────────

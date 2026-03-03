@@ -357,7 +357,7 @@ def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 # ── PUBLIC ENTRY POINT ────────────────────────────────────────────────────────
 
-def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def normalize_receipts(df: pd.DataFrame, collect_stats: bool = False) -> tuple[pd.DataFrame, pd.DataFrame, dict | None]:
     """
     Normalize a noisy transaction DataFrame into DB-ready canonical form.
 
@@ -379,8 +379,8 @@ def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, di
     logger.info(f"normalize_receipts: starting with {len(df):,} rows")
     df = df.copy()
 
-    # Snapshot raw values before any transformation
-    original = df[["tx_timestamp", "base_cncy", "amount", "c_id"]].copy()
+    # Snapshot only taken when stats are requested
+    original = df[["tx_timestamp", "base_cncy", "amount", "c_id"]].copy() if collect_stats else None
 
     df = _rename_columns(df)
     df = _parse_timestamps(df)
@@ -391,7 +391,7 @@ def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, di
     df = _coerce_types(df)
 
     clean, quarantine = _split_quarantine(df)
-    stats = _collect_stats(original, clean, quarantine)
+    stats = _collect_stats(original, clean, quarantine) if collect_stats else None
 
     logger.info(
         f"normalize_receipts: {len(clean):,} clean rows, "
@@ -828,7 +828,7 @@ def transform(tx_df, fx_df, validate=True):
     print(f"   Input: {len(tx_df):,} transactions, {len(fx_df):,} FX rows")
 
     # Step 0: normalize
-    clean_tx, quarantine = normalize_receipts(tx_df)
+    clean_tx, quarantine, _ = normalize_receipts(tx_df)
 
     # Step 1: FX join
     matched = match_fx_rates(clean_tx, fx_df)

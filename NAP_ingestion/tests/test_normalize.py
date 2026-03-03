@@ -358,38 +358,45 @@ class TestNormalizeReceipts:
     """Test the full normalization pipeline."""
 
     def test_returns_two_dataframes(self, clean_transactions):
-        """normalize_receipts always returns a tuple of two DataFrames."""
-        result = normalize_receipts(clean_transactions)
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        assert isinstance(result[0], pd.DataFrame)
-        assert isinstance(result[1], pd.DataFrame)
+        """normalize_receipts returns (clean_df, quarantine_df, stats) where stats is None by default."""
+        clean, quarantine, stats = normalize_receipts(clean_transactions)
+        assert isinstance(clean, pd.DataFrame)
+        assert isinstance(quarantine, pd.DataFrame)
+        assert stats is None
+
+    def test_returns_stats_when_requested(self, clean_transactions):
+        """normalize_receipts returns a populated stats dict when collect_stats=True."""
+        clean, quarantine, stats = normalize_receipts(clean_transactions, collect_stats=True)
+        assert isinstance(stats, dict)
+        assert "input_rows" in stats
+        assert "clean_rows" in stats
+        assert "quarantine_rows" in stats
 
     def test_clean_input_produces_no_quarantine(self, clean_transactions):
         """A fully clean DataFrame passes through with zero quarantined rows."""
-        clean, quarantine = normalize_receipts(clean_transactions)
+        clean, quarantine, _ = normalize_receipts(clean_transactions)
         assert len(quarantine) == 0
         assert len(clean) == len(clean_transactions)
 
     def test_noisy_input_produces_some_quarantine(self, clean_transactions, dirty_transactions):
         """A noisy DataFrame produces at least some quarantined rows."""
-        clean, quarantine = normalize_receipts(dirty_transactions)
+        clean, quarantine, _ = normalize_receipts(dirty_transactions)
         assert len(quarantine) > 0
 
     def test_all_rows_accounted_for(self, dirty_transactions):
         """Total rows in clean and quarantine always equals input rows."""
-        clean, quarantine = normalize_receipts(dirty_transactions)
+        clean, quarantine, _ = normalize_receipts(dirty_transactions)
         assert len(clean) + len(quarantine) == len(dirty_transactions)
 
     def test_clean_output_has_canonical_columns(self, dirty_transactions):
         """Clean output always has canonical column names."""
-        clean, _ = normalize_receipts(dirty_transactions)
+        clean, _, _ = normalize_receipts(dirty_transactions)
         expected = {"tx_id", "c_id", "base_cncy", "quote_cncy", "amount", "fee_amount", "tx_timestamp"}
         assert expected.issubset(set(clean.columns))
 
     def test_clean_output_has_correct_dtypes(self, dirty_transactions):
         """Clean output columns have DB-ready dtypes."""
-        clean, _ = normalize_receipts(dirty_transactions)
+        clean, _, _ = normalize_receipts(dirty_transactions)
         assert pd.api.types.is_datetime64_any_dtype(clean["tx_timestamp"])
         assert pd.api.types.is_numeric_dtype(clean["amount"])
         assert pd.api.types.is_numeric_dtype(clean["fee_amount"])
