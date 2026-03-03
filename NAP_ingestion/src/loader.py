@@ -57,7 +57,7 @@ def load_fx_rates(conn, fx_df, batch_size=10_000):
             INSERT INTO raw.fx_rate
                 (base_cncy, quote_cncy, fx_timestamp, rate, source)
             VALUES %s
-            ON CONFLICT ON CONSTRAINT fx_unique DO NOTHING
+            ON CONFLICT ON CONSTRAINT idx_fx_rate_cncy_ts DO NOTHING
         """
         cols = ["base_cncy", "quote_cncy", "fx_timestamp", "rate", "source"]
     else:
@@ -65,7 +65,7 @@ def load_fx_rates(conn, fx_df, batch_size=10_000):
             INSERT INTO raw.fx_rate
                 (base_cncy, quote_cncy, fx_timestamp, rate)
             VALUES %s
-            ON CONFLICT ON CONSTRAINT fx_unique DO NOTHING
+            ON CONFLICT ON CONSTRAINT idx_fx_rate_cncy_ts DO NOTHING
         """
         cols = ["base_cncy", "quote_cncy", "fx_timestamp", "rate"]
 
