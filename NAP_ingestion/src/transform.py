@@ -311,15 +311,19 @@ def insert_conversions(cur):
 
 def run_seed(conn):
     """
-    Seed dimension tables. Safe to call multiple times — uses ON CONFLICT.
-    Must run before first batch transform.
+    Seed dimension tables if empty. Safe to call on every run.
+    Checks row count first — skips if already populated.
     """
-    logger.info("Running seed (d_currency, d_company)...")
     with conn.cursor() as cur:
-        seed_currencies(cur)
-        seed_companies(cur)
-    conn.commit()
-    logger.info("Seed complete.")
+        cur.execute("SELECT COUNT(*) FROM analytics.d_currency")
+        if cur.fetchone()[0] == 0:
+            logger.info("Seeding dimension tables...")
+            seed_currencies(cur)
+            seed_companies(cur)
+            conn.commit()
+            logger.info("Seed complete.")
+        else:
+            logger.info("Dimension tables already seeded — skipping.")
 
 
 def run_transform(conn):

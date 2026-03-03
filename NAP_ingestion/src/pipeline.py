@@ -810,7 +810,7 @@ def validate_split(f_transaction, f_conversion):
 # ============================================================
 # MAIN TRANSFORM — runs all three steps with validation
 # ============================================================
-
+# This is just for validating the logic
 def transform(tx_df, fx_df, validate=True):
     """
     Full pipeline: join → normalize → split.
