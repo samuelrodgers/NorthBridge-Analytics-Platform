@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from config import CURRENCY_CODES
 from noise import apply_noise
-from src.pipeline import normalize_receipts, validate_normalization_report
+from pipeline import normalize_receipts, validate_normalization_report
 from synthetic_fx import generate_all_fx_series
 from transactions import generate_transactions
 from loader import get_connection, load_all

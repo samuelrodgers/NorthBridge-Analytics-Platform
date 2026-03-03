@@ -379,10 +379,10 @@ def normalize_receipts(df: pd.DataFrame, collect_stats: bool = False) -> tuple[p
     logger.info(f"normalize_receipts: starting with {len(df):,} rows")
     df = df.copy()
 
+    df = _rename_columns(df)
     # Snapshot only taken when stats are requested
     original = df[["tx_timestamp", "base_cncy", "amount", "c_id"]].copy() if collect_stats else None
 
-    df = _rename_columns(df)
     df = _parse_timestamps(df)
     df = _resolve_currencies(df)
     df = _parse_amounts(df)
