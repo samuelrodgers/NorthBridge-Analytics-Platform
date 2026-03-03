@@ -400,7 +400,89 @@ def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, di
 
     return clean, quarantine, stats
 
-# ── Stat tracking for normalize_receipts() ────────────────────────────────────────────────────────
+# ── Stat tracking helpers for normalize_receipts() ────────────────────────────────────────────────────────
+
+def validate_normalization_report(stats: dict) -> None:
+    """
+    Print a structured normalization quality report from stats returned
+    by normalize_receipts().
+
+    Sections:
+        1 — Volume summary
+        2 — Quarantine breakdown by reason
+        3 — Field-level statistics on clean rows
+        4 — Noise absorption summary
+    """
+    input_rows      = stats["input_rows"]
+    clean_rows      = stats["clean_rows"]
+    quarantine_rows = stats["quarantine_rows"]
+    quarantine_rate = round(quarantine_rows / input_rows * 100, 2) if input_rows > 0 else 0.0
+
+    print("\n" + "=" * 60)
+    print("NORMALIZATION QUALITY REPORT")
+    print("=" * 60)
+
+    # ── Section 1 — Volume ────────────────────────────────────────────────
+    print("\n--- Section 1: Volume Summary ---")
+    print(f"  Input rows:       {input_rows:>8,}")
+    print(f"  Clean rows:       {clean_rows:>8,}")
+    print(f"  Quarantined rows: {quarantine_rows:>8,}")
+    print(f"  Quarantine rate:  {quarantine_rate:>7.2f}%")
+
+    # ── Section 2 — Quarantine breakdown ─────────────────────────────────
+    print("\n--- Section 2: Quarantine Breakdown ---")
+    reasons = stats.get("quarantine_reasons", {})
+    if reasons:
+        for reason, count in sorted(reasons.items(), key=lambda x: -x[1]):
+            pct = round(count / input_rows * 100, 2)
+            print(f"  {reason:<25} {count:>6,}  ({pct:.2f}%)")
+    else:
+        print("  No quarantined rows.")
+
+    # ── Section 3 — Field-level statistics ───────────────────────────────
+    print("\n--- Section 3: Field-Level Statistics (clean rows) ---")
+
+    amount_stats = stats.get("amount_stats", {})
+    if amount_stats:
+        print(f"  Amount (USD):")
+        print(f"    Min:    {amount_stats['min']:>12,.2f}")
+        print(f"    Median: {amount_stats['median']:>12,.2f}")
+        print(f"    Mean:   {amount_stats['mean']:>12,.2f}")
+        print(f"    Max:    {amount_stats['max']:>12,.2f}")
+
+    fee_stats = stats.get("fee_stats", {})
+    if fee_stats:
+        print(f"  Fees:")
+        print(f"    Rows with fee > 0: {fee_stats['rows_with_fee']:>6,}")
+        print(f"    Mean fee (USD):    {fee_stats['mean_fee']:>10,.4f}")
+        print(f"    Mean fee % of amt: {fee_stats['mean_fee_pct']:>9,.4f}%")
+
+    cncy_dist = stats.get("cncy_distribution", {})
+    if cncy_dist:
+        print(f"  Currency distribution:")
+        for cncy, count in sorted(cncy_dist.items(), key=lambda x: -x[1]):
+            pct = round(count / clean_rows * 100, 2)
+            print(f"    {cncy:<6} {count:>6,}  ({pct:.2f}%)")
+
+    conversion_count = stats.get("conversion_count", 0)
+    conversion_pct   = round(conversion_count / clean_rows * 100, 2) if clean_rows > 0 else 0.0
+    print(f"  Conversion events: {conversion_count:>6,}  ({conversion_pct:.2f}% of clean rows)")
+
+    # ── Section 4 — Noise absorption ─────────────────────────────────────
+    print("\n--- Section 4: Noise Absorption (successfully parsed) ---")
+    fields = [
+        ("Timestamp variants", "timestamp_noise_absorbed"),
+        ("Currency aliases",   "currency_noise_absorbed"),
+        ("Amount formats",     "amount_noise_absorbed"),
+        ("Company names",      "company_noise_absorbed"),
+    ]
+    for label, key in fields:
+        count = stats.get(key, 0)
+        pct   = round(count / input_rows * 100, 2) if input_rows > 0 else 0.0
+        print(f"  {label:<22} {count:>6,}  ({pct:.2f}%)")
+
+    print("\n" + "=" * 60)
+
 
 def _collect_stats(original: pd.DataFrame, clean: pd.DataFrame, quarantine: pd.DataFrame) -> dict:
     """
