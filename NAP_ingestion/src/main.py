@@ -178,4 +178,6 @@ if __name__ == "__main__":
         n_transactions=args.transactions,
         benchmark=args.benchmark,
         noise_level=args.noise,
+        dry_run=args.dry_run,
+        clean=args.clean,
     )

@@ -16,6 +16,7 @@
 -- Baseline query — no window functions, single join, high selectivity on c_id FK.
 -- Expected to be fast at all scales; establishes the performance floor.
 
+EXPLAIN ANALYZE
 SELECT
     dc.c_name,
     dc.industry,
@@ -41,6 +42,7 @@ ORDER BY
 -- Tests multi-column grouping on a dimension table.
 -- fisc_quarter is pre-computed on d_time — no date_trunc needed here.
 
+EXPLAIN ANALYZE
 SELECT
     dt.fisc_quarter,
     ft.cncy,
@@ -64,6 +66,7 @@ ORDER BY
 -- Tests join depth and aggregation across two fact tables.
 -- Note: non-converted transactions have no f_conversion row (LEFT JOIN intentional).
 
+EXPLAIN ANALYZE
 SELECT
     ffx.base_cncy,
     ffx.quote_cncy,
@@ -87,6 +90,7 @@ ORDER BY
 -- Measures fee burden per company — useful for detecting anomalous fee patterns.
 -- Only conversion rows have fees, so this is scoped to converted transactions.
 
+EXPLAIN ANALYZE
 SELECT
     dc.c_name,
     COUNT(fc.cx_id)                                             AS conversion_count,
@@ -110,6 +114,7 @@ ORDER BY
 -- This is the query that drives the live dashboard refresh graph.
 -- Most sensitive to index availability on d_time — expect the largest before/after delta here.
 
+EXPLAIN ANALYZE
 SELECT
     dc.c_name,
     date_trunc('minute', dt.t_stamp)            AS minute_bucket,
