@@ -32,9 +32,25 @@ def _timer():
     """Return current time in seconds for benchmarking."""
     return time.perf_counter()
 
+def _print_benchmark_summary(timings, n_transactions, clean_count, quarantine_count):
+    total = sum(timings.values())
+    print("\n" + "=" * 60)
+    print("BENCHMARK TIMING SUMMARY")
+    print("=" * 60)
+    print(f"  {'Stage':<20} {'Time (s)':>10}  {'% of total':>10}")
+    print(f"  {'-'*20}  {'-'*10}  {'-'*10}")
+    for stage, secs in timings.items():
+        pct = (secs / total) * 100
+        print(f"  {stage:<20} {secs:>10.3f}  {pct:>9.1f}%")
+    print(f"  {'':20} {'----------':>10}")
+    print(f"  {'TOTAL':<20} {total:>10.3f}")
+    print(f"\n  Rows generated:   {n_transactions:>10,}")
+    print(f"  Rows clean:       {clean_count:>10,}")
+    print(f"  Rows quarantined: {quarantine_count:>10,}")
+    print("=" * 60)
 
 def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
-        noise_level="medium", benchmark=False):
+        noise_level="medium", benchmark=False, dry_run=False, clean=False):
     """
     Generate synthetic FX and transaction data, load into raw schema,
     and promote to analytics schema.
@@ -65,23 +81,34 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
 
     logger.info(f"FX rows: {len(fx):,} | TX rows: {len(tx):,}")
 
-    # ── Noise ──────────────────────────────────────────────────────────────────
-    t0 = _timer()
-    logger.info(f"Adding noise at {noise_level} level...")
-    noisy_tx = apply_noise(tx, noise_level)
-    timings["noise"] = _timer() - t0
+    # ── Noise + Normalize ─────────────────────────────────────────────────────
+    if clean:
+        logger.info("Clean mode — skipping noise and normalization...")
+        cleaned_tx = tx
+        quarantined = []
+        stats = None
+    else:
+        t0 = _timer()
+        logger.info(f"Adding noise at {noise_level} level...")
+        noisy_tx = apply_noise(tx, noise_level)
+        timings["noise"] = _timer() - t0
+        logger.info(f"TX rows after noise: {len(noisy_tx):,} | (original: {len(tx):,})")
 
-    logger.info(f"TX rows after noise: {len(noisy_tx):,} | (original: {len(tx):,})")
+        t0 = _timer()
+        logger.info(f"Normalizing {len(noisy_tx):,} rows...")
+        cleaned_tx, quarantined, stats = normalize_receipts(noisy_tx, collect_stats=benchmark)
+        timings["normalize"] = _timer() - t0
 
-    # ── Normalize ──────────────────────────────────────────────────────────────
-    t0 = _timer()
-    logger.info(f"Normalizing {len(noisy_tx):,} rows...")
-    cleaned_tx, quarantined, stats = normalize_receipts(noisy_tx, collect_stats=benchmark)
-    timings["normalize"] = _timer() - t0
+        if stats:
+            validate_normalization_report(stats)
+        logger.info(f"{len(cleaned_tx):,} clean rows | {len(quarantined):,} quarantined rows")
 
-    if stats:
-        validate_normalization_report(stats)
-    logger.info(f"{len(cleaned_tx):,} clean rows | {len(quarantined):,} quarantined rows")
+    # ── Dry run stops here ─────────────────────────────────────────────────────
+    if dry_run:
+        logger.info("Dry run complete — skipping DB load and transform.")
+        if benchmark:
+            _print_benchmark_summary(timings, n_transactions, len(cleaned_tx), len(quarantined))
+        return None
 
     # ── Load raw ───────────────────────────────────────────────────────────────
     t0 = _timer()
@@ -109,23 +136,9 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
         transform_conn.close()
     timings["transform"] = _timer() - t0
 
-    # ── Benchmark summary ──────────────────────────────────────────────────────
+    # Benchmark summary
     if benchmark:
-        total = sum(timings.values())
-        print("\n" + "=" * 60)
-        print("BENCHMARK TIMING SUMMARY")
-        print("=" * 60)
-        print(f"  {'Stage':<20} {'Time (s)':>10}  {'% of total':>10}")
-        print(f"  {'-'*20}  {'-'*10}  {'-'*10}")
-        for stage, secs in timings.items():
-            pct = (secs / total) * 100
-            print(f"  {stage:<20} {secs:>10.3f}  {pct:>9.1f}%")
-        print(f"  {'':20} {'----------':>10}")
-        print(f"  {'TOTAL':<20} {total:>10.3f}")
-        print(f"\n  Rows generated:   {n_transactions:>10,}")
-        print(f"  Rows clean:       {len(cleaned_tx):>10,}")
-        print(f"  Rows quarantined: {len(quarantined):>10,}")
-        print("=" * 60)
+        _print_benchmark_summary(timings, n_transactions, len(cleaned_tx), len(quarantined))
 
     return counts
 
@@ -148,6 +161,16 @@ if __name__ == "__main__":
         choices=["low", "medium", "high"],
         default="medium",
         help="Noise level to apply (default: medium)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run Python pipeline only, skip DB load and transform"
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Skip noise and normalization, load clean data directly"
     )
     args = parser.parse_args()
 
