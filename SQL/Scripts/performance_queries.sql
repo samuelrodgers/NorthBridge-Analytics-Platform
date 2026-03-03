@@ -33,3 +33,100 @@ GROUP BY
     dc.hq_country
 ORDER BY
     total_volume_usd DESC;
+    
+    
+-- Q2: Transaction volume by fiscal quarter and currency
+-- Star join: f_transaction → d_time
+-- Groups by fiscal quarter and transaction currency.
+-- Tests multi-column grouping on a dimension table.
+-- fisc_quarter is pre-computed on d_time — no date_trunc needed here.
+
+SELECT
+    dt.fisc_quarter,
+    ft.cncy,
+    COUNT(ft.tx_id)             AS tx_count,
+    ROUND(SUM(ft.amount), 2)    AS total_volume_usd,
+    ROUND(AVG(ft.amount), 2)    AS avg_tx_usd
+FROM analytics.f_transaction ft
+JOIN analytics.d_time dt
+    ON ft.time_id = dt.time_id
+GROUP BY
+    dt.fisc_quarter,
+    ft.cncy
+ORDER BY
+    dt.fisc_quarter,
+    total_volume_usd DESC;
+    
+    
+-- Q3: Conversion rate by currency pair
+-- Three-table join: f_conversion → f_transaction → f_fx_rate
+-- Computes what fraction of transactions required FX conversion per currency pair.
+-- Tests join depth and aggregation across two fact tables.
+-- Note: non-converted transactions have no f_conversion row (LEFT JOIN intentional).
+
+SELECT
+    ffx.base_cncy,
+    ffx.quote_cncy,
+    COUNT(ft.tx_id)                                         AS total_tx,
+    COUNT(fc.cx_id)                                         AS converted_tx,
+    ROUND(COUNT(fc.cx_id)::numeric / COUNT(ft.tx_id), 4)   AS conversion_rate
+FROM analytics.f_transaction ft
+LEFT JOIN analytics.f_conversion fc
+    ON ft.tx_id = fc.tx_id
+LEFT JOIN analytics.f_fx_rate ffx
+    ON fc.fx_id = ffx.fx_id
+GROUP BY
+    ffx.base_cncy,
+    ffx.quote_cncy
+ORDER BY
+    converted_tx DESC;
+    
+    
+-- Q4: Average fee as percent of base amount by company
+-- Join: f_conversion → f_transaction → d_company
+-- Measures fee burden per company — useful for detecting anomalous fee patterns.
+-- Only conversion rows have fees, so this is scoped to converted transactions.
+
+SELECT
+    dc.c_name,
+    COUNT(fc.cx_id)                                             AS conversion_count,
+    ROUND(AVG(fc.fee_amount), 4)                               AS avg_fee_usd,
+    ROUND(AVG(fc.fee_amount / NULLIF(fc.base_amount, 0)) * 100, 4) AS avg_fee_pct
+FROM analytics.f_conversion fc
+JOIN analytics.f_transaction ft
+    ON fc.tx_id = ft.tx_id
+JOIN analytics.d_company dc
+    ON ft.c_id = dc.c_id
+GROUP BY
+    dc.c_id,
+    dc.c_name
+ORDER BY
+    avg_fee_pct DESC;
+    
+    
+-- Q5: Running company revenue over time (USD)
+-- Join: f_transaction → d_time → d_company
+-- Buckets revenue by minute, computes cumulative sum per company using a window function.
+-- This is the query that drives the live dashboard refresh graph.
+-- Most sensitive to index availability on d_time — expect the largest before/after delta here.
+
+SELECT
+    dc.c_name,
+    date_trunc('minute', dt.t_stamp)            AS minute_bucket,
+    ROUND(SUM(ft.amount), 2)                    AS bucket_revenue_usd,
+    ROUND(SUM(SUM(ft.amount)) OVER (
+        PARTITION BY dc.c_id
+        ORDER BY date_trunc('minute', dt.t_stamp)
+    ), 2)                                        AS running_revenue_usd
+FROM analytics.f_transaction ft
+JOIN analytics.d_time dt
+    ON ft.time_id = dt.time_id
+JOIN analytics.d_company dc
+    ON ft.c_id = dc.c_id
+GROUP BY
+    dc.c_id,
+    dc.c_name,
+    date_trunc('minute', dt.t_stamp)
+ORDER BY
+    dc.c_name,
+    minute_bucket;

@@ -357,7 +357,7 @@ def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 # ── PUBLIC ENTRY POINT ────────────────────────────────────────────────────────
 
-def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
     Normalize a noisy transaction DataFrame into DB-ready canonical form.
 
@@ -379,6 +379,12 @@ def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     logger.info(f"normalize_receipts: starting with {len(df):,} rows")
     df = df.copy()
 
+    # NEW — snapshot raw values before any transformation
+    original_timestamps = df["tx_timestamp"].copy()
+    original_currencies = df["base_cncy"].copy()
+    original_amounts = df["amount"].copy()
+    original_company_ids = df["c_id"].copy()
+
     df = _rename_columns(df)
     df = _parse_timestamps(df)
     df = _resolve_currencies(df)
@@ -389,12 +395,35 @@ def normalize_receipts(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     clean, quarantine = _split_quarantine(df)
 
+    # NEW — noise absorption: count rows where value changed and result is non-null
+    # A changed + non-null value means the pipeline successfully parsed noisy input
+    all_parsed_timestamps = df["tx_timestamp"]
+    all_parsed_currencies = df["base_cncy"]
+    all_parsed_amounts = df["amount"]
+    all_parsed_company_ids = df["c_id"]
+
+    stats = {
+        # Section 1 — volume
+        "input_rows": len(original_timestamps),
+        "clean_rows": len(clean),
+        "quarantine_rows": len(quarantine),
+
+        # Section 4 — noise absorption (changed and successfully parsed)
+        "timestamp_noise_absorbed": int(
+            ((all_parsed_timestamps != original_timestamps) & all_parsed_timestamps.notna()).sum()),
+        "currency_noise_absorbed": int(
+            ((all_parsed_currencies != original_currencies) & all_parsed_currencies.notna()).sum()),
+        "amount_noise_absorbed": int(((all_parsed_amounts != original_amounts) & all_parsed_amounts.notna()).sum()),
+        "company_noise_absorbed": int(
+            ((all_parsed_company_ids != original_company_ids) & all_parsed_company_ids.notna()).sum()),
+    }
+
     logger.info(
         f"normalize_receipts: {len(clean):,} clean rows, "
         f"{len(quarantine):,} quarantined rows"
     )
 
-    return clean, quarantine
+    return clean, quarantine, stats
 
 
 
