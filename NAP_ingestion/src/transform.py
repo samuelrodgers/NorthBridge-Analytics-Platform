@@ -269,8 +269,6 @@ SQL_INSERT_FCONVERSION = """
 
     FROM raw.transaction_event t
 
-    -- LATERAL JOIN: for each conversion transaction, find the
-    -- closest preceding FX rate tick (SQL equivalent of merge_asof)
     JOIN LATERAL (
         SELECT
             f_analytics.fx_id,
@@ -278,19 +276,17 @@ SQL_INSERT_FCONVERSION = """
         FROM raw.fx_rate f_raw
         JOIN analytics.f_fx_rate f_analytics
           ON  f_analytics.rate       = f_raw.rate
-          AND f_analytics.base_cncy  = TRIM(f_raw.base_cncy)
-          AND f_analytics.quote_cncy = TRIM(f_raw.quote_cncy)
-        WHERE TRIM(f_raw.base_cncy)  = TRIM(t.base_cncy)
-          AND TRIM(f_raw.quote_cncy) = TRIM(t.quote_cncy)
-          AND f_raw.fx_timestamp    <= t.tx_timestamp
+          AND f_analytics.base_cncy  = f_raw.base_cncy
+          AND f_analytics.quote_cncy = f_raw.quote_cncy
+        WHERE f_raw.base_cncy   = t.base_cncy
+          AND f_raw.quote_cncy  = t.quote_cncy
+          AND f_raw.fx_timestamp <= t.tx_timestamp
         ORDER BY f_raw.fx_timestamp DESC
         LIMIT 1
     ) matched_fx ON true
 
-    -- Only rows where a conversion is needed (customer paid in foreign currency)
     WHERE t.quote_cncy IS NOT NULL
 
-    -- Idempotency: skip if already converted
     AND NOT EXISTS (
         SELECT 1
         FROM analytics.f_conversion fc
