@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics — DataPlatform</title>
+  <link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ═══ Sidebar ═══ -->
+  <nav class="sidebar">
+    <div class="sb-brand">
+      <div class="sb-brand-name">DataPlatform</div>
+      <div class="sb-brand-sub">Analytics Console</div>
+    </div>
+
+    <div class="sb-section">Overview</div>
+    <a class="sb-item" href="index.html">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/>
+        <rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/>
+      </svg>
+      Dashboard
+    </a>
+
+    <div class="sb-section">Analytics — OLAP</div>
+    <a class="sb-item" href="analytics.html">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <polyline points="1,11 5,7 9,9 15,3"/><polyline points="11,3 15,3 15,7"/>
+      </svg>
+      Transaction volume
+    </a>
+    <a class="sb-item" href="analytics.html#revenue">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <rect x="2" y="8" width="3" height="7"/><rect x="7" y="5" width="3" height="10"/><rect x="12" y="2" width="3" height="13"/>
+      </svg>
+      Revenue by company
+    </a>
+    <a class="sb-item" href="fx.html">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 1.5"/>
+      </svg>
+      FX &amp; conversions
+    </a>
+    <a class="sb-item" href="fx.html#fees">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <circle cx="5" cy="8" r="4"/><circle cx="11" cy="8" r="4"/>
+      </svg>
+      Currency exposure
+    </a>
+
+    <div class="sb-section">Governance</div>
+    <a class="sb-item" href="governance.html">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <path d="M8 1L1 4v5c0 3.3 3 5.7 7 7 4-1.3 7-3.7 7-7V4z"/>
+        <polyline points="5,8 7,10 11,6"/>
+      </svg>
+      Data quality
+      <span class="sb-badge">14</span>
+    </a>
+    <a class="sb-item" href="governance.html#pipeline">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <line x1="8" y1="1" x2="8" y2="6"/><line x1="8" y1="10" x2="8" y2="15"/>
+        <circle cx="8" cy="8" r="2.5"/>
+        <line x1="1" y1="8" x2="5.5" y2="8"/><line x1="10.5" y1="8" x2="15" y2="8"/>
+      </svg>
+      Pipeline status
+    </a>
+
+    <div class="sb-footer">
+      <div class="sb-avatar">AA</div>
+      <div class="sb-user-info">
+        <div class="sb-user-name">alex_analytics</div>
+        <div class="sb-user-role">analyst</div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══ Main ═══ -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="tb-breadcrumb">
+        <span class="tb-breadcrumb-root">dataplatform</span>
+        <span class="tb-breadcrumb-sep">/</span>
+        <a class="tb-breadcrumb-root" href="index.html" style="text-decoration:none">dashboard</a>
+        <span class="tb-breadcrumb-sep">/</span>
+        <span class="tb-breadcrumb-current">Analytics</span>
+      </div>
+      <span class="schema-tag analytics">analytics schema</span>
+      <div class="ticker">
+        <div class="ticker-dot"></div>
+        <span class="ticker-label">LIVE VALUE</span>
+        <span class="ticker-value" id="ticker-value">—</span>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+
+      <!-- Preset view strip -->
+      <div class="view-strip">
+        <a class="view-chip" href="index.html">Overview</a>
+        <a class="view-chip active" href="analytics.html#quarter">This quarter</a>
+        <a class="view-chip active" href="analytics.html#industry">By industry</a>
+        <a class="view-chip" href="fx.html">Multi-currency</a>
+        <a class="view-chip" href="governance.html">Data quality</a>
+        <a class="view-chip" href="governance.html#pipeline">Pipeline</a>
+      </div>
+
+      <!-- ── Q1: Volume by company ── -->
+      <div id="revenue">
+        <div class="section-hdr">
+          <h2>Q1 · Transaction volume by company</h2>
+        </div>
+        <div class="query-ref" style="margin: 8px 0 10px">
+          <div class="query-ref-label">Performance query</div>
+          <div class="query-ref-name">Q1 — star join: f_transaction → d_company</div>
+          <div class="query-ref-desc">Aggregates post-conversion USD amount per company. Baseline query — no window functions, single join, high selectivity on c_id FK. Establishes the performance floor.</div>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div>
+              <div class="card-title">Total volume by company</div>
+              <div class="card-sub">f_transaction JOIN d_company · grouped by c_id</div>
+            </div>
+            <button class="btn primary" title="Export this chart as CSV">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
+              </svg>
+              Export CSV
+            </button>
+          </div>
+          <div class="card-body flush">
+            <!--
+              Superset embed: chart pointed at Q1.
+              Alternatively, replace the table below with a live fetch:
+              fetch('/api/query/q1').then(r => r.json()).then(renderTable)
+            -->
+            <div class="embed-mount" style="min-height:180px" id="q1-mount">
+              <div class="embed-mount-hint">
+                Superset chart mounts here<br>
+                Query: <code>f_transaction JOIN d_company</code> · grouped by company
+              </div>
+            </div>
+
+            <!-- Placeholder table — replace with dynamic data -->
+            <table class="data-table" style="margin-top:1px">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>Industry</th>
+                  <th>Country</th>
+                  <th style="text-align:right">Tx count</th>
+                  <th style="text-align:right">Total volume (USD)</th>
+                  <th style="text-align:right">Avg tx (USD)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- TODO: Replace with API-fetched rows -->
+                <tr>
+                  <td class="mono">Acme Corp</td>
+                  <td class="muted">Finance</td>
+                  <td class="muted">US</td>
+                  <td class="mono" style="text-align:right">3,204</td>
+                  <td class="mono" style="text-align:right">$1,240,800.00</td>
+                  <td class="mono" style="text-align:right">$387.25</td>
+                </tr>
+                <tr>
+                  <td class="mono">Globex Inc</td>
+                  <td class="muted">Manufacturing</td>
+                  <td class="muted">DE</td>
+                  <td class="mono" style="text-align:right">2,891</td>
+                  <td class="mono" style="text-align:right">$980,340.00</td>
+                  <td class="mono" style="text-align:right">$339.10</td>
+                </tr>
+                <tr>
+                  <td class="mono">Initech LLC</td>
+                  <td class="muted">Technology</td>
+                  <td class="muted">US</td>
+                  <td class="mono" style="text-align:right">2,104</td>
+                  <td class="mono" style="text-align:right">$820,600.00</td>
+                  <td class="mono" style="text-align:right">$390.02</td>
+                </tr>
+                <tr>
+                  <td colspan="6" style="text-align:center; padding:10px; color:var(--text-tertiary); font-family:var(--font-mono); font-size:11px">
+                    — replace rows with live data from /api/query/q1 —
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Q2: Volume by fiscal quarter + currency ── -->
+      <div id="quarter">
+        <div class="section-hdr"><h2>Q2 · Volume by fiscal quarter &amp; currency</h2></div>
+        <div class="query-ref" style="margin: 8px 0 10px">
+          <div class="query-ref-label">Performance query</div>
+          <div class="query-ref-name">Q2 — star join: f_transaction → d_time</div>
+          <div class="query-ref-desc">Groups by fiscal quarter and transaction currency. Tests multi-column grouping on a dimension table. fisc_quarter is pre-computed on d_time — no date_trunc needed.</div>
+        </div>
+        <div class="col-2">
+          <div class="card">
+            <div class="card-hdr">
+              <div>
+                <div class="card-title">Volume by fiscal quarter</div>
+                <div class="card-sub">d_time.fisc_quarter · all currencies</div>
+              </div>
+              <button class="btn">
+                <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+                  <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
+                </svg>
+                Export CSV
+              </button>
+            </div>
+            <div class="card-body flush">
+              <div class="embed-mount" style="min-height:160px">
+                <div class="embed-mount-hint">Superset chart · <code>f_transaction → d_time</code><br>grouped by <code>fisc_quarter</code></div>
+              </div>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Fiscal quarter</th>
+                    <th>Currency</th>
+                    <th style="text-align:right">Tx count</th>
+                    <th style="text-align:right">Total (USD)</th>
+                    <th style="text-align:right">Avg (USD)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="mono">Q1</td><td class="mono">USD</td>
+                    <td class="mono" style="text-align:right">1,840</td>
+                    <td class="mono" style="text-align:right">$712,400</td>
+                    <td class="mono" style="text-align:right">$387.17</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">Q1</td><td class="mono">EUR</td>
+                    <td class="mono" style="text-align:right">922</td>
+                    <td class="mono" style="text-align:right">$310,800</td>
+                    <td class="mono" style="text-align:right">$337.09</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">Q2</td><td class="mono">USD</td>
+                    <td class="mono" style="text-align:right">2,100</td>
+                    <td class="mono" style="text-align:right">$830,200</td>
+                    <td class="mono" style="text-align:right">$395.33</td>
+                  </tr>
+                  <tr>
+                    <td colspan="5" style="text-align:center;padding:8px;color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px">— placeholder rows —</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Quarter filter selector (wire to Superset preset or API param) -->
+          <div class="card">
+            <div class="card-hdr">
+              <div class="card-title">Filter by quarter</div>
+            </div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">
+                Select a fiscal quarter to filter all charts on this page. Maps to <code style="font-family:var(--font-mono);font-size:11px;color:var(--text-code)">d_time.fisc_quarter</code>.
+              </p>
+              <!-- Quarter picker — wire onclick to your Superset filter API or URL param -->
+              <div style="display:flex;flex-direction:column;gap:6px" id="quarter-picker">
+                <button class="btn" onclick="setQuarter(1, this)" style="justify-content:flex-start">
+                  <span style="font-family:var(--font-mono)">Q1</span>
+                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Jan – Mar</span>
+                </button>
+                <button class="btn" onclick="setQuarter(2, this)" style="justify-content:flex-start">
+                  <span style="font-family:var(--font-mono)">Q2</span>
+                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Apr – Jun</span>
+                </button>
+                <button class="btn" onclick="setQuarter(3, this)" style="justify-content:flex-start">
+                  <span style="font-family:var(--font-mono)">Q3</span>
+                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Jul – Sep</span>
+                </button>
+                <button class="btn" onclick="setQuarter(4, this)" style="justify-content:flex-start">
+                  <span style="font-family:var(--font-mono)">Q4</span>
+                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Oct – Dec</span>
+                </button>
+                <button class="btn primary" onclick="setQuarter(null, this)" style="justify-content:flex-start;margin-top:4px">
+                  All quarters
+                </button>
+              </div>
+
+              <div style="margin-top:16px">
+                <div class="stat-row">
+                  <span class="stat-row-label">Active filter</span>
+                  <span class="stat-row-value accent mono" id="quarter-label">All</span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-row-label">Filter param</span>
+                  <span class="stat-row-value mono" id="quarter-param" style="font-size:10px;color:var(--text-tertiary)">fisc_quarter = *</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Q5: Running revenue over time ── -->
+      <div id="running-revenue">
+        <div class="section-hdr"><h2>Q5 · Running company revenue over time</h2></div>
+        <div class="query-ref" style="margin: 8px 0 10px">
+          <div class="query-ref-label">Performance query — window function</div>
+          <div class="query-ref-name">Q5 — f_transaction → d_time → d_company · cumulative window</div>
+          <div class="query-ref-desc">
+            Buckets revenue by minute, computes cumulative sum per company using a window function
+            (SUM OVER PARTITION BY c_id ORDER BY minute_bucket). This drives the live dashboard
+            refresh graph. Most sensitive to index availability on d_time — expect the largest
+            before/after delta in performance benchmarks here.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div>
+              <div class="card-title">Running revenue — per company, per minute</div>
+              <div class="card-sub">Window: SUM(amount) OVER (PARTITION BY c_id ORDER BY minute_bucket)</div>
+            </div>
+            <button class="btn primary">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
+              </svg>
+              Export CSV
+            </button>
+          </div>
+          <div class="card-body flush">
+            <!--
+              This is the performance-sensitive chart. Wire to Superset with auto-refresh
+              or directly to your FastAPI endpoint that runs Q5.
+              Recommended: set Superset chart refresh interval to match your ETL cadence.
+            -->
+            <div class="embed-mount" style="min-height:220px">
+              <div class="embed-mount-hint">
+                Superset time-series chart mounts here<br>
+                Query: <code>Q5</code> · minute buckets, cumulative revenue per company<br>
+                Index: <code>idx_f_transaction_time_id</code> on d_time
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Q1 industry breakdown ── -->
+      <div id="industry">
+        <div class="section-hdr"><h2>Industry breakdown</h2><span class="section-sub">— d_company.industry</span></div>
+        <div class="col-2-3">
+          <div class="card">
+            <div class="card-hdr">
+              <div class="card-title">Revenue share by industry</div>
+              <div class="card-sub">f_transaction → d_company · grouped by industry</div>
+            </div>
+            <div class="card-body flush">
+              <div class="embed-mount" style="min-height:160px">
+                <div class="embed-mount-hint">Superset pie/bar chart · <code>d_company.industry</code></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr">
+              <div class="card-title">By HQ country</div>
+              <div class="card-sub">d_company.hq_country</div>
+            </div>
+            <div class="card-body">
+              <!-- Placeholder stat rows — replace with API data -->
+              <div class="stat-row">
+                <span class="stat-row-label">United States</span>
+                <span class="stat-row-value green">$2.1M</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-row-label">Germany</span>
+                <span class="stat-row-value">$980K</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-row-label">United Kingdom</span>
+                <span class="stat-row-value">$640K</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-row-label">Japan</span>
+                <span class="stat-row-value">$420K</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-row-label">Other</span>
+                <span class="stat-row-value muted">$680K</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.content -->
+  </div><!-- /.main -->
+</div><!-- /.shell -->
+
+<script src="shared.js"></script>
+<script>
+// Quarter filter state
+function setQuarter(q, btn) {
+  document.querySelectorAll('#quarter-picker .btn').forEach(b => b.classList.remove('primary'));
+  btn.classList.add('primary');
+  const label = document.getElementById('quarter-label');
+  const param  = document.getElementById('quarter-param');
+  if (q === null) {
+    label.textContent = 'All';
+    param.textContent = 'fisc_quarter = *';
+  } else {
+    label.textContent = 'Q' + q;
+    param.textContent = 'fisc_quarter = ' + q;
+    // TODO: pass q to Superset filter API or re-fetch with ?quarter=q
+  }
+}
+</script>
+</body>
+</html>
