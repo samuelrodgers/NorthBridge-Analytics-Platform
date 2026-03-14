@@ -20,6 +20,10 @@ from synthetic_fx import generate_all_fx_series
 from transactions import generate_transactions
 from loader import get_connection, load_all
 import transform
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
