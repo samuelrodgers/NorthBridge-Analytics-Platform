@@ -287,18 +287,19 @@
 
     async function fetchGuestTokenFromBouncer() {
         try {
-            // Use the Nginx tunnel we built (/api/ is proxied to :8000)
+            // We use /api/get-token so it goes through Nginx (Port 443) 
+            // instead of hitting Port 8000 directly.
             const response = await fetch('https://samrodgers.site/api/get-token');
-            const data = await response.json();
 
-            if (data.token) {
-                return data.token;
-            } else {
-                console.error("Bouncer did not return a token:", data);
-                return null;
+            if (!response.ok) {
+                throw new Error(`Bouncer returned ${response.status}`);
             }
+
+            const data = await response.json();
+            console.log("Token acquired successfully");
+            return data.token;
         } catch (err) {
-            console.error("Failed to reach Bouncer:", err);
+            console.error("Token Fetch Failed:", err);
             return null;
         }
     }
