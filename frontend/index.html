@@ -326,10 +326,13 @@
     }
 
     async function initializeAnalytics() {
-        console.log("Initializing Analytics...");
-        // Dashboards load regardless of DATA_SOURCE
+        console.log("Page loaded. Initializing Superset embeds...");
+
+        // Always embed, regardless of the DATA_SOURCE toggle
         embedDashboard(DASHBOARDS.kpiStrip, 'kpi-strip-mount');
         embedDashboard(DASHBOARDS.main, 'superset-mount');
+
+        console.log("Embed requests sent to Bouncer.");
     }
 
     window.onload = initializeAnalytics;
