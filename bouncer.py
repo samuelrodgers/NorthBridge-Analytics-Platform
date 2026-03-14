@@ -17,27 +17,27 @@ def get_token():
         # 1. Login
         login_url = f"{SUPERSET_URL}/api/v1/security/login"
         auth_payload = {"username": ADMIN_USER, "password": ADMIN_PASS, "provider": "db"}
-        
+
         print(f"DEBUG: Attempting login to {login_url}")
         auth_resp = requests.post(login_url, json=auth_payload)
-        
+
         # Check if the response is actually JSON
         if auth_resp.status_code != 200:
             return {"error": f"Login failed with status {auth_resp.status_code}", "raw": auth_resp.text}
-            
+
         access_token = auth_resp.json().get('access_token')
 
         # 2. Get Guest Token
         headers = {"Authorization": f"Bearer {access_token}"}
         payload = {
-            "user": {"username": "guest", "first_name": "Sam", "last_name": "R"},
+            "user": {"username": "guest", "first_name": "Guest", "last_name": "User"},
             "resources": [{"type": "dashboard", "id": DASHBOARD_ID}],
             "rls": []
         }
-        
+
         r = requests.post(f"{SUPERSET_URL}/api/v1/security/guest_token/", json=payload, headers=headers)
         return r.json()
-        
+
     except Exception as e:
         return {"error": "Bouncer Script Error", "details": str(e)}
 
