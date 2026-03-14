@@ -11,7 +11,7 @@
 
 
 
--- Number of Companies
+-- Companies Tracked
 -- Displays the number of companies with data in the system
 -- Simple big number format, might add links later for quick navigation
 

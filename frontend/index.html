@@ -293,12 +293,23 @@
     // Set this to 'synthetic' for now. Later, change it to 'live'.
     const DATA_SOURCE = 'synthetic'; 
 
+    async function fetchGuestTokenFromBouncer() {
+        // This calls your new bouncer API
+        const response = await fetch('https://samrodgers.site:8000/get-token');
+        const data = await response.json();
+        return data.token;
+    }
+
     async function initializeAnalytics() {
         if (DATA_SOURCE === 'live') {
-            console.log("Attempting to connect to Live Superset...");
-            // This is where the embedDashboard call will go later
+            supersetEmbeddedSdk.embedDashboard({
+                id: "1e555cc9-9a7b-4a58-91d8-563eb178a77e", // Same UUID here
+                supersetDomain: "https://superset.samrodgers.site",
+                mountPoint: document.getElementById("superset-mount"),
+                fetchGuestToken: () => fetchGuestTokenFromBouncer(),
+                dashboardUiConfig: { hideTitle: true, hideTab: true }
+            });
         } else {
-            console.log("Running in Synthetic Mode.");
             loadSyntheticDashboard();
         }
     }
