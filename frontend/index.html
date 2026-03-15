@@ -326,6 +326,25 @@
             },
         });
     }
+    
+    // Force iframe dimensions after SDK injects it
+    // SDK injects asynchronously so we poll until the iframe appears
+    function resizeMount(mountId, width, height) {
+        const mount = document.getElementById(mountId);
+        const observer = new MutationObserver(() => {
+            const iframe = mount.querySelector('iframe');
+            if (iframe) {
+                iframe.style.width = width;
+                iframe.style.height = height;
+                iframe.style.minWidth = width;
+                iframe.style.minHeight = height;
+                observer.disconnect();
+            }
+        });
+        observer.observe(mount, { childList: true, subtree: true });
+    }
+
+resizeMount('kpi-strip-mount', '100%', '150px');
 
     async function initializeAnalytics() {
         console.log("Page loaded. Initializing Superset embeds...");
