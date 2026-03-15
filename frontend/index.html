@@ -334,16 +334,19 @@
         const observer = new MutationObserver(() => {
             const iframe = mount.querySelector('iframe');
             if (iframe) {
-                iframe.style.width = width;
-                iframe.style.height = height;
-                iframe.style.minWidth = width;
-                iframe.style.minHeight = height;
                 observer.disconnect();
+                // Small delay lets Superset finish its initial render before we resize
+                setTimeout(() => {
+                    iframe.style.width = width;
+                    iframe.style.height = height;
+                    iframe.style.minWidth = width;
+                    iframe.style.minHeight = height;
+                }, 300);
             }
         });
         observer.observe(mount, { childList: true, subtree: true });
     }
-
+    
 resizeMount('kpi-strip-mount', '100%', '150px');
 
     async function initializeAnalytics() {
