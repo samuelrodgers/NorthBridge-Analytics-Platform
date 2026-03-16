@@ -3,21 +3,25 @@
 #
 # Run this after main.py has populated raw.fx_rate and raw.transaction_event.
 #
-# Execution order (required by FK constraints and trigger logic):
-#   SEED  (runs once if tables empty):
-#     0. analytics.d_currency    ← FK target for f_fx_rate
-#     1. analytics.d_company     ← FK target for f_transaction
+# Execution order (required by FK constraints):
+#   SEED  (runs once per table if empty):
+#     0. analytics.d_currency          ← FK target for d_industry, f_fx_rate
+#     1. analytics.d_industry          ← FK target for d_company
+#     2. analytics.d_company           ← FK target for f_transaction, f_expense
+#     3. analytics.d_expense_category  ← FK target for f_expense, raw.expense_event
 #   BATCH (runs every transform):
-#     2. analytics.f_fx_rate     ← deduplicated rates; FK target for f_conversion
-#     3. analytics.d_time        ← time dimension; FK target for f_transaction
-#     4. analytics.f_transaction ← one row per tx, amount=0 placeholder
-#     5. analytics.f_conversion  ← fires trg_apply_conversion → sets f_transaction.amount
-#                                   fires trg_validate_conversion_currency → guards integrity
+#     4. analytics.f_fx_rate     ← deduplicated rates; FK target for f_conversion
+#     5. analytics.d_time        ← time dimension; FK target for f_transaction
+#     6. analytics.f_transaction ← one row per tx; amount = native amount - fee
+#     7. analytics.f_conversion  ← additive record of conversion inputs; does not
+#                                   modify f_transaction (apply_conversion trigger
+#                                   has been removed — f_transaction.amount is final
+#                                   on insert and must never be overwritten)
 #
 # Idempotency: every INSERT uses ON CONFLICT DO NOTHING.
 # Re-running this script against the same raw data is safe.
 #
-# Transaction wrapping: steps 2-5 run inside a single BEGIN/COMMIT.
+# Transaction wrapping: batch steps 4-7 run inside a single BEGIN/COMMIT.
 # If any step fails, the entire batch rolls back — no partial analytics state.
 
 import logging
@@ -26,7 +30,7 @@ from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import execute_values
 
-from config import COMPANIES, CURRENCIES
+from config import COMPANIES, CURRENCIES, INDUSTRIES, EXPENSE_CATEGORIES
 
 load_dotenv()
 
@@ -52,12 +56,12 @@ def get_connection():
 
 
 # ============================================================
-# STEP 0 — SEED d_currency
+# SEED STEP 0 — d_currency
 # ============================================================
-# d_currency is a FK target for f_fx_rate (base_cncy, quote_cncy).
-# Must exist before any FX rates can be promoted to analytics.
-# Includes USD even though it never appears as base_cncy in FX pairs —
-# it appears as quote_cncy and must satisfy the FK.
+# d_currency is a FK target for d_industry (display_cncy) and f_fx_rate.
+# Must be seeded first — nothing else can be inserted until currencies exist.
+# USD is included even though it never appears as base_cncy in FX pairs;
+# it is required as quote_cncy and as a valid display_cncy value.
 
 SQL_SEED_CURRENCY = """
     INSERT INTO analytics.d_currency (cncy_code, cncy_name)
@@ -75,14 +79,46 @@ def seed_currencies(cur):
 
 
 # ============================================================
-# STEP 1 — SEED d_company
+# SEED STEP 1 — d_industry
 # ============================================================
-# d_company is a FK target for f_transaction.c_id.
-# c_id here must match the uuid5-derived IDs in config.COMPANIES
-# so that raw.transaction_event.c_id joins correctly.
+# d_industry must be seeded before d_company — d_company.industry_id is a
+# FK to d_industry.industry_id.
+# display_cncy is also a FK to d_currency, so d_currency must exist first.
+
+SQL_SEED_INDUSTRY = """
+    INSERT INTO analytics.d_industry (industry_id, name, display_cncy)
+    VALUES %s
+    ON CONFLICT (industry_id) DO NOTHING
+"""
+
+def seed_industries(cur):
+    rows = [
+        (
+            meta["industry_id"],
+            name,
+            meta["display_cncy"],
+        )
+        for name, meta in INDUSTRIES.items()
+    ]
+    execute_values(cur, SQL_SEED_INDUSTRY, rows)
+    logger.info(f"d_industry: seeded {len(rows)} industries")
+
+
+# ============================================================
+# SEED STEP 2 — d_company
+# ============================================================
+# d_company is a FK target for f_transaction.c_id and f_expense.c_id.
+# c_id must match the uuid5-derived IDs in config.COMPANIES so that
+# raw.transaction_event.c_id joins correctly.
+# industry_id is a UUID FK to d_industry — the old plain industry string
+# column no longer exists in the schema.
+#
+# This function reads from the live COMPANIES registry, so any companies
+# added at runtime via config.register_company() are included automatically
+# on the next seed call without restarting the process.
 
 SQL_SEED_COMPANY = """
-    INSERT INTO analytics.d_company (c_id, c_name, industry, hq_country, default_cncy)
+    INSERT INTO analytics.d_company (c_id, c_name, industry_id, hq_country, default_cncy)
     VALUES %s
     ON CONFLICT (c_id) DO NOTHING
 """
@@ -92,7 +128,7 @@ def seed_companies(cur):
         (
             meta["c_uuid"],
             meta["name"],
-            meta["industry"],
+            meta["industry_id"],
             meta["hq_country"],
             meta["default_cncy"],
         )
@@ -103,32 +139,41 @@ def seed_companies(cur):
 
 
 # ============================================================
-# STEP 2 — INSERT f_fx_rate
+# SEED STEP 3 — d_expense_category
 # ============================================================
-# Promotes distinct FX rates from raw into the analytics fact table.
-# We deduplicate on (base_cncy, quote_cncy, rate) — the analytics
-# f_fx_rate stores unique rate values, not a time series.
-# The fx_id generated here is what f_conversion will reference.
-#
-# Note: raw.fx_rate has many ticks per pair (one per 5s).
-# We only promote each unique rate value once.
-# The LATERAL join in step 4 will look up the right fx_id by
-# matching back to rate value + currency pair.
+# d_expense_category must be seeded before f_expense or raw.expense_event
+# rows are generated — both have a NOT NULL FK on category_id.
+# Categories are managed as data (not as a schema enum) so new categories
+# can be added to config.EXPENSE_CATEGORIES without a migration.
 
-SQL_INSERT_FX_RATE = """
-    INSERT INTO analytics.f_fx_rate (rate, base_cncy, quote_cncy)
-    SELECT DISTINCT
-        r.rate,
-        TRIM(r.base_cncy)  AS base_cncy,
-        TRIM(r.quote_cncy) AS quote_cncy
-    FROM raw.fx_rate r
-    ON CONFLICT DO NOTHING
+SQL_SEED_EXPENSE_CATEGORY = """
+    INSERT INTO analytics.d_expense_category (category_id, category_name)
+    VALUES %s
+    ON CONFLICT (category_id) DO NOTHING
 """
 
-# f_fx_rate has no unique constraint defined yet — we rely on
-# the PK (fx_id) being distinct per insert. To make this truly
-# idempotent we need to not re-insert rates already promoted.
-# We guard by checking if the (rate, base_cncy, quote_cncy) combo exists.
+def seed_expense_categories(cur):
+    rows = [
+        (category_id, category_name)
+        for category_name, category_id in EXPENSE_CATEGORIES.items()
+    ]
+    execute_values(cur, SQL_SEED_EXPENSE_CATEGORY, rows)
+    logger.info(f"d_expense_category: seeded {len(rows)} categories")
+
+
+# ============================================================
+# BATCH STEP 4 — f_fx_rate
+# ============================================================
+# Promotes distinct FX rates from raw into the analytics fact table.
+# We deduplicate on (base_cncy, quote_cncy, rate) — analytics.f_fx_rate
+# stores unique rate values, not a full time series.
+# The fx_id generated here is what f_conversion references.
+#
+# Note: raw.fx_rate has many ticks per pair (one per 5s from live_fx.py,
+# or denser from synthetic_fx.py). We only promote each unique rate value
+# once. The LATERAL join in step 6 matches back to the right fx_id by
+# rate value + currency pair.
+
 SQL_INSERT_FX_RATE_SAFE = """
     INSERT INTO analytics.f_fx_rate (rate, base_cncy, quote_cncy)
     SELECT DISTINCT
@@ -153,7 +198,7 @@ def insert_fx_rates(cur):
 
 
 # ============================================================
-# STEP 3 — INSERT d_time
+# BATCH STEP 5 — d_time
 # ============================================================
 # One d_time row per unique transaction timestamp.
 # fisc_quarter: derived from month (Q1=months 1-3, etc.)
@@ -185,40 +230,33 @@ def insert_time_dimension(cur):
 
 
 # ============================================================
-# STEP 4 — INSERT f_transaction
+# BATCH STEP 6 — f_transaction
 # ============================================================
 # One row per raw transaction.
-# amount is set to 0 here — it is a required NOT NULL field,
-# but the real value is written by the apply_conversion() trigger
-# when f_conversion is inserted in step 5.
+# amount = t.amount - COALESCE(t.fee_amount, 0) for every row regardless of
+# whether a currency conversion is involved. f_transaction.amount stores the
+# native recorded currency amount after fee deduction and must never be
+# overwritten (the apply_conversion trigger has been removed).
 #
-# For USD transactions (no conversion needed), amount is set
-# directly here as: amount - fee_amount (no FX multiplication).
+# f_conversion (step 7) records the conversion inputs as an additive audit
+# row but does not touch f_transaction.amount.
 #
-# cncy = the company's default currency (base_cncy on the raw tx).
-# c_id = the uuid5 company ID — must match analytics.d_company.c_id.
-# time_id = FK to d_time, looked up by matching t_stamp to tx_timestamp.
+# cncy    = the base currency of the raw transaction (company's payment currency).
+# c_id    = uuid5 company ID — must match analytics.d_company.c_id.
+# time_id = FK to d_time, matched on exact timestamp.
 
 SQL_INSERT_FTRANSACTION = """
     INSERT INTO analytics.f_transaction (tx_id, amount, c_id, time_id, cncy)
     SELECT
         t.tx_id,
 
-        -- No conversion (quote_cncy IS NULL): amount is already in company currency.
-        -- Set final amount directly as amount - fee.
-        -- Conversion needed (quote_cncy IS NOT NULL): placeholder 0.
-        -- apply_conversion() trigger will overwrite this after f_conversion insert.
-        CASE
-            WHEN t.quote_cncy IS NULL
-            THEN t.amount - COALESCE(t.fee_amount, 0)
-            ELSE 0
-        END                             AS amount,
+        t.amount - COALESCE(t.fee_amount, 0)    AS amount,
 
         t.c_id,
 
         d.time_id,
 
-        TRIM(t.base_cncy)               AS cncy
+        TRIM(t.base_cncy)                        AS cncy
 
     FROM raw.transaction_event t
 
@@ -240,24 +278,25 @@ def insert_transactions(cur):
 
 
 # ============================================================
-# STEP 5 — INSERT f_conversion
+# BATCH STEP 7 — f_conversion
 # ============================================================
-# One row per non-USD transaction.
-# Inserting here fires two triggers in order:
+# One row per transaction that involved a currency conversion
+# (i.e. raw.transaction_event.quote_cncy IS NOT NULL).
 #
-#   1. trg_validate_conversion_currency (BEFORE INSERT)
-#      Checks that f_transaction.cncy matches f_fx_rate.quote_cncy.
-#      Raises exception if mismatch — protects against wrong FX rate.
+# f_conversion is a purely additive audit table — it records the conversion
+# inputs (base_amount, fee_amount, fx_id) alongside the original transaction
+# for reference and downstream reporting. It does NOT modify f_transaction.
 #
-#   2. trg_apply_conversion (AFTER INSERT)
-#      Reads base_amount and fee_amount from the new f_conversion row,
-#      reads rate from f_fx_rate via fx_id,
-#      then UPDATEs f_transaction.amount = (base_amount * rate) - fee_amount.
+# The only trigger that still fires on this table is:
+#   trg_validate_conversion_currency (BEFORE INSERT)
+#     Checks that f_transaction.cncy matches f_fx_rate.base_cncy.
+#     Raises an exception on mismatch — protects against a wrong FX rate
+#     being linked to a transaction.
 #
-# The LATERAL join here is the SQL equivalent of merge_asof —
-# for each transaction, find the most recent FX tick before it.
+# The LATERAL join is the SQL equivalent of merge_asof: for each transaction
+# find the most recent FX tick at or before the transaction timestamp.
 # The composite index on raw.fx_rate(base_cncy, quote_cncy, fx_timestamp)
-# makes this efficient at scale.
+# keeps this efficient at scale.
 
 SQL_INSERT_FCONVERSION = """
     INSERT INTO analytics.f_conversion (base_amount, fee_amount, fx_id, tx_id)
@@ -297,7 +336,7 @@ SQL_INSERT_FCONVERSION = """
 def insert_conversions(cur):
     cur.execute(SQL_INSERT_FCONVERSION)
     count = cur.rowcount
-    logger.info(f"f_conversion: inserted {count} rows (trigger fired for each)")
+    logger.info(f"f_conversion: inserted {count} conversion audit rows")
     return count
 
 
@@ -307,19 +346,46 @@ def insert_conversions(cur):
 
 def run_seed(conn):
     """
-    Seed dimension tables if empty. Safe to call on every run.
-    Checks row count first — skips if already populated.
+    Seed all dimension tables that are required before batch transforms can run.
+    Safe to call on every run — each table is checked individually and skipped
+    if it already has rows, so partial seeds from a previous interrupted run
+    are completed rather than skipped entirely.
+
+    Insertion order is fixed by FK constraints:
+        d_currency → d_industry → d_company → d_expense_category
     """
     with conn.cursor() as cur:
+        # Check each table independently so a partial previous seed is resumed.
         cur.execute("SELECT COUNT(*) FROM analytics.d_currency")
         if cur.fetchone()[0] == 0:
-            logger.info("Seeding dimension tables...")
+            logger.info("Seeding d_currency...")
             seed_currencies(cur)
-            seed_companies(cur)
-            conn.commit()
-            logger.info("Seed complete.")
         else:
-            logger.info("Dimension tables already seeded — skipping.")
+            logger.info("d_currency already seeded — skipping.")
+
+        cur.execute("SELECT COUNT(*) FROM analytics.d_industry")
+        if cur.fetchone()[0] == 0:
+            logger.info("Seeding d_industry...")
+            seed_industries(cur)
+        else:
+            logger.info("d_industry already seeded — skipping.")
+
+        cur.execute("SELECT COUNT(*) FROM analytics.d_company")
+        if cur.fetchone()[0] == 0:
+            logger.info("Seeding d_company...")
+            seed_companies(cur)
+        else:
+            logger.info("d_company already seeded — skipping.")
+
+        cur.execute("SELECT COUNT(*) FROM analytics.d_expense_category")
+        if cur.fetchone()[0] == 0:
+            logger.info("Seeding d_expense_category...")
+            seed_expense_categories(cur)
+        else:
+            logger.info("d_expense_category already seeded — skipping.")
+
+        conn.commit()
+        logger.info("Seed complete.")
 
 
 def run_transform(conn):
@@ -340,7 +406,7 @@ def run_transform(conn):
 
             logger.info(
                 f"✅ Transform complete — "
-                f"fx_rate: {fx_count}, "
+                f"f_fx_rate: {fx_count}, "
                 f"d_time: {time_count}, "
                 f"f_transaction: {tx_count}, "
                 f"f_conversion: {conv_count}"
