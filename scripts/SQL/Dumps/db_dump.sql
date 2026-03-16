@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict JCoQYV2RCeGag7glMQHyn2fX67HNYLxf2i9PbmecnbSpABbqNZi7mMtjWVnnpFf
+\restrict U4RxpTABvr4zTZCaazfAw90Ss6qlleUjpeCASgb62RH0FCldvc8UwJLUhSHUANE
 
 -- Dumped from database version 18.1
 -- Dumped by pg_dump version 18.1
@@ -36,34 +36,6 @@ CREATE SCHEMA raw;
 
 
 ALTER SCHEMA raw OWNER TO alex_analytics;
-
---
--- Name: apply_conversion(); Type: FUNCTION; Schema: analytics; Owner: alex_analytics
---
-
-CREATE FUNCTION analytics.apply_conversion() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    v_rate numeric(14,7);
-BEGIN
-    -- Get FX rate
-    SELECT rate
-    INTO v_rate
-    FROM analytics.f_fx_rate
-    WHERE fx_id = NEW.fx_id;
-
-    -- Update related transaction amount
-    UPDATE analytics.f_transaction
-    SET amount = (NEW.base_amount * v_rate) - NEW.fee_amount
-    WHERE tx_id = NEW.tx_id;
-
-    RETURN NEW;
-END;
-$$;
-
-
-ALTER FUNCTION analytics.apply_conversion() OWNER TO alex_analytics;
 
 --
 -- Name: validate_conversion_currency(); Type: FUNCTION; Schema: analytics; Owner: alex_analytics
@@ -123,25 +95,85 @@ SET default_table_access_method = heap;
 CREATE TABLE analytics.d_company (
     c_id uuid DEFAULT gen_random_uuid() NOT NULL,
     c_name character varying(60) NOT NULL,
-    industry character varying(60) NOT NULL,
     hq_country character varying(60) NOT NULL,
-    default_cncy character(3) NOT NULL
+    default_cncy character varying(3) NOT NULL,
+    industry_id uuid NOT NULL
 );
 
 
 ALTER TABLE analytics.d_company OWNER TO alex_analytics;
 
 --
+-- Name: COLUMN d_company.default_cncy; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.d_company.default_cncy IS 'Default display currency for this company (BR-006). Must match d_industry.display_cncy unless industry display_cncy is USD (BR-013).';
+
+
+--
+-- Name: COLUMN d_company.industry_id; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.d_company.industry_id IS 'FK to d_industry. Defines the industry this company belongs to (BR-012). Display currency is inherited from d_industry.display_cncy (BR-007).';
+
+
+--
 -- Name: d_currency; Type: TABLE; Schema: analytics; Owner: alex_analytics
 --
 
 CREATE TABLE analytics.d_currency (
-    cncy_code character(3) DEFAULT 'XXX'::character varying NOT NULL,
+    cncy_code character varying(3) DEFAULT 'XXX'::character varying NOT NULL,
     cncy_name character varying(60) NOT NULL
 );
 
 
 ALTER TABLE analytics.d_currency OWNER TO alex_analytics;
+
+--
+-- Name: d_expense_category; Type: TABLE; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE TABLE analytics.d_expense_category (
+    category_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    category_name character varying(60) NOT NULL
+);
+
+
+ALTER TABLE analytics.d_expense_category OWNER TO alex_analytics;
+
+--
+-- Name: TABLE d_expense_category; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON TABLE analytics.d_expense_category IS 'Expense category dimension. One row per category. Managed as data to allow additions without schema migrations (BR-021).';
+
+
+--
+-- Name: d_industry; Type: TABLE; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE TABLE analytics.d_industry (
+    industry_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name character varying(60) NOT NULL,
+    display_cncy character varying(3) NOT NULL
+);
+
+
+ALTER TABLE analytics.d_industry OWNER TO alex_analytics;
+
+--
+-- Name: TABLE d_industry; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON TABLE analytics.d_industry IS 'Industry dimension. One row per industry.';
+
+
+--
+-- Name: COLUMN d_industry.display_cncy; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.d_industry.display_cncy IS 'Display currency inherited by member companies in comparison views (BR-007, BR-008).';
+
 
 --
 -- Name: d_time; Type: TABLE; Schema: analytics; Owner: alex_analytics
@@ -173,18 +205,144 @@ CREATE TABLE analytics.f_conversion (
 ALTER TABLE analytics.f_conversion OWNER TO alex_analytics;
 
 --
+-- Name: f_expense; Type: TABLE; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE TABLE analytics.f_expense (
+    expense_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    amount numeric(18,4) NOT NULL,
+    cncy character varying(3) NOT NULL,
+    c_id uuid NOT NULL,
+    time_id uuid NOT NULL,
+    category_id uuid NOT NULL
+);
+
+
+ALTER TABLE analytics.f_expense OWNER TO alex_analytics;
+
+--
+-- Name: TABLE f_expense; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON TABLE analytics.f_expense IS 'Expense fact table. Grain: one expense event for one company at one point in time (BR-019). USD only until multi-currency support is implemented (BR-022).';
+
+
+--
+-- Name: COLUMN f_expense.amount; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_expense.amount IS 'Expense amount in the recorded currency. Currently expected to be USD (BR-022).';
+
+
+--
+-- Name: COLUMN f_expense.cncy; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_expense.cncy IS 'Currency of the expense amount. FK to d_currency (BR-005).';
+
+
+--
+-- Name: COLUMN f_expense.time_id; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_expense.time_id IS 'FK to d_time. Timestamp is the single source of truth for when the expense occurred, consistent with f_transaction (BR-018).';
+
+
+--
+-- Name: COLUMN f_expense.category_id; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_expense.category_id IS 'FK to d_expense_category. Required â€” every expense must be categorized (BR-020).';
+
+
+--
 -- Name: f_fx_rate; Type: TABLE; Schema: analytics; Owner: alex_analytics
 --
 
 CREATE TABLE analytics.f_fx_rate (
     fx_id uuid DEFAULT gen_random_uuid() NOT NULL,
     rate numeric(14,7) CONSTRAINT f_fx_rate_amount_not_null NOT NULL,
-    base_cncy character(3) NOT NULL,
-    quote_cncy character(3) NOT NULL
+    base_cncy character varying(3) NOT NULL,
+    quote_cncy character varying(3) NOT NULL
 );
 
 
 ALTER TABLE analytics.f_fx_rate OWNER TO alex_analytics;
+
+--
+-- Name: f_industry; Type: TABLE; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE TABLE analytics.f_industry (
+    industry_id uuid NOT NULL,
+    time_id uuid NOT NULL,
+    total_revenue numeric(18,4) NOT NULL,
+    total_expenses numeric(18,4) NOT NULL,
+    net_profit numeric(18,4) NOT NULL,
+    transaction_count integer NOT NULL,
+    avg_revenue_per_co numeric(18,4) NOT NULL,
+    revenue_growth_rate numeric(7,4),
+    company_count smallint NOT NULL
+);
+
+
+ALTER TABLE analytics.f_industry OWNER TO alex_analytics;
+
+--
+-- Name: TABLE f_industry; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON TABLE analytics.f_industry IS 'Industry aggregate fact table. Grain: one row per industry per day (BR-023). Populated by scheduled daily refresh â€” never updated in place (BR-024).';
+
+
+--
+-- Name: COLUMN f_industry.total_revenue; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_industry.total_revenue IS 'Sum of f_transaction.amount across all member companies for the period (BR-025).';
+
+
+--
+-- Name: COLUMN f_industry.total_expenses; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_industry.total_expenses IS 'Sum of f_expense.amount across all member companies for the period (BR-025).';
+
+
+--
+-- Name: COLUMN f_industry.net_profit; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_industry.net_profit IS 'total_revenue minus total_expenses for the period (BR-025).';
+
+
+--
+-- Name: COLUMN f_industry.transaction_count; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_industry.transaction_count IS 'Count of f_transaction rows across all member companies for the period (BR-025).';
+
+
+--
+-- Name: COLUMN f_industry.avg_revenue_per_co; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_industry.avg_revenue_per_co IS 'total_revenue divided by company_count for the period (BR-025).';
+
+
+--
+-- Name: COLUMN f_industry.revenue_growth_rate; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_industry.revenue_growth_rate IS 'Period-over-period percentage change in total_revenue. Computed at refresh time and stored directly. NULL for the first recorded period where no prior period exists (BR-026).';
+
+
+--
+-- Name: COLUMN f_industry.company_count; Type: COMMENT; Schema: analytics; Owner: alex_analytics
+--
+
+COMMENT ON COLUMN analytics.f_industry.company_count IS 'Number of distinct companies contributing to this row. Makes avg_revenue_per_co interpretable and signals membership changes between periods (BR-027).';
+
 
 --
 -- Name: f_transaction; Type: TABLE; Schema: analytics; Owner: alex_analytics
@@ -200,6 +358,23 @@ CREATE TABLE analytics.f_transaction (
 
 
 ALTER TABLE analytics.f_transaction OWNER TO alex_analytics;
+
+--
+-- Name: expense_event; Type: TABLE; Schema: raw; Owner: alex_analytics
+--
+
+CREATE TABLE raw.expense_event (
+    expense_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    c_id uuid NOT NULL,
+    cncy character varying(3) NOT NULL,
+    expense_timestamp timestamp with time zone CONSTRAINT expense_event_timestamp_not_null NOT NULL,
+    amount numeric(18,4) NOT NULL,
+    category_id uuid NOT NULL,
+    ingestion_timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE raw.expense_event OWNER TO alex_analytics;
 
 --
 -- Name: fx_rate; Type: TABLE; Schema: raw; Owner: alex_analytics
@@ -229,7 +404,7 @@ CREATE TABLE raw.transaction_event (
     tx_timestamp timestamp with time zone CONSTRAINT transaction_tx_timestamp_not_null NOT NULL,
     amount numeric(18,4) CONSTRAINT transaction_amount_not_null NOT NULL,
     ingestion_timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    quote_cncy character(3),
+    quote_cncy character varying(3),
     fee_amount numeric(16,4)
 );
 
@@ -240,19 +415,7 @@ ALTER TABLE raw.transaction_event OWNER TO alex_analytics;
 -- Data for Name: d_company; Type: TABLE DATA; Schema: analytics; Owner: alex_analytics
 --
 
-COPY analytics.d_company (c_id, c_name, industry, hq_country, default_cncy) FROM stdin;
-33ca4a23-e4ae-5fd0-ba55-95bc3bee2e1d	Orion Systems	Technology	United States	USD
-3f8c1dd4-1018-58a9-94d6-cb0f2c49c242	BluePeak Analytics	Technology	United States	USD
-7a525a26-1723-5b82-a1b7-00f3554a516c	NexaData Corp	Technology	United States	USD
-8898d0c5-404b-51fc-a757-1e2f90a38163	AlpenMart GmbH	Retail	Germany	EUR
-0ea00bc3-0ff3-5b3d-bafa-05342efa13d0	Nordic Trade AB	Retail	Sweden	SEK
-90579094-cbff-52b6-8163-4feefd85aadb	Louvre Commerce SARL	Retail	France	EUR
-7febeef0-9461-5ca9-9c96-212b487f256e	ZenPay Ltd	Fintech	Singapore	SGD
-28396d03-bff9-54a2-bb02-c9370889ddcd	Kumo Holdings	Fintech	Japan	JPY
-902167aa-1323-5205-87ce-d94a0e3cba04	Pacific Ledger Co	Fintech	Hong Kong	HKD
-e09aa437-45a3-51ee-b775-f305b423ba5e	Andes Logistics	Logistics	Mexico	MXN
-c5553143-ca19-5d8d-aad4-fdc0346ff384	RioSoft Tecnologia	Technology	Brazil	BRL
-f2ea3ad5-4115-5d5c-86de-1fd36e164e37	Patagonia Digital	Logistics	Argentina	USD
+COPY analytics.d_company (c_id, c_name, hq_country, default_cncy, industry_id) FROM stdin;
 \.
 
 
@@ -261,20 +424,22 @@ f2ea3ad5-4115-5d5c-86de-1fd36e164e37	Patagonia Digital	Logistics	Argentina	USD
 --
 
 COPY analytics.d_currency (cncy_code, cncy_name) FROM stdin;
-USD	US Dollar
-EUR	Euro
-GBP	British Pound
-JPY	Japanese Yen
-AUD	Australian Dollar
-CAD	Canadian Dollar
-CHF	Swiss Franc
-SEK	Swedish Krona
-NOK	Norwegian Krone
-MXN	Mexican Peso
-BRL	Brazilian Real
-SGD	Singapore Dollar
-HKD	Hong Kong Dollar
-AED	UAE Dirham
+\.
+
+
+--
+-- Data for Name: d_expense_category; Type: TABLE DATA; Schema: analytics; Owner: alex_analytics
+--
+
+COPY analytics.d_expense_category (category_id, category_name) FROM stdin;
+\.
+
+
+--
+-- Data for Name: d_industry; Type: TABLE DATA; Schema: analytics; Owner: alex_analytics
+--
+
+COPY analytics.d_industry (industry_id, name, display_cncy) FROM stdin;
 \.
 
 
@@ -283,15 +448,6 @@ AED	UAE Dirham
 --
 
 COPY analytics.d_time (time_id, t_stamp, fisc_quarter, day_of_week) FROM stdin;
-c70bb0c5-1867-487f-8d04-3b63aa679a94	2026-03-10 17:53:16.8-04	1	1
-c9f6391e-7e1c-4d25-8d00-1d8dd6fb329c	2026-03-12 17:53:48.605123-04	1	3
-8e523d1d-6a3f-4784-963b-8e9b74b5dc13	2026-03-12 17:53:53.605123-04	1	3
-ff48e316-3191-435a-a45a-b37cc2ba5b02	2026-03-12 17:54:58.605123-04	1	3
-9e865a37-3d84-4bbf-afb2-5f6f73e13f10	2026-03-12 17:57:00-04	1	3
-865808b7-599c-4cfc-8a60-33471fb8f794	2026-03-12 17:57:17.605123-04	1	3
-1e0e298f-10d5-405c-9aba-d82cf9112cee	2026-03-12 17:57:20.605123-04	1	3
-8473f903-88b2-4894-866f-befaa810da6f	2026-03-12 17:59:56.605123-04	1	3
-591a5435-d7a0-4b6a-8f18-384496fb5143	2026-03-12 18:00:42.605123-04	1	3
 \.
 
 
@@ -300,7 +456,14 @@ ff48e316-3191-435a-a45a-b37cc2ba5b02	2026-03-12 17:54:58.605123-04	1	3
 --
 
 COPY analytics.f_conversion (cx_id, base_amount, fee_amount, fx_id, tx_id) FROM stdin;
-56e662ca-7417-4de4-99bb-2399cc47ca02	5646.3900	12.2487	519270bd-b26d-4db6-b58c-c65ba9e344a0	73988a20-37e0-4490-8470-a2e94d5e386c
+\.
+
+
+--
+-- Data for Name: f_expense; Type: TABLE DATA; Schema: analytics; Owner: alex_analytics
+--
+
+COPY analytics.f_expense (expense_id, amount, cncy, c_id, time_id, category_id) FROM stdin;
 \.
 
 
@@ -309,1578 +472,14 @@ COPY analytics.f_conversion (cx_id, base_amount, fee_amount, fx_id, tx_id) FROM 
 --
 
 COPY analytics.f_fx_rate (fx_id, rate, base_cncy, quote_cncy) FROM stdin;
-bd52c6a8-2fd7-43bd-862a-10570410554b	4.9635980	BRL	USD
-b43a948c-bd26-4d8a-9d89-903e48c7b9a2	4.9579411	BRL	USD
-76684436-99ba-4fdc-b024-4532f834eae2	149.5483496	JPY	USD
-844eed57-fc89-4913-9573-b13f8a5b95f7	1.3500701	CAD	USD
-6b7995b8-2f07-4a8a-9fb0-68bd7182ba82	10.3704514	SEK	USD
-87bb4997-38fc-430b-8d37-0a23d41c03f9	10.3603859	SEK	USD
-9e37f5db-a8dc-429f-9fb8-a5309914a277	1.3373814	SGD	USD
-06d66457-1b5a-4113-b97a-9e63f0323177	3.6734727	AED	USD
-bd7d87f9-d9ce-4dc3-add2-c8d70db7b6eb	10.4214807	SEK	USD
-be685e09-bfe5-484d-b928-2e8c36dc481c	1.3370325	SGD	USD
-2b98683d-433d-4b0e-a342-4bd40d21b08a	7.8458222	HKD	USD
-68e80305-a6c3-4f4d-a9b8-7edcd676997f	149.0920327	JPY	USD
-2b32c42d-a4b9-4198-87c3-aef75a700052	1.3501482	CAD	USD
-a7665904-dd8a-47a6-b47a-abcaaad32d51	3.6681762	AED	USD
-f444cf99-9b2f-420f-b991-cab7b8d2e082	3.6801906	AED	USD
-b4eb3cf7-0d08-4d12-b8a9-411726b6263c	3.6748030	AED	USD
-126a75e0-827f-4867-bd1c-d6c3340aca40	1.3366756	SGD	USD
-b8ea4f66-063a-4fd2-9c81-ce7681550fef	0.7901349	GBP	USD
-7cd86adf-30f6-4d5b-8c8c-4c0fdb87d1c6	10.3749212	SEK	USD
-2581088f-0c2d-42a3-96a5-f1d574a6b0d8	10.4001335	SEK	USD
-f18d42e4-c0f4-4c32-a0bb-7237234a5b61	10.6149351	NOK	USD
-310306dc-c1ba-4004-88c3-a0cf71d1b088	0.9102170	EUR	USD
-8e210960-e39f-4e68-b5fc-0e4e03d78b11	17.1370048	MXN	USD
-99b130da-fb25-462d-9b40-be54c6d18702	3.6783020	AED	USD
-be9b247e-4f56-4541-bac4-1ef557ba3360	10.5998106	NOK	USD
-5b2a1b17-d6da-490b-bf95-da958e1e8dd7	0.9181460	EUR	USD
-c53419c0-1888-43fd-a31b-5ffa8892aef8	7.8244636	HKD	USD
-a0057068-ab80-459e-accc-e94972273fad	17.1356975	MXN	USD
-e43007e9-01c5-435f-ac05-fa74077ecb7e	1.3410038	SGD	USD
-76f1c38c-b383-4a50-9086-750444070f59	7.8447343	HKD	USD
-c38f9a4a-f27e-4290-8b52-ff7224609bb5	10.5774611	NOK	USD
-185de20e-fb44-4b53-ba77-fe92bc1f6fcb	7.8477793	HKD	USD
-95f018bb-cdde-45ad-a00a-928111694d39	17.0958680	MXN	USD
-0648dc6c-2244-48bd-ad70-dea857df5abb	10.6318490	NOK	USD
-89746f25-aefc-4be4-a6ed-5a0e9d3169b3	0.8880788	CHF	USD
-ae40698f-722f-4f6f-8403-aa8251e34910	1.3481641	CAD	USD
-f73c2fe4-b65b-4901-b856-18fa3e3db203	10.3858353	SEK	USD
-9ba04fa7-770a-42b8-8ef8-29c1fdad0986	17.1454816	MXN	USD
-348aae2b-2edf-4eaf-a384-f2ba4eb39d84	10.6417613	NOK	USD
-4c1dbed7-33b3-4f41-8034-b0357a7c54d4	3.6713809	AED	USD
-df6cf57b-1a60-4618-a40a-fa7f83f1182e	0.7909213	GBP	USD
-06473f99-3a9e-4ddb-aba0-73609d845549	0.8894733	CHF	USD
-bfea02a2-2f54-41a9-9b3b-7165573a9e0b	0.9201020	EUR	USD
-3f27b6a4-f3f8-4ab1-a55f-9728d9cb3aec	17.1555282	MXN	USD
-6c4e4834-8258-4998-9cea-7622eb8a5417	10.6304183	NOK	USD
-9f526451-fb77-4529-92df-642ff9908a8c	4.9608893	BRL	USD
-9db04faf-dd7f-4305-b531-3eb172c838ab	17.1065010	MXN	USD
-bbffcc58-0143-4412-af17-97929d0a0613	149.3044858	JPY	USD
-3960a869-8b4c-493d-a3ae-91a6e3d81222	17.1384261	MXN	USD
-23856a88-42e9-4c1c-92a7-d914bda57d45	0.8883905	CHF	USD
-58643a1d-dee3-43b5-9fa3-110af23fe331	4.9569407	BRL	USD
-a2d9b833-ad54-4b7f-a281-7f0b7fe484af	0.8909548	CHF	USD
-b85da32e-763d-44e3-be08-7a78e23dcfbc	1.5236233	AUD	USD
-6685925f-1ce0-410d-8778-fab1b6f04289	0.7899675	GBP	USD
-2fa59d46-1454-46b3-8658-decdec41c0ab	7.8224808	HKD	USD
-7d869800-0681-41d1-9103-2e3e5f896fb4	1.3360659	SGD	USD
-c668351c-4c55-4d30-a5c6-6cd43681e2df	10.6314695	NOK	USD
-365015fd-270f-4146-98a7-45b962c4c885	10.3668318	SEK	USD
-a0075886-dbf7-4634-b526-1efee181f844	1.3536017	CAD	USD
-e270a687-d1b7-4f57-b6fb-7fbc778cc5fa	10.5745830	NOK	USD
-9b398ca7-aa09-4b9b-9c77-b9b11930c5d1	17.1192552	MXN	USD
-56d60e33-02b8-4566-83d0-584a1c7b3b4c	3.6757111	AED	USD
-cd46b25d-0836-4790-bd08-ef327f9d7df4	1.5237344	AUD	USD
-9c7f8775-2b0e-47e5-bac1-2714c12210b1	10.6331816	NOK	USD
-ffc24ee8-9080-4750-8e6e-849b6b79ad15	3.6760975	AED	USD
-c026529c-32df-4ee3-a35b-d98901ec6b0d	10.5742554	NOK	USD
-122a0dd1-1e2a-46e4-a71f-e6c5771eb390	3.6713112	AED	USD
-1b5fb3b1-fe3a-43e9-996b-8e35c8b48eee	17.1396530	MXN	USD
-fb5654c5-4cfb-480d-b0ee-7dee8d5ed0c2	0.9099709	EUR	USD
-4c383e31-89ad-4b30-936c-5748f97bcc4a	1.5132172	AUD	USD
-6df23908-5e71-48ed-90f0-ff727fed3176	3.6696940	AED	USD
-3b26902e-5f72-42d4-b731-394eed962260	0.9170937	EUR	USD
-4552aa3e-6b3f-4dc7-8f38-f8f8edd28766	4.9492714	BRL	USD
-40ed7187-f64f-42d4-872a-1e13615569b3	10.5751447	NOK	USD
-3ea4742a-30f6-46fb-91a8-67ac0322aad2	0.8887190	CHF	USD
-c28a430d-cde7-40a0-a7b4-e412f57c356a	7.7953631	HKD	USD
-51f7a800-3770-4aaa-8c76-6ff401439a82	10.6337003	NOK	USD
-a4bb1546-513f-4240-a8ba-32a0f4492bb8	10.4159351	SEK	USD
-5a2daefc-6116-454c-9281-6b547cbf86f3	10.3656014	SEK	USD
-08fa5aa4-17f4-4d3e-8e24-686d172c2538	7.8607374	HKD	USD
-a7a038de-dede-4fa9-a93b-2bf188523383	1.3514419	CAD	USD
-c5506801-c0d4-4c45-987c-a2711c80f632	1.3591031	CAD	USD
-43c9a67f-933a-41c6-976e-0ccd429d0cd4	17.1312805	MXN	USD
-a26cde93-edf9-426e-be7e-d6d5a45dd6dc	7.8476101	HKD	USD
-8d8e6892-2aef-42d4-9832-fac4a925f68d	3.6674953	AED	USD
-233e6f9c-a484-44ee-aa23-2ba8c92e0104	0.7907154	GBP	USD
-06fea1f3-6061-4ba3-b90a-65b87d4018ab	0.7907043	GBP	USD
-93ab86e4-b25c-43f0-8eeb-5b9ce8571310	1.5133897	AUD	USD
-25b369f8-ee8b-419e-ab60-704be0f7200d	1.3501032	CAD	USD
-0b2034e9-ff13-40af-8fbd-07dbf9a55981	7.8563469	HKD	USD
-a157513f-e280-422f-b468-8824e779922c	7.8295652	HKD	USD
-863e993a-79e1-467e-a5c8-92a83fecb2aa	7.8488284	HKD	USD
-a53b316d-b39c-46d1-ad44-864c817d65b9	1.3359729	SGD	USD
-6666cfeb-bfb4-4e8a-aa07-55706213b30c	3.6686015	AED	USD
-fbe6da0b-950c-4341-9f44-16536cc421ff	1.3348549	SGD	USD
-e90ca104-afe8-4f7c-a2a1-c1a948f79fbe	1.3358066	SGD	USD
-ddc95277-ac82-43d5-a46b-90dcf1f4e792	0.9127882	EUR	USD
-84980ace-98c1-4ae4-bd13-99837b10e618	0.8890234	CHF	USD
-7e29b2f7-9210-4646-bdcb-1333bac9b073	4.9605615	BRL	USD
-4c7712c4-85ed-4944-8c6f-9b8cf456f22f	7.8513533	HKD	USD
-bcfaa407-9bee-451e-949e-5e1e4338954d	3.6743006	AED	USD
-7b4d4c22-6b7e-4e9c-8dbb-7cef56c049b2	0.8873214	CHF	USD
-5d7cb416-aa68-41b6-b20e-5480a0b6b328	149.1966798	JPY	USD
-ac8be88f-1685-4782-bdff-25fb3cb13d99	0.8889430	CHF	USD
-9e4c6a0f-19af-4ead-bf1a-3fc6ae6bad47	3.6739154	AED	USD
-de2d67cb-1898-482a-8427-b029f0dbdefb	0.8887968	CHF	USD
-ed61c2a4-f6a4-479c-9f96-78a72f569dde	149.2100386	JPY	USD
-af9fbfe4-058f-4725-b28e-2bb3a4599102	1.3383836	SGD	USD
-12ed3b02-9b45-4a43-a6ce-d55df03470d3	1.5142944	AUD	USD
-84ece4c9-3b37-409b-b24b-21b1a80f0eda	7.8372638	HKD	USD
-bee95a3f-23eb-45f5-bcf9-7fc944a3e72e	1.3510477	CAD	USD
-48f34afd-e26e-438f-8f24-84438b0b2fd4	0.7909226	GBP	USD
-2f4bf3d5-0043-4c4b-ab98-fad44eb85858	10.6544403	NOK	USD
-ad1d8e4e-146d-4e2e-9a51-2835fe0ce5d4	0.7914307	GBP	USD
-f1ffaf9b-0c41-43d6-bee3-651a2ee06ce5	1.5147155	AUD	USD
-c2cff14e-7ea8-4613-986a-4ba79acb2c31	10.4078645	SEK	USD
-99089051-0e29-4c22-8dcd-d1f4ef866ac2	10.3722251	SEK	USD
-667b0abd-051c-458f-bffb-8771944615a4	4.9623519	BRL	USD
-22986292-509c-4d15-9842-1158b05133e0	1.5132175	AUD	USD
-8f5028bb-a482-41b2-9ba6-8357739d9fee	1.3368371	SGD	USD
-ed710fdb-84ec-4004-af69-77a7c1a004d7	1.3392017	SGD	USD
-c8b4e29b-81cd-4ccf-94f3-7bf9dd30bd18	4.9546669	BRL	USD
-122e2916-0d9c-4260-bcdc-d3b97569f308	7.8622448	HKD	USD
-bcec3043-7e19-40b3-9b66-f59bfc8fe58c	17.1118494	MXN	USD
-8eb5e5d2-ff52-497f-8589-8d4cd5aecbe2	7.8527894	HKD	USD
-e8683ccc-70c0-48f1-b95c-112ce7ef20da	17.0983507	MXN	USD
-a7b45247-f6e8-4e2c-8482-a60fe0e79f23	0.9149536	EUR	USD
-f153cad1-e567-4667-93de-ec22a035f3a9	0.7882000	GBP	USD
-b4c10099-7abb-437a-a45c-50f9435f706d	0.7911253	GBP	USD
-1e8296a8-58cf-4d6b-9fdb-c66b68de2485	3.6729397	AED	USD
-beff35dd-d09d-4643-a791-90baa3611264	149.2625918	JPY	USD
-f811fe3d-b697-4f36-8943-d6ebed58b703	4.9669681	BRL	USD
-f93ea03e-f829-41a1-bb86-ff2298390776	1.3502025	CAD	USD
-0b298e5c-2798-48bc-822e-7ba887948a4e	0.8902666	CHF	USD
-ba183537-c5e3-4a38-ac11-00f0fba2a003	1.3355453	SGD	USD
-5f925e4b-3cc3-4bbb-a3f5-b9a5d2811452	7.8483080	HKD	USD
-81e9e947-b806-498d-83f5-1bc7c4104e14	149.0998159	JPY	USD
-19178a3f-4c2f-4622-8335-12050828d172	149.2950914	JPY	USD
-e8add37c-8e9f-4e8e-b572-d7f4420423a2	0.7892147	GBP	USD
-32d26bb1-b5ed-44ce-a51e-f5b8c98371cc	149.3750560	JPY	USD
-85b5a8fd-6f51-44be-9397-ab6503e4047b	0.9104470	EUR	USD
-d48f1c60-2b5b-4ae0-80a2-77c21505b29a	0.7887739	GBP	USD
-f7c22650-d80c-44a2-b042-cfcb21b79964	0.8880934	CHF	USD
-f333e580-fc56-4407-8c9a-7910996a237e	4.9616756	BRL	USD
-73fcfd2c-250a-4775-aea4-7dbb8ccdbf11	0.7903270	GBP	USD
-21415512-beb2-4bf5-8d9c-5ad0ddf1593a	10.3766749	SEK	USD
-4af85a50-6d8a-424c-94bf-0164fe9828a0	0.8883164	CHF	USD
-6433ddd3-65a6-4be7-8e80-1c225186e764	3.6702671	AED	USD
-e8099deb-55b3-435c-8ac2-d45a1cea544d	0.7887732	GBP	USD
-3b074828-5f2f-4e15-935f-277e856e2fcc	7.8479932	HKD	USD
-0fc039d3-8abf-40d2-836a-d9a3789dfcd1	1.5288569	AUD	USD
-2aa37455-754e-4360-a86f-cce6b2dbe20a	1.5153882	AUD	USD
-10309a32-b0b4-4dd2-b173-a446456a064e	0.8877016	CHF	USD
-fe0d2d39-2252-4d92-a44a-98f28a2148a0	7.8512852	HKD	USD
-cd152d35-ecdb-4056-9508-221fc75da6f0	10.6010774	NOK	USD
-56941bd8-9677-4832-be69-183239da89a4	7.8038361	HKD	USD
-994b5351-05cd-473e-9ec6-40c62dafccb9	17.1409490	MXN	USD
-c70175e8-665a-404f-9b8e-40282e7de7d5	149.3545797	JPY	USD
-88db2d9f-e898-4d41-a520-58c4052f5505	1.5161206	AUD	USD
-b5d5931d-ceac-4b81-94ea-06a1b7ec4a46	0.7886893	GBP	USD
-5b86da4b-d012-47f3-95a6-c3a6d2341c5c	10.6430685	NOK	USD
-6bd8ecbf-b720-484a-9014-9189d6d97c5a	0.7891692	GBP	USD
-fa114875-9392-4f88-9037-7d300135815d	17.1732299	MXN	USD
-dad39054-160d-4efc-a37c-ea88545963c2	1.5158952	AUD	USD
-91c66e27-8894-456a-ac77-2d61b25e17c8	1.5145310	AUD	USD
-4f4bbdd3-ad3c-4232-abf6-00f8eb37cbec	4.9554768	BRL	USD
-7c01478f-0659-4f78-ba8e-68d944dfe729	1.3361690	SGD	USD
-44145621-da00-4128-83e9-a0fb180ae8e7	10.6387734	NOK	USD
-293dc3f4-3005-4c8a-a746-9a88a67baf69	1.3369120	SGD	USD
-658fb7b1-77ce-43b9-9d7a-9d38c26a2ec2	1.3485929	CAD	USD
-6c40f597-7258-4213-9b91-c57a74301880	0.8906055	CHF	USD
-2bdf79b0-2bfe-40a9-9f52-771dd7c08694	149.2299513	JPY	USD
-0ba70d0f-8d75-41f6-9027-1c0e0cb2db73	1.3492148	CAD	USD
-3c92fdfb-8e51-4177-b0e5-d4f30bb964c2	0.9196312	EUR	USD
-cdb833fd-483b-4e8a-bd56-57a88cc0d601	1.3357845	SGD	USD
-ce927c30-4809-4927-b49d-b102acc577ae	10.5819579	NOK	USD
-4618ec0d-74f5-4cfb-946b-f42dc2c55bd7	1.3413686	SGD	USD
-1248c61c-e0ea-453c-a660-bbfe8d8b2dee	17.1490412	MXN	USD
-16307652-ff24-4863-b8cb-55331dbd34e7	1.3413995	SGD	USD
-b4029c51-7d5d-4066-894c-0336e19c3293	0.8886273	CHF	USD
-d0a23432-9c66-47f3-a98a-5d4e0d2a0d47	149.4512865	JPY	USD
-8425a3bc-b852-4a96-b923-d4b542e394fe	10.3892579	SEK	USD
-40268485-b844-40c9-9808-f41ffd68a1b0	0.8887872	CHF	USD
-481cb534-879a-40cd-b499-a59c4bc1a8fa	0.9192729	EUR	USD
-72c385f8-9e98-43c8-bc05-9f7a9e454485	10.3970885	SEK	USD
-9eb44930-2d21-4cfa-894e-3948417039b6	4.9743365	BRL	USD
-fcf25541-fa63-4ec4-b8dd-4039cde29f88	0.9145508	EUR	USD
-f371e9b1-1a7d-4694-b56d-92d1bb3cc2e4	4.9511314	BRL	USD
-10fc8892-09ce-45fe-999e-20516879e12d	10.4225832	SEK	USD
-bec52b68-87ac-4217-9603-490e862719b0	0.9126858	EUR	USD
-e4eeda92-f8d9-41cc-8b3c-93066b4522e2	3.6751291	AED	USD
-7afa0101-df2c-4973-8751-3c2e1b0bb24d	4.9589546	BRL	USD
-24280567-445a-45a5-8b94-d2b8e6431591	149.2943666	JPY	USD
-05ab2d93-527e-4d49-b6f2-5753a158df75	0.9196237	EUR	USD
-564986a1-d12f-4096-8e49-76e16dc97401	149.4538065	JPY	USD
-f9a4919d-861e-4c35-9e1f-94916217bfe9	0.7886996	GBP	USD
-fffc5beb-7b33-4d19-8526-758f2f996b1e	10.6072785	NOK	USD
-fe7df723-eb9b-4392-95b9-596b505232b0	1.3593809	CAD	USD
-305de3c2-dbfe-4bc7-ae20-a75a42eaeb77	7.8510157	HKD	USD
-111d8d4f-248e-41de-bc85-3089c63e29ee	17.0997588	MXN	USD
-67173981-1d07-494b-a124-1c2ce03f6e7f	1.3485427	CAD	USD
-98c336e9-32dd-4f7f-9d08-dfb7b3e7eecb	10.3902373	SEK	USD
-01e86cab-7dd9-4adc-a5dd-3b92949fa276	0.8905948	CHF	USD
-45416c5d-c7e2-494e-abc5-280ae59ebdfc	4.9571645	BRL	USD
-c3d154fc-60a6-490d-a37d-6866543c1a63	0.9164233	EUR	USD
-2684432b-84ac-438a-9f33-a55d4e1ce8e4	1.3369933	SGD	USD
-b1d41281-4e0a-4deb-9497-61e6c86c4afa	0.7887084	GBP	USD
-8d7bcebe-4bd2-426c-8848-17c494bdd924	7.8614893	HKD	USD
-3146c52d-16d4-45e9-bafd-fd94ca7ddf60	10.3646522	SEK	USD
-cfd9f1bb-6f09-41a5-8c97-af72c84baf65	149.4008931	JPY	USD
-e4f35106-ab61-4fb8-afc5-7a47e3364971	10.4041713	SEK	USD
-97d35c22-3b95-492c-a95f-b8fcbf921863	1.3384590	SGD	USD
-1b9ffdcf-fc57-441a-946c-82ed3f14790a	4.9609407	BRL	USD
-6de767f4-03f4-4867-b1d7-e54afcaba250	3.6744785	AED	USD
-5eb52e60-57fa-45bd-8771-76f56488db71	1.3508040	CAD	USD
-6c13adef-7755-4469-9508-0615e10f4ee5	0.7912397	GBP	USD
-447f7cdc-395c-4536-8688-c4744889fafb	149.1818595	JPY	USD
-8ee1eb03-936c-4afd-9b71-cacc1238d547	3.6709247	AED	USD
-654add7a-7257-4969-97d1-fefca7a5a6fb	0.9156146	EUR	USD
-f7bba7c8-ce1b-442b-8543-f689f16018fe	4.9724453	BRL	USD
-e94590d4-cc00-497a-966c-957b80001efa	10.4127817	SEK	USD
-f33a1978-5f94-456b-8057-166b093fd076	7.7976402	HKD	USD
-a5acef9d-1fe1-4503-a993-6ed851d6d54a	3.6655766	AED	USD
-0edea1e2-077c-43ce-b57e-a75312ff4b77	1.5136099	AUD	USD
-5ec5de56-291b-41b1-9252-f9eecdfdffdc	1.5158379	AUD	USD
-9d365185-63be-4b95-80b7-a38d355571f6	10.3918900	SEK	USD
-6fb3a596-bc5b-450f-a1d7-1bce8f3a3088	1.3389488	SGD	USD
-4d74405a-c76b-4dd3-b669-297bba82c847	17.1159230	MXN	USD
-0cee0831-a7d7-40e0-bbce-0f7a87bb5f69	149.3336015	JPY	USD
-9a75cca4-2ee5-4aa8-8095-77eac6f79a67	0.8891250	CHF	USD
-f10b9166-449b-4404-bea0-5ba49db6a16a	0.7910730	GBP	USD
-240864b4-c7ca-478d-ace7-0a3f8f903abb	0.9146259	EUR	USD
-3b45e409-3fa0-4220-8889-f49eff9221ab	7.7920169	HKD	USD
-ff07a816-73fc-4827-bb1c-85193c347c58	17.1413404	MXN	USD
-7fe020bb-6ea0-444d-b950-216c03b8324e	149.1084368	JPY	USD
-0e112895-6626-4d42-abae-fb7f6a891cb1	1.3510514	CAD	USD
-2e5bd540-cdfa-4e94-8408-412dde55dd5d	0.9126816	EUR	USD
-cf526566-bc1d-4ba7-9970-84bd2739926c	10.3578672	SEK	USD
-a9003040-4c20-46c9-9e93-62a0b85e6325	1.3362517	SGD	USD
-1c892ee8-1c55-4a66-b3d7-0956de3eac4e	4.9639210	BRL	USD
-518fc8a0-1e4a-4c51-9511-b5b8f7df4b97	7.8388906	HKD	USD
-9b8bef41-0d61-41e8-9ea9-510d8b717bbd	7.8592372	HKD	USD
-ed099a5c-45d0-4cac-9e22-adcff532e267	0.9117284	EUR	USD
-3cb6d424-0a27-437a-96b5-4e3533617c46	1.3491595	CAD	USD
-07deed63-4217-4cbe-a3d8-40427e7a5450	10.3589046	SEK	USD
-81e596d7-28be-4d21-87b0-50800e3ce610	10.6576741	NOK	USD
-03bd2a79-0a5c-4bd6-8f05-645fa68472d8	1.3491121	CAD	USD
-f6e89997-a05a-40cf-aff2-c68358bf95e1	17.1403343	MXN	USD
-1cdf87fc-feae-453d-8e15-cf541e5850ad	1.3409670	SGD	USD
-d870f692-6d77-42ea-8663-b084a9a839a1	4.9645641	BRL	USD
-0d732c24-637b-4f9d-9bbb-61384f622276	1.3407371	SGD	USD
-3c7d5a03-ea53-4960-a741-2a76ddadf596	1.5150546	AUD	USD
-8bdfc5f8-982b-406a-8a94-56a2cb133c14	149.1620591	JPY	USD
-16c03e44-a991-4f20-a0af-826b5d321264	7.8514396	HKD	USD
-22dfc036-cbd5-4108-9247-7eeba209e329	149.1163222	JPY	USD
-6498ea3c-1458-4944-b800-5c9c88545903	1.3581789	CAD	USD
-29d53927-2010-4233-bcb6-dcbbf4af6b4a	10.4151544	SEK	USD
-84d9c268-fd3d-4cb3-a56b-52dedc3030ed	4.9619102	BRL	USD
-e0789ac2-1053-4445-aa06-4a15b188e35c	10.5871936	NOK	USD
-62d2be9e-4606-4135-a603-952ed938f325	149.3486069	JPY	USD
-29954cb8-7116-4841-8578-93e400f26916	149.5625950	JPY	USD
-a29b7e5b-2778-40c8-b5dd-b5ccf40fe8b2	4.9623692	BRL	USD
-b9b8c949-3262-4238-afac-511d6eaaebc6	10.6244290	NOK	USD
-68b3af2e-5e5e-4d7f-9521-75d50e0d4991	7.8346942	HKD	USD
-c620af0d-c8b4-496c-9da0-fe9de28a118d	4.9686772	BRL	USD
-6d091ef7-4877-4699-9245-1d80bab61038	17.1064896	MXN	USD
-bded3364-65f9-49d6-8cfa-88146a523527	3.6700649	AED	USD
-71d2ffb3-9959-4b36-a4ba-a3e953d13771	0.7906623	GBP	USD
-e78679a0-0c39-4c9c-9587-3ee695ab5576	7.8241188	HKD	USD
-ab118597-27e0-4848-9ca8-502a45709c02	10.6409630	NOK	USD
-193b4468-f13c-43d0-9f4b-698ea577f854	1.3495525	CAD	USD
-09e5d27d-fa7d-44a1-b27b-7b5ab53b47b0	1.5279322	AUD	USD
-0ee3a227-8e34-4cdf-8a52-a02344c2734e	17.1435170	MXN	USD
-0ebeaad7-9ed7-4859-8299-5006e66ab29c	0.8896774	CHF	USD
-0b639350-a65b-474a-bc52-0ab34f2c0e33	10.3748310	SEK	USD
-0eb53d61-392f-483c-b506-898f109d1389	149.3207748	JPY	USD
-bdf269f8-22ef-4e75-aae4-6906cb284453	10.6361396	NOK	USD
-e1cb3e63-c95d-449c-a5e5-70bd003e47b3	0.9140401	EUR	USD
-c7d6c4a7-2753-4364-8a92-90433f8a7f60	10.3958261	SEK	USD
-4c98de49-e017-4efe-9b10-2f4a16918e9d	0.9094193	EUR	USD
-f5e28fc1-def3-4fb9-9a89-92df925fc56b	3.6695701	AED	USD
-021f2387-f16c-44d5-89c0-81ea26775781	0.7899545	GBP	USD
-647c4075-6769-4326-87cb-2ffe599b6bfa	0.9095000	EUR	USD
-3c112d47-991c-488b-aa59-b2f283bd95d6	149.3373034	JPY	USD
-a6d0aae8-4afd-49b9-9feb-ff13eab54dfe	3.6674530	AED	USD
-efdd9f07-9c16-402f-bb0d-bde206b63ddc	3.6802637	AED	USD
-2e2517f9-0c72-4f9a-aca1-5d188266a77f	0.7881080	GBP	USD
-0e8b23c6-580c-4121-a185-335b8774cc1d	7.8310716	HKD	USD
-7277c3a8-affd-427b-b468-7b5f03b6750f	0.8903661	CHF	USD
-be3d0359-e784-4819-8a37-b0c3115cf92d	1.3498264	CAD	USD
-56e90ada-073c-4d51-aab2-cd3490b79433	1.3565780	CAD	USD
-af03ceb4-7c29-40f7-8e48-61ea8b04be43	1.5222185	AUD	USD
-7041892e-5bfb-4fc8-bd38-a2adb973b76e	17.1048887	MXN	USD
-a06eee59-6d12-450a-8169-836fc734ea2e	3.6750086	AED	USD
-8888f1b4-c0e9-4658-9a10-401bca24e320	10.5890867	NOK	USD
-087e6f6c-8669-4ac7-9f17-533bb1d8e3d4	17.0971339	MXN	USD
-9b5c10d2-e66f-44a3-bb30-11feb9a8a0c6	7.8425088	HKD	USD
-bd5fe4b8-3a8b-4888-8c49-8303ef3ae897	7.8427605	HKD	USD
-a836b7bb-4743-4b72-8e44-3c75b01e84a5	3.6744950	AED	USD
-1c44a1a3-0068-46d7-bd54-a1aa3f2714e6	0.8868460	CHF	USD
-81cd8686-b47d-4eca-a3b7-5bf5560fe59c	1.3410660	SGD	USD
-4b4598d0-27eb-4380-a9bd-fa5b3d776597	10.3953992	SEK	USD
-d2f97cea-8e14-459b-a265-39ef221e25be	17.1758319	MXN	USD
-456af31d-192d-498b-8d3f-8a93afb926cd	0.8886118	CHF	USD
-d12b1fd9-c1e7-4ce3-9751-5e9e21e277b2	0.9102887	EUR	USD
-8bbfcef7-1b5d-4041-8eed-b6729f1c5f89	17.1123687	MXN	USD
-0263237f-282c-4e31-8be7-0478ff21fffa	1.5155626	AUD	USD
-c74d6df1-a9e1-4609-ab5d-9a697815317f	0.8886706	CHF	USD
-b7ec48ae-a8cb-429a-8560-83346178676a	0.8881195	CHF	USD
-973be5be-74f3-4648-b789-d4546178321f	7.8547640	HKD	USD
-91d1e5f5-4f98-4d42-9b1b-7613a3c0edbc	0.8889473	CHF	USD
-573cde49-e8a7-4e42-8162-fcfb99760ce8	10.3913062	SEK	USD
-e0a6b86e-70d6-4e25-b743-413e6f32870e	1.5235902	AUD	USD
-23e1315b-9962-4b3f-b204-9a0ba6f9bb59	7.8422443	HKD	USD
-2b30e159-07f4-42af-acd1-a8f5f99d6ca1	0.8899533	CHF	USD
-c8e9d2cd-e53a-4ed1-8ca9-331e7a7a8fae	148.7902617	JPY	USD
-ead830e3-9cf4-4615-9a55-0659525816ae	17.1354933	MXN	USD
-db9b889d-245c-4c3c-b8a4-4927930863ce	10.6467701	NOK	USD
-dfe9bfc4-b77c-4455-9caa-c494612e601b	0.8881169	CHF	USD
-cefed7fd-4c01-466d-aad5-c4b858402d00	4.9672249	BRL	USD
-bf59b99c-0ebb-420f-81d4-e240289c2be2	1.3495777	CAD	USD
-860da6b7-cc4d-4129-a74b-a2416488807b	0.7910712	GBP	USD
-5ce437e2-bd55-4a30-a857-2265d777f68f	1.3481221	CAD	USD
-8cfe5d62-61f4-4575-9c7d-6950aed76eb9	1.5136292	AUD	USD
-559998b2-06d1-4b56-9160-ecb7bff57c8c	1.3357835	SGD	USD
-bf8ca28f-7ab6-4e55-8200-2365fd45270a	10.6455764	NOK	USD
-3f3d9714-4e5a-4231-b736-829722f2f086	1.5240624	AUD	USD
-40ee7d44-4d6c-4808-adf0-949b2a84a99c	1.5287595	AUD	USD
-f8bd5eee-43be-4ffc-a639-11690f32b325	3.6715210	AED	USD
-9918009e-87aa-4230-9141-9bd1c7242c57	0.8877588	CHF	USD
-d30535ae-4021-44e3-b0cf-b52a92765132	7.8393592	HKD	USD
-a6dafbfc-69b3-4671-82f1-0f55c51e7ff7	3.6698760	AED	USD
-499e7595-8fe7-446c-9047-5d517ab26b94	7.8175729	HKD	USD
-df27d79d-4a92-4357-a44c-ad4a1fed07fc	149.2073122	JPY	USD
-530a2d0f-4bd2-426b-825c-9db56fb4009c	10.5871519	NOK	USD
-7d44e634-bed9-4875-b3b5-72763390174b	4.9562630	BRL	USD
-2cace4c7-bac3-4b7c-8649-d9be96ab2f48	10.3925239	SEK	USD
-0548217b-bb7b-4d4d-b94f-b705af41de41	0.9098711	EUR	USD
-7cc554f8-f4b5-43e2-a283-4f6d5436b0a6	4.9540116	BRL	USD
-80823964-6483-491e-9533-713a7c6b1615	3.6729343	AED	USD
-f8a1ace3-80e6-4e69-96e7-d5aa71700f8f	4.9730902	BRL	USD
-fa8c26e6-73a6-443d-ab64-3867448a2443	4.9683107	BRL	USD
-f1504b78-1cfb-49e5-a3a5-3cce02f87166	7.8210805	HKD	USD
-21b92075-9020-46db-a002-76e784e3aa64	3.6707130	AED	USD
-6001beb0-e626-4d0d-987b-48a6906bab07	1.5125936	AUD	USD
-2c049605-ccb5-4da4-afae-007b1eed6758	0.9194201	EUR	USD
-641b7be9-54a2-4e32-a85f-2d48e45f253e	4.9563091	BRL	USD
-4e79ecad-e43e-4024-acaa-a930bdb1d2eb	0.8902295	CHF	USD
-cc118f39-0f32-4799-98e9-97ef77bd3112	4.9541395	BRL	USD
-83f5a6ed-6278-4eef-abe9-e86809ec9c89	7.8032602	HKD	USD
-eb4f2822-1344-4b89-9542-a772f5f531b3	10.6012123	NOK	USD
-7e82a4e6-d0e5-41c8-9f7b-aa67a057a2e7	0.7909445	GBP	USD
-f21ccc75-ca42-48f9-99a3-b713d82dc707	10.4307159	SEK	USD
-f80429b5-daf2-4e74-9255-0ed69f47e8b6	17.1327895	MXN	USD
-d7d7fd3b-190b-4a34-912d-0400f33c8f6f	1.3411991	SGD	USD
-10b5af0a-4547-49db-981c-26a5d519b9bf	17.1470592	MXN	USD
-5aaad384-ab37-4621-914a-0df5ce694395	10.4153794	SEK	USD
-519270bd-b26d-4db6-b58c-c65ba9e344a0	0.9125743	EUR	USD
-98b51e55-9462-44f7-b695-b8dbf34a2472	4.9552966	BRL	USD
-775e4d5a-c216-479d-99b0-c7fad4a4b23d	10.6289359	NOK	USD
-d3de15b0-959d-4a0a-9a37-4957baaa3ecf	17.1548867	MXN	USD
-1950ea75-b2f6-4674-a53b-10349b3a0be8	149.4887702	JPY	USD
-e00628f9-818d-49fb-95bc-b59574bbda8c	0.9190224	EUR	USD
-341f264d-aa1b-48f8-9db2-393934a97f91	10.3711778	SEK	USD
-92691ee7-c6b2-4191-b299-571d624d2b30	7.8471788	HKD	USD
-508fde45-43ff-4d16-bd50-5a3aa6a0c215	4.9580218	BRL	USD
-8885d821-29c5-4b7b-aa06-9a810c7a5f33	0.9145980	EUR	USD
-a0c3e306-bd31-42dc-a93c-5e3a09a08f94	1.5235878	AUD	USD
-0274a2c8-72a6-476e-bd25-84459b26f2b3	1.5232114	AUD	USD
-3df558a6-101e-46ac-82b7-60f6ef96da00	10.4137642	SEK	USD
-1aff7208-eafd-4979-9952-55a991a6f75a	7.8052438	HKD	USD
-02694007-8a86-4490-9a4d-caf368b7ad54	1.5240494	AUD	USD
-ccacd2ab-b94c-4c59-8b02-68b973e82133	0.7906117	GBP	USD
-2887127b-469c-465f-846b-a1ed9e21f78d	3.6706716	AED	USD
-502d6400-bee4-4f20-a2ee-bd25db623aa3	17.1142869	MXN	USD
-e8622de7-84ae-4c43-b116-85f866cd8bb4	17.0999416	MXN	USD
-b97c8440-93d0-4d68-875b-7a62029a3f77	149.1314765	JPY	USD
-71f019e8-5b58-4f3d-a90b-a242bba78510	7.8301714	HKD	USD
-9a78d0ee-3b7b-457a-880a-b8cc2541470e	0.7913314	GBP	USD
-84613d1c-c9ed-4994-b72f-4ca1046c9282	4.9673231	BRL	USD
-36b82b4d-71a6-4f20-a278-20f5f66ee59b	1.3500200	CAD	USD
-70409011-0809-43a2-a056-84951811c4f9	1.3513096	CAD	USD
-53083951-34bf-4e49-9f4f-6feeb0cb9bde	0.8895161	CHF	USD
-774280fa-be79-48a6-8414-734e391902bc	0.7892779	GBP	USD
-cd188160-caba-4225-850a-e1bc2af72848	149.4421770	JPY	USD
-88b8663b-ad01-4577-a28d-9f62ed9e95e4	0.7889432	GBP	USD
-3c07fc0b-fb52-44b8-8408-370091da3415	1.3368583	SGD	USD
-348753db-21fc-4517-84c8-1db321e42344	1.5286019	AUD	USD
-99649504-d21f-4591-87fd-4245acff4579	7.8393404	HKD	USD
-f1717f5c-0ee7-48be-af8d-94a14b127e5f	1.3500861	CAD	USD
-13f3a04c-8245-4bc1-94d1-aec932e64d48	0.9145828	EUR	USD
-e6d3b235-ef46-48d2-a0e2-512cdf873d76	0.9144952	EUR	USD
-93c42789-ac39-4f32-af4e-3d0ae0ec528f	149.5196290	JPY	USD
-c0b3de94-3cb6-4477-a8da-eb6813ba5d18	0.8874725	CHF	USD
-6e47447f-12d9-46d0-8ca8-93086ab15e8f	7.8245059	HKD	USD
-cdfbcb6d-75e3-4988-a386-678235cc43fd	4.9611003	BRL	USD
-0ec647ba-4be3-4930-9c03-b2483e9ae464	4.9611329	BRL	USD
-e1dd63f5-c89a-49bc-bb90-4c5247243d5b	17.1214300	MXN	USD
-57b7f1ff-2c69-4ac7-b8f1-5a6f6e85594f	0.9187325	EUR	USD
-88cce56c-17a8-4e9f-8326-b908b6f9f3e1	149.2684600	JPY	USD
-3b413099-33fb-475a-92f9-ad7901031710	3.6799525	AED	USD
-9d7a2ab3-79f1-4ecd-b7aa-f39b41e9fc2d	0.8858180	CHF	USD
-3c1e918e-3364-4d94-a88f-dd147fc19d4c	1.3495625	CAD	USD
-8960c83b-4774-4611-b8da-bd4dc174a9ee	7.8492200	HKD	USD
-4d3ad177-a718-448b-9fe9-9f389794a41c	1.3390963	SGD	USD
-1c7d62ad-e6a4-45db-8d59-5a3da599aeac	10.3890105	SEK	USD
-50828f16-fe12-4944-8a2a-53436c2355f6	0.7875954	GBP	USD
-601761db-acb3-4b45-a5ce-6c3d49ab0ecb	1.3499432	CAD	USD
-496726ff-167f-46bf-a686-5362ef139f3d	0.8880282	CHF	USD
-c16a232b-9a74-4d61-a1d8-041a6ca233e0	10.6112007	NOK	USD
-dd0b7dbb-0817-4a96-8132-44d0b20235e6	1.5146347	AUD	USD
-f0fada78-f89c-489e-bbe7-fd0ad59ce711	1.5161339	AUD	USD
-c7c255dc-aa84-415c-b6b1-1b95e05279b8	10.4221256	SEK	USD
-5d9c1ee5-60b2-4b56-b1ae-72c31e02bc4e	1.5204377	AUD	USD
-88f31c8c-2ad1-460c-864f-76aa18ad86a9	3.6710414	AED	USD
-11e689a2-d18f-4552-9286-d5313030bc3a	1.3364906	SGD	USD
-01a6dddd-cd1b-40de-9cb1-30f3eb542f20	10.3748550	SEK	USD
-8f360900-a7d8-4102-bf1b-9fd0397bcada	0.9151151	EUR	USD
-fe6834af-50dc-4523-b18a-f0788eef1c42	1.3418936	SGD	USD
-d6a293ed-217b-454c-9772-77a24e257dff	0.7881855	GBP	USD
-55a16227-c3ac-47ea-9646-00bffeb292ba	7.8561257	HKD	USD
-cee12094-c126-4f22-b7e5-46d2a11a3520	0.7896062	GBP	USD
-f5d25c84-13c3-45d0-874d-f7e6ba694d1e	0.8875830	CHF	USD
-447885e9-4321-44f4-b5c7-560cc5e83eb0	0.7905092	GBP	USD
-d97a9d0a-acb5-40fa-9733-fee1db6d7c60	17.1051416	MXN	USD
-47d67334-b4b9-45fa-bbf7-c5725d2f187e	1.3481039	CAD	USD
-b5c34ff4-c053-466b-9982-36f115ab0bd5	4.9668857	BRL	USD
-4dbb2c8c-5d00-4940-bb3b-f90510726c03	149.1794929	JPY	USD
-8459edbe-e9f2-4e2f-8259-00cee89c12b8	4.9659151	BRL	USD
-e5b4e2d4-2cc0-4952-a500-5ef5b9955df9	0.7886090	GBP	USD
-c34bde7c-e742-404b-8e3d-e3da0cc394d8	7.8434489	HKD	USD
-b1da9376-c4c1-4148-b070-785a83953848	0.8893664	CHF	USD
-2899a59d-8f88-4060-93c7-22f5a473cee7	1.5297788	AUD	USD
-5c92b679-281f-40e4-807c-75e982bf286e	149.1656747	JPY	USD
-093475c9-4fa4-4614-8a28-4184b7a3095a	1.3373449	SGD	USD
-a346945d-bf3d-4c69-8e0e-68181cea5869	1.5149170	AUD	USD
-1d8d6af1-f766-4eec-91b6-3b3bd616beb8	1.5154083	AUD	USD
-d5d7f286-4710-46df-a554-4096c62f6500	10.6501384	NOK	USD
-191c43a9-9355-4d2e-aa43-5ed6173f104c	1.3484624	CAD	USD
-8c76d5b7-c625-4760-a922-4241e3e23d92	149.1562252	JPY	USD
-c2ec1d80-ca86-4e4a-aa2e-926d19a2dbb2	149.2216594	JPY	USD
-b521ee2d-2760-40d7-96b2-29bac58c0056	1.5280186	AUD	USD
-c79796fb-74d3-4500-85aa-ac166802a617	1.3375987	SGD	USD
-be0d1cb2-9dcd-4f0f-91ee-ef59d9e2491a	7.8495849	HKD	USD
-2f854f8f-0034-4acf-bbdf-6efc51b3c7aa	10.6044890	NOK	USD
-169b4b42-3dc2-4882-899c-b42d8e92400a	10.6505294	NOK	USD
-6e214d0a-d72d-4aee-8ee8-69ee3da1ebb4	0.9141645	EUR	USD
-8d9edd76-6cfd-4122-b2d2-801e135d7794	7.8527812	HKD	USD
-7ab4fd15-4607-432f-b325-df8257593550	10.3632148	SEK	USD
-88a8e0e3-947d-4dad-a7df-eaf07b949f4c	0.8884752	CHF	USD
-5b0e48fd-f167-46ab-8f4c-0b1c6f570585	149.0277414	JPY	USD
-e7693aa7-e9f6-4cf3-a421-37fe1d78232d	10.5813346	NOK	USD
-1dfbba21-13d5-47d8-a480-c4e46fd3673d	3.6658299	AED	USD
-4547e2cc-96b2-4e63-8bff-249171ac9a9d	149.0275606	JPY	USD
-c1d978a3-ef14-4f1d-9ef4-7b9e7467a1d9	0.8893742	CHF	USD
-bd8ae270-eeb8-4d31-80d3-2feedd10a370	149.0612358	JPY	USD
-547da30e-2015-4527-b27a-2c592efb7e41	1.5157336	AUD	USD
-71840adf-f9e5-4156-9cd2-3c2e7763a908	3.6755862	AED	USD
-56f32da4-b40b-48be-bbd2-9f3671061ed8	17.1312143	MXN	USD
-26c8bbfd-b6a7-472b-90e7-846eebfb10c1	0.7886088	GBP	USD
-08fd53cf-e729-4c73-9016-ad90795cb7b1	149.3488370	JPY	USD
-31dc2b80-8b06-48e8-8d77-731489063f09	10.6230555	NOK	USD
-06842532-791a-448f-944b-972d14b21433	0.8911670	CHF	USD
-3b1db4a6-e8e1-43f0-9e51-0634cb8ffc74	1.3493687	CAD	USD
-14a884c5-34b7-45c6-bb78-72c0c780fcf9	10.3602776	SEK	USD
-405e7ca2-00ae-42bb-9e06-632c80c8cf35	1.3518994	CAD	USD
-a77ff072-e650-43fe-b6cb-d66ec236f1dc	10.4172291	SEK	USD
-774e3919-c987-4c98-b6df-c0e64e3442c2	10.6457996	NOK	USD
-a956345f-7e0a-4fb2-bf08-3cd67280df1b	7.8397793	HKD	USD
-70f046b6-63f3-41bf-a150-425228789db9	1.3482605	CAD	USD
-a3d78076-77f5-4800-a8d0-363ed196e876	3.6741799	AED	USD
-891c5e83-f245-4a5b-a044-cf909f256698	10.4018304	SEK	USD
-502e6a98-84d3-44ab-a2cc-8c55da34b17f	0.7908332	GBP	USD
-dc158090-9a73-4de0-bc28-8676bb2075e5	4.9667856	BRL	USD
-ae8928aa-e474-4d42-b53e-40d997798a52	17.1104793	MXN	USD
-fcac82e1-ff8b-4c13-8303-2f13909835d8	1.3495820	CAD	USD
-92bfe022-a08b-440f-97e1-41421f4439ee	3.6728745	AED	USD
-4b82fb37-9939-426a-bd07-e879a4f2f18a	149.2946971	JPY	USD
-b32c53d3-efda-498e-867a-ba6996248dbd	149.2026835	JPY	USD
-5a290e73-003c-46ed-b20d-532304f62ad2	10.3636453	SEK	USD
-020096c3-b1e4-4a13-8c80-483ddd2dbaa7	0.8886991	CHF	USD
-36bb0d08-1e7f-42f6-9929-69de48b684cd	0.9137961	EUR	USD
-fe9e2827-c629-44e1-a292-1212b02dfe49	0.7915614	GBP	USD
-7341e4a5-3793-46d5-9d0c-d500cdd8d51a	4.9616967	BRL	USD
-243b17ee-6e9e-48cf-aa1c-67df2c50eed8	1.3515026	CAD	USD
-f5615f5f-b566-4351-8997-0f8ede916ff5	4.9680060	BRL	USD
-5edc19e5-7ff0-4238-9c07-333a16ffc4a5	0.9180345	EUR	USD
-9b6e3e62-f7fc-428b-af84-b8ce70104d93	1.5130861	AUD	USD
-8987dfa3-ebd4-412e-8ff3-a54560518afd	1.3403232	SGD	USD
-6240f778-b19e-43b0-a2d5-9ac2a4613c6b	1.3380493	SGD	USD
-9937eee1-bee7-4ab8-bcd0-e71032eef4b8	10.3805821	SEK	USD
-70c21b4e-454b-46f2-8aa6-18e184240503	1.5205710	AUD	USD
-03a514e3-a0e2-43c0-a4c2-102a7e1f9752	1.3534386	CAD	USD
-72b71de9-e7ce-49e0-9022-3bb7fe8c6edd	1.3390829	SGD	USD
-62370127-7224-4df4-b1f9-d96ad5be6396	4.9731776	BRL	USD
-cd2e2362-9064-4cba-92ae-93be0a433df5	10.4081956	SEK	USD
-3110007c-c405-4adf-ab8c-e1e94bad1f98	7.8422211	HKD	USD
-8f927eda-82d9-4bdb-8980-db08f15eb823	148.8427990	JPY	USD
-c34383dc-5e70-4232-b82d-be377eeb29d0	10.6418600	NOK	USD
-bc3ebb9a-e434-499c-b22c-c6df42300b2c	3.6704948	AED	USD
-90d350f0-b4a8-4a89-964a-2418a4d7b085	0.7908078	GBP	USD
-8812ef4f-5f8b-496f-90a4-ff97a45b8133	17.1055554	MXN	USD
-4afa1854-f1ca-4cc8-a7ed-7032c7056c9c	7.8344611	HKD	USD
-7ce89047-9e64-4e7a-aede-ecbd69299aef	10.3872276	SEK	USD
-d38422cc-c7a1-4f69-84c6-653697f1bdf1	17.1499661	MXN	USD
-9807d5c1-29c6-4e98-aa68-29a62e5d7828	7.8593088	HKD	USD
-092ebe7c-209e-4ae2-bac7-c5b65eb22819	148.8425345	JPY	USD
-673ed393-5773-4d02-ac9e-2ee84cdde980	17.1352935	MXN	USD
-7ba1850f-97d3-4f23-8edb-f7878ef0a6d6	17.1012262	MXN	USD
-4ec7e38b-2813-40b7-85c3-af5cd9441041	0.8892799	CHF	USD
-891409ed-6921-48c9-9a1f-7ec149adbce3	148.8947280	JPY	USD
-6d7b41e0-c599-4348-8adb-5bb84a505b48	17.1413051	MXN	USD
-e74fbdfb-c03a-4f7e-b817-5c3d686bbd89	10.3734060	SEK	USD
-3fc31b1f-7ca9-4668-a7c9-24e581e61eb2	1.3503408	CAD	USD
-dfbc6978-c985-444b-b9a2-e98714982e55	1.3350547	SGD	USD
-349ce84c-8b61-4eee-aacd-4624c6c20179	17.1502803	MXN	USD
-41ebf14f-ed53-4ec3-bea2-b438695cb03a	17.1275402	MXN	USD
-653f0215-4f19-4998-ab51-7c715705517c	0.8891061	CHF	USD
-de321ec5-a96b-4140-8b7b-23fbffa9c623	3.6748705	AED	USD
-09ff4620-2b83-4d30-b418-c0080d2c844d	10.6509467	NOK	USD
-86bba54c-f284-4e7f-a334-a959d1b1c582	1.3475903	CAD	USD
-5c903e8f-fbae-4f78-8356-c6bdb49e9636	10.3924901	SEK	USD
-da065aec-e988-4604-8c53-ca08965e2812	3.6686821	AED	USD
-c80861da-9d0a-4a1d-89c7-a6c0d30feea0	3.6695989	AED	USD
-a65550c9-4c11-4252-92df-3bb13eb4a983	1.3506007	CAD	USD
-f8e96197-1ffd-496c-a127-b78c8fe251a1	3.6716684	AED	USD
-f7895215-b4af-4c9a-9bea-b3738763f3c2	7.8418988	HKD	USD
-9437c33b-64be-4bd4-ac42-27397f3f149a	7.8508968	HKD	USD
-a04c963a-10f2-41eb-b638-57a7e96fdb91	0.7905361	GBP	USD
-16c3f230-0603-488f-af99-b9134f4285be	7.8388863	HKD	USD
-4094025a-b89b-4a6e-b303-e555659dfcdf	0.9117253	EUR	USD
-4263c9c4-bfcc-46ca-ae76-07b43933177a	10.5758301	NOK	USD
-42a1ec20-2c6b-46aa-852e-1868bd311387	0.9097795	EUR	USD
-215e5cca-e6fe-4eb4-bcc9-5ca5a1bd619b	0.9124265	EUR	USD
-7221e268-12a6-48a5-8fe6-c58b0202e5c8	0.9099990	EUR	USD
-028d3d4a-a6a8-4b13-b855-f91e57051fb6	17.0863311	MXN	USD
-5cfd0c1e-ff7e-4217-a5a8-6d24b6f2d82b	1.3408945	SGD	USD
-ac8eaa8f-7796-49ce-b132-ab8e0f59a269	4.9679883	BRL	USD
-46a85c68-96ea-4ed8-be0d-aad04839b720	1.3491658	CAD	USD
-f6c77adf-a67e-44f1-9894-90acd83ba508	7.8484922	HKD	USD
-5f3ba366-4d6f-4229-b781-6f044f9e7913	149.4532834	JPY	USD
-ff3e3a4d-a96d-4b85-bb06-79232b2aea43	3.6761138	AED	USD
-fa936e32-7eac-4ce8-912c-8d5cb46f5828	0.8853085	CHF	USD
-e8da04db-6533-4180-bb49-bc8604487a36	10.4174599	SEK	USD
-09ef1817-bd56-4ebf-add6-d2634021a974	149.0338328	JPY	USD
-cbb03f62-c3c6-4253-90db-30ba559749eb	4.9702776	BRL	USD
-bd9e3b06-add0-41d4-882d-3c3c8f6866d4	0.7886223	GBP	USD
-dba9ef2d-3e1a-4082-9e23-80aa45182d3c	1.5187992	AUD	USD
-34dcd562-0a0d-4e51-bd48-6cc920fe4530	0.9091888	EUR	USD
-65ae0f29-5cbe-4ece-bf81-1b861c3f297c	149.3687888	JPY	USD
-6a0b4da5-6a42-44ed-96d8-edaac0c96e84	0.7915630	GBP	USD
-29232ca1-3c20-43d6-b967-97eac92e054b	4.9522645	BRL	USD
-c35a2166-56e3-43cb-b43c-873ea9caf5c5	10.6301417	NOK	USD
-eb64a042-81ac-4544-b0c4-a38fbe305a54	10.6296920	NOK	USD
-1f839284-425d-4e42-98b5-d8f24d535c15	4.9535544	BRL	USD
-1b64493f-6c86-48ab-8f3d-286fd83058f4	0.7888377	GBP	USD
-66f3a156-17dd-48b0-ab26-68c3572dc90c	4.9609506	BRL	USD
-76fa95c3-7632-4799-b3f6-05c6e054bb0a	3.6696021	AED	USD
-6adb0d0a-c23a-41fa-aff0-5824f8bfc4fc	149.5101788	JPY	USD
-23e7b074-2c77-40da-bc53-dcfd0a284d50	1.5246091	AUD	USD
-c95bea30-3c78-4ed6-85ea-e13b37f5bbf5	0.9094412	EUR	USD
-3d1b7b7c-5a37-4f7b-ba73-a45b583b151e	1.3491036	CAD	USD
-06a8c896-bec9-413e-a915-33be2259993f	10.6029943	NOK	USD
-9a73c583-6033-4e89-a327-ed1de7b166b3	10.5805307	NOK	USD
-de67977d-9d14-4f4a-97c7-5c543cf4ee84	3.6754894	AED	USD
-dae4b09d-24b0-47a6-8304-e1b2e57da484	7.8627105	HKD	USD
-bd5b4d53-b84c-4953-aada-db66ab07495f	10.4044439	SEK	USD
-0be97e56-bee6-4770-8bfe-443890def6da	3.6706946	AED	USD
-15e9672a-0344-4bad-97d7-55b9e814fac5	1.3386661	SGD	USD
-61e800af-44d8-4146-b38c-a2fa45fd5374	0.9119610	EUR	USD
-91ea34b3-3f15-4e22-93da-23b3cfa3e608	10.3854405	SEK	USD
-82fe9f24-66ef-4d49-8976-9ccbca76d1c3	4.9580382	BRL	USD
-5812edb6-d335-48b8-967b-3f943ed44842	4.9650721	BRL	USD
-8bf33104-c794-49f5-951d-364c1b7eb59b	10.3728612	SEK	USD
-313e3400-3824-477f-950e-ea9600b5feb6	149.1679297	JPY	USD
-e63259ac-102f-4d65-aa70-2a3420151c8c	7.8361813	HKD	USD
-80e1d196-461e-4d73-9cd9-dfb513a0b13c	10.3551478	SEK	USD
-03d29c49-0330-4d5b-9982-542ca6bd320b	1.3489078	CAD	USD
-bde8f8bb-90bb-4fbe-a993-580f2cfd34d6	17.1088885	MXN	USD
-9ddbf480-31cb-4039-9d5c-77f09081c644	0.9153425	EUR	USD
-9e89c4e5-c81e-404d-aecd-5ceaa7788c47	10.3967952	SEK	USD
-5a66b124-019b-4369-a49f-f6f204a5c273	0.9164154	EUR	USD
-a2e36f0d-edea-41bd-9093-483a57a660cb	149.3762654	JPY	USD
-3d0d2baa-e748-4262-a49f-2ce6f287be8e	1.3515354	CAD	USD
-6afa6af9-f7c3-4b78-9945-08ec933bdd6b	149.4382313	JPY	USD
-c4f3aee8-5bc3-412b-ad37-d540c016ae86	10.6352551	NOK	USD
-93da3681-1528-49b6-b837-d335e8f8cf7c	3.6693877	AED	USD
-0d5ba097-7f50-4498-b66b-8b9719b99ea5	0.8900380	CHF	USD
-ea9a7c97-ff6e-4230-b1df-cce0948d45f0	149.4891591	JPY	USD
-c9dab1ee-dc45-459a-b58d-cc9e7418760c	10.3986349	SEK	USD
-9e47626c-1695-4989-9fc3-7c7d902195ae	0.7897026	GBP	USD
-2e37c01f-fa82-4353-996f-f6b60e61cd19	1.5157551	AUD	USD
-e352eaa2-c586-47fd-a8be-9dc82bc67842	17.1598986	MXN	USD
-af4bfd68-6113-430a-a37c-6e1445f2a381	17.1140738	MXN	USD
-fd2f1f83-8071-4830-b144-b1abca86a10f	4.9666015	BRL	USD
-e16dd2ac-db02-44f4-a1ab-34e3b9efcf14	0.9101594	EUR	USD
-f073fffe-4a14-45f8-8e4f-7169ac7d2c53	1.3377619	SGD	USD
-6db50f5f-1728-4c1a-ae8a-ed9746c4166a	0.8872206	CHF	USD
-9db06dc5-cdd4-4f0a-a52c-f5e6b1085f92	7.8392293	HKD	USD
-8db1982b-90a8-434a-b559-f6fbccfd6d4b	1.5233247	AUD	USD
-856fed5c-e2cc-421a-98f2-0de8e567dd8d	7.8509133	HKD	USD
-8af0f25d-3644-4a17-953c-2943f781344b	0.8882550	CHF	USD
-28f029be-4396-47be-b59e-8ba52b886001	1.3390925	SGD	USD
-6b0cba9a-1ac6-45a5-83f4-a75dd40818d4	0.9140895	EUR	USD
-5bf797eb-29bc-446b-b4fb-a46289346035	0.8904139	CHF	USD
-d0f65bf5-a455-4ba2-a7f9-3f151a36cf0a	10.3905227	SEK	USD
-546b7726-7d47-450c-9cd5-6d1b209c40a0	0.7908943	GBP	USD
-f095a188-4181-498d-8602-79a2679b2a84	7.8570205	HKD	USD
-029e1408-d041-4c58-b432-36a02dcf6f10	1.5125903	AUD	USD
-09fa0f6b-7dc7-4c88-8b77-2293f9d11bd8	7.7994641	HKD	USD
-ffc35dea-8bb4-435c-b6d0-11cf4db02462	0.9119941	EUR	USD
-49ebcfca-fa38-4a46-89df-4406f7bc5298	10.4174816	SEK	USD
-44ca8194-a400-4587-a64d-be6620d47507	1.3505703	CAD	USD
-1810f9a4-876f-46df-8707-6851f786a721	0.7911045	GBP	USD
-e3f69579-505d-4b53-98e6-50b4ceedcc93	4.9560289	BRL	USD
-f0bca3c3-81e9-40fb-80ef-59a8c276fcfd	10.6524772	NOK	USD
-dbb506f3-7624-47b3-9e59-494ca98e5ad8	1.3494109	CAD	USD
-e47976f7-1985-4a05-8869-61831e0241cb	149.2348061	JPY	USD
-7ea092e7-7913-45d5-a9e6-5fdb058ab1e3	17.1152335	MXN	USD
-27286be6-abd9-443a-a424-bdc956225af1	10.3981602	SEK	USD
-4436ccde-c08a-40af-abdd-cb83e454b046	0.8871335	CHF	USD
-7ad622b1-d54b-4484-b933-693c162a9aa6	0.9150734	EUR	USD
-3063c350-6cde-4260-ab27-c1031dd870bf	17.0834068	MXN	USD
-66ddff54-4065-47d3-aecf-763219f0d970	17.1622715	MXN	USD
-ae4faa0c-94cf-4756-8a0d-2406198a88ea	1.3487364	CAD	USD
-fb2773d1-f34f-4b06-9a7e-d758c8dfc9ba	149.1258351	JPY	USD
-025e8d7d-4dd0-47c1-9d9a-4c75ad4a442a	4.9571621	BRL	USD
-73820e9d-ddae-4cdf-8239-2a954e7d5266	3.6733811	AED	USD
-21b0ffca-bed8-4e1f-9ccb-931f276d3267	149.3399312	JPY	USD
-1354188b-e0a1-4fe2-bf80-e38fb5eb63ec	7.8449250	HKD	USD
-ffcb4e5c-c63c-41b5-bb27-253d53fb0278	0.8888537	CHF	USD
-9d1186f0-8ab8-404e-9bf1-4413f9b5b216	1.5160995	AUD	USD
-b26a2478-950d-4872-991b-8540efd71ffb	0.8886592	CHF	USD
-90a64404-64c5-4eae-9503-0db56300b2f3	149.6118950	JPY	USD
-d0540a22-c788-426b-a71a-d5f1ccf9b589	1.5271896	AUD	USD
-78438901-e237-40c8-9f36-0e81ceb8085e	149.4047724	JPY	USD
-260d021b-1e10-4b90-a7a2-0629bae73f3e	4.9712671	BRL	USD
-cef3f52d-ebb2-4fda-9c63-215d2b689d93	17.1313039	MXN	USD
-56192f9e-5d5a-4298-b282-2b4e67434713	0.7905363	GBP	USD
-0d12b9f2-a3c0-4e7a-ad7c-c68773ee2f1d	1.3501190	CAD	USD
-4ae52f23-7242-4fd1-a877-ea5c83e83592	0.8877762	CHF	USD
-0b7c74af-03af-4000-98d0-3c806b333db2	1.3473190	CAD	USD
-da568ea8-4b69-44f2-86a2-6f2e615aa49d	4.9726435	BRL	USD
-941bf4c6-4312-4738-bb4f-6d999e4550c1	1.3413391	SGD	USD
-39e24f7e-905a-48dd-81a0-a61b09a46244	4.9634251	BRL	USD
-ef40ff5f-58fc-483d-b6f8-4cae78f4f475	0.8891574	CHF	USD
-54761f51-46e8-404a-9a24-407723a55241	17.1302312	MXN	USD
-e78bfd61-32da-4068-b538-dce17ad6cac3	1.5242580	AUD	USD
-043189c9-2220-4bc0-9da3-bc2e80e954e4	17.1315986	MXN	USD
-9cb6bbff-e254-4909-93df-013912d64b5c	7.8289117	HKD	USD
-9d925bd9-6614-476c-b5ad-17088c996072	7.8536919	HKD	USD
-b59d2e1f-e550-43d4-b263-31765d3b9c1e	0.7900135	GBP	USD
-c81876ca-17a8-4e55-8cc3-1cecf5525338	0.7894571	GBP	USD
-4ecdc599-acfe-4c95-841b-7ffed7ad5408	1.3505699	CAD	USD
-5b4cbe9b-1e97-48fa-8d3e-97690b1621a7	3.6718326	AED	USD
-323d3545-8b66-4768-9bba-26bdab0cc68f	10.5999662	NOK	USD
-59cdc38b-9816-4c18-910c-84f4017235a6	3.6697199	AED	USD
-97bedd89-9a2b-4684-a2a1-2ec5df1b24f5	1.3361513	SGD	USD
-467dc54d-4f23-445d-a4bc-5cdfcbf7e084	4.9554722	BRL	USD
-167b1df3-4695-4028-977e-70f87b4d3752	0.8876042	CHF	USD
-0dbe1e4c-fea5-4e4e-8821-10a5bd75be12	0.7912901	GBP	USD
-601bd24a-354b-43de-b8ee-9e68876f01ff	10.6607947	NOK	USD
-8eff7f69-ad13-4c72-8b49-7d769f00f158	10.3819339	SEK	USD
-c0a9866f-a101-4071-9296-26d7c197d907	149.2287894	JPY	USD
-ab2f7247-c62b-4dc2-9cc9-dc7ec905bf48	7.8503650	HKD	USD
-aa18aa23-3d02-415f-a321-b86ea67ee48c	7.8306360	HKD	USD
-6828bfd9-922d-4251-b024-c889cff7a23b	10.6284337	NOK	USD
-cb69ba52-cbfd-4d6f-83ba-36857ce3193c	1.5153804	AUD	USD
-d8a61a16-d6a0-43f6-9c3d-933150d769ec	1.3592717	CAD	USD
-62900c2f-637b-42c2-90e3-50cd99cf48d8	0.9178465	EUR	USD
-cc7b04b8-d7f4-4a89-8a0e-06e180e68dd1	0.7903978	GBP	USD
-16c606a4-ee65-4947-93d9-3f1e40ef3e0a	0.9162759	EUR	USD
-681f885d-e36c-4934-8254-e57620dd831e	1.3412903	SGD	USD
-11068970-4e19-42b1-94a5-5189e661b8bb	17.1259521	MXN	USD
-077b473f-c955-4bea-8a52-491e2bfaba7e	10.6006664	NOK	USD
-18b540fb-0ce6-45d4-a4bc-e81034e9a4c6	149.4367447	JPY	USD
-eb9dffca-135a-4afc-93af-1244a6793441	10.4064191	SEK	USD
-84bed62a-89fc-4a64-ae8a-e453c96232ae	1.3500997	CAD	USD
-0845569f-aed2-4cf1-a480-768eaa2f2eb7	1.3487341	CAD	USD
-eff3c87b-af8d-4bae-9961-62057472dc1d	0.9149870	EUR	USD
-791d035c-99f4-4113-8f59-0552c8fb9363	10.3720601	SEK	USD
-96a9d9ca-e85b-48c9-a7dc-11c12ac8b3f7	10.3977180	SEK	USD
-0dbcbf4e-eeb9-4076-8aec-5801f7a80c9c	3.6713103	AED	USD
-797d0d81-e228-4e8c-94c9-8b7a2414f0f9	17.1199580	MXN	USD
-87ccd085-c547-4342-8fcd-653f02bd9022	10.6296689	NOK	USD
-68e7c758-76ae-4577-acc6-130a97d61e81	3.6699619	AED	USD
-b8a60cc7-bc93-4ae6-8908-8d4d6faa2764	3.6686300	AED	USD
-1b0ec055-7b4d-4331-89a9-381b4eaef320	7.8578135	HKD	USD
-cec5b0a9-6615-4639-a1d0-d7861c759f82	1.5235788	AUD	USD
-39b10073-e81b-431a-a4b1-a8745a583fe2	3.6762194	AED	USD
-6eba7635-e5ca-4035-ac35-2b813280af50	1.5235497	AUD	USD
-07dabf3a-e32b-4503-857e-dac6092651ed	4.9718442	BRL	USD
-c1af5d6c-8d01-4b15-a63e-7dc9f5b7f592	7.8618777	HKD	USD
-835d5e65-4434-41c1-8924-15667d01bf37	10.5792909	NOK	USD
-f6dfaa05-06fc-43cb-b90e-969dd4e16156	10.3971836	SEK	USD
-2cde1c48-d92e-43df-95f1-acc7be0eb18b	1.5250091	AUD	USD
-74cf1336-d162-4fd1-b855-a1185587e3ae	10.3955119	SEK	USD
-26f5916f-c420-44dc-be07-716f56a2ea84	1.3496945	CAD	USD
-a0711c1f-ca65-4700-ad5e-375c0dade2af	0.8886327	CHF	USD
-99486c80-94e0-4bd9-b1ff-48cf4fce88ba	1.5235563	AUD	USD
-6b851f73-b5b1-4802-9087-91262a9d4054	17.1199794	MXN	USD
-30fd6319-2abe-485a-be47-d0aa875bdca6	7.8379487	HKD	USD
-78d62267-47aa-4c0f-a0c1-a54be615b1ae	7.8355691	HKD	USD
-e112354e-ac3e-4eb2-8efa-1c45565511cb	10.6176801	NOK	USD
-1cc561df-aba9-41ce-9ddb-587c229e679f	1.3474798	CAD	USD
-6107313b-7e58-4773-a5c6-98656cb9bb35	4.9551182	BRL	USD
-c1412a53-e961-4145-957b-8eed384e5d82	0.9146839	EUR	USD
-8aeb2d81-2575-4c0b-a1cc-fa828ee70cfc	0.7923487	GBP	USD
-91ddd0c5-4e0f-4b3a-965d-9403f699a705	1.3358771	SGD	USD
-31e18179-40d0-49e3-967c-b98be8ce8c25	0.8874902	CHF	USD
-d6be86bb-c84b-49f7-9989-948598c38d1a	0.8880527	CHF	USD
-2a6e85da-7673-4f1a-868d-64c34be9b4fb	1.3505643	CAD	USD
-af1a53bc-d716-4359-a591-da748b6959dc	4.9546144	BRL	USD
-806812bd-ae4c-4bc6-8230-d2523846c414	1.5244686	AUD	USD
-9224649a-6213-46f8-9ccb-3b2c593a4d57	1.5131495	AUD	USD
-c0141d36-a409-4dcc-9bcf-8e974b5bc234	1.5156056	AUD	USD
-51fe956b-93b8-460e-a24d-e558d79e34ef	10.3560173	SEK	USD
-682692bf-2594-4f27-a421-9710ce0d5287	3.6703469	AED	USD
-34169882-4ab2-4ee3-923f-70bb19ae9c71	10.3753413	SEK	USD
-30020ffc-f20c-4d55-bc8f-b5d11f2aed08	4.9541261	BRL	USD
-96fae5fd-e4db-48a1-885b-66356c0ba6f2	10.3806872	SEK	USD
-1c51cf1a-c06d-40eb-8171-f1e9260d0513	1.3415268	SGD	USD
-e03faf88-b18f-433b-8ae2-3edfa45ffd38	1.3411907	SGD	USD
-fd447fbb-5abc-496f-b952-bbb1f14a058d	4.9639368	BRL	USD
-19b560df-ddef-43ca-9e4b-bfd05580be59	4.9552234	BRL	USD
-b6dd9206-d77f-44f9-8753-6de4746c0080	10.5836312	NOK	USD
-a3669ff0-3f05-490e-bd15-d12882fbf63a	10.3695016	SEK	USD
-993490a8-7805-43b1-a15a-69965b8b4cc4	4.9674222	BRL	USD
-6cc95a11-79f1-4264-a0a2-10b9b57f0ba4	0.9128016	EUR	USD
-eb0ce32a-48ee-4912-bbf5-c04813fe813c	17.1485986	MXN	USD
-91eafdcd-296d-446f-a9c5-3c48866f6a93	3.6806947	AED	USD
-210aa0a8-8600-4c30-80ab-a995e18034bf	0.8895412	CHF	USD
-e7d06164-5d34-4811-b9c6-0cd7f21a73c1	1.3402316	SGD	USD
-a35344a9-e2ff-45f6-9c33-13ed7f1d0071	0.7897506	GBP	USD
-52a7d035-3a4d-47c9-9054-3d55b2e19b0f	10.3969724	SEK	USD
-fe826499-b7e9-447d-8606-66ab2113ee54	149.1719003	JPY	USD
-98cedef1-1436-4df4-a0bc-10e283d867d4	1.3406748	SGD	USD
-4f001089-f658-4634-afcd-3108bb8f89bb	149.3608067	JPY	USD
-3a8c5adb-6f8e-499b-b63e-176708db05d1	1.3362609	SGD	USD
-5fd1968b-9110-47ea-a904-d58a2be02578	0.9151685	EUR	USD
-be1f4c7e-b510-4f17-9149-835e1a0e5cb2	1.5184899	AUD	USD
-8e675598-9155-4c78-9d9d-75ee0b9d8a3f	10.3730830	SEK	USD
-0dec6851-3728-4f56-aba2-6d804b82d38a	4.9698452	BRL	USD
-b581f7a5-daa3-4d59-8661-9f31fae42491	10.3607829	SEK	USD
-240c38df-bf84-44d1-95c8-398a8271e569	148.8833365	JPY	USD
-e5611fef-a204-4c89-8e57-ceff0fe84430	148.9070301	JPY	USD
-5f9df62a-dcc1-4e9a-8c6a-204bd988c10a	0.9191015	EUR	USD
-3d2526fd-2324-4edf-bb2f-5750c91d4932	0.7907743	GBP	USD
-947e8c0f-f887-4de0-945b-e1ddb7c2659d	149.1907776	JPY	USD
-1c6b7c95-9b57-4b6f-80dd-377cbc233751	1.3367406	SGD	USD
-71b09899-ace9-4c28-b97c-a5abcf321e51	17.1112992	MXN	USD
-8577aee0-102b-4bf8-9bc6-345826ac55e0	10.3924583	SEK	USD
-22b52a2c-19b8-43e2-ba6b-bc229433dc84	1.5143991	AUD	USD
-e447ef12-cd64-49cb-a333-94261794a8da	17.1469416	MXN	USD
-3b4f1270-2d56-4e3b-8fd8-217a695454b9	0.8905236	CHF	USD
-96326842-5ab5-4736-8078-126e4be0c0dd	0.9122741	EUR	USD
-f822c039-2b36-4ff3-a2f9-7b78a60ffc27	1.3515792	CAD	USD
-b0a38403-1fd8-4060-8416-7f65307d86bd	17.1018363	MXN	USD
-1932e0b4-5cdb-4f87-b17d-67e4bee84f8d	0.9100615	EUR	USD
-e2cc6f53-ffaf-4a22-88f6-6532fe4ad45d	3.6710073	AED	USD
-e3735b29-3f4c-47a5-8c7c-8a2ba62cb1ad	1.3542965	CAD	USD
-c9d38c38-2503-4a36-8347-6b0df06104a2	17.0879668	MXN	USD
-ae4cd790-0c2d-4b06-9e4e-3ae3e3893ec3	10.5792881	NOK	USD
-e34c9bd6-2735-45ad-a53a-cb0da9d2fab1	1.3478971	CAD	USD
-16fb1f68-59fb-4cd2-8ce0-9eef96af8b56	4.9563628	BRL	USD
-548f8fa4-9646-400a-bda2-d1fac7eb3bb9	1.5191749	AUD	USD
-83dd82d2-4637-452f-8af1-ec77f378b49f	10.6222904	NOK	USD
-f26bbd04-1ae3-4f30-ae78-c41fbc1ec732	10.6293382	NOK	USD
-30c59958-6ae2-45cf-9d00-48e9b53a3f5d	7.8444318	HKD	USD
-8827cbe4-4831-4b0b-a924-c677c550cf76	7.8399337	HKD	USD
-6c2338ce-7820-49c2-9767-b6b6407f571a	1.3380370	SGD	USD
-408519d6-7671-4d39-8f0f-0bd8901fbf9e	0.9197135	EUR	USD
-38c6c92c-71cd-4f9c-8924-376aca64ba17	148.9316185	JPY	USD
-41e21d04-06f1-4fec-a072-30b795749eb0	0.8863379	CHF	USD
-6de815e6-c6a7-426f-ac21-2746d4d71af9	3.6689546	AED	USD
-9c7d2c6e-560f-49cd-88ac-cb515f5a461f	0.9141347	EUR	USD
-dc9d29ef-e93b-41d8-958a-1a2074f9b463	1.3505565	CAD	USD
-627cc287-e3de-46ce-a80d-7e3c60ed446c	3.6650947	AED	USD
-de845e25-1a52-40f8-b46b-421543a4d4bd	0.7886107	GBP	USD
-7c470de1-c097-4ea8-a8b0-992bf984cd1b	1.3410364	SGD	USD
-ad8cb7eb-8d2c-4aa8-a7c9-2bc98a803308	149.1346826	JPY	USD
-c7c96738-18a0-4b5c-a5b9-2aead32e9a21	0.8891443	CHF	USD
-710b30a4-89a3-4ed4-aced-342c23513ff3	1.3356913	SGD	USD
-d51bcc21-31e0-4408-aded-8bb5a493ce78	4.9553867	BRL	USD
-ca353b4d-8098-43b8-b022-73e9b5b32893	10.5774084	NOK	USD
-2b8a042f-35a2-48fb-a42a-4471db74cdca	0.9103150	EUR	USD
-fb72c19e-7c26-4404-9d2e-a386e442b2a4	0.8888163	CHF	USD
-427ad60d-46b2-4817-915d-205cb068d5e7	1.3382471	SGD	USD
-831b980a-fab3-4725-834b-dfeadb88b0b4	0.9121490	EUR	USD
-b5980c08-c3aa-4e8c-83bc-b475ce648985	7.8481671	HKD	USD
-8b1ac877-c5c8-447a-80f6-964a954c42bb	7.8015623	HKD	USD
-33afc4f0-18a7-4635-a2a3-db67541a1cf2	0.7875621	GBP	USD
-d4b731c6-7299-4ac3-851c-67c5c353ea5e	3.6690413	AED	USD
-423d7e0e-9976-4037-aa2f-5f919ac54385	7.8623055	HKD	USD
-c00388c8-5865-4315-8134-7766753f3732	0.9182194	EUR	USD
-3579877a-d539-41fc-b234-ad1858c92ac4	1.5239431	AUD	USD
-306e75cc-125d-4852-b9bd-c25e27cf6f88	0.8900961	CHF	USD
-45d4a2bb-2d33-4828-86fc-749e8ecb9e6a	1.3400751	SGD	USD
-fbab7cda-78ef-44e3-8224-da8c56261634	0.8863328	CHF	USD
-39d5b02c-13ce-4818-8f34-322e4933a40d	0.7886637	GBP	USD
-df02ef06-6bfc-4393-8b87-6d457b419e4f	10.3797031	SEK	USD
-a7a5412b-54c5-411a-8d9e-1b861b7683da	1.3351342	SGD	USD
-28844897-01df-424c-96f8-75d7aa052e43	0.9144757	EUR	USD
-286ccf78-ef9c-4a13-998d-c24692ceb19d	10.3969415	SEK	USD
-b7cb2415-18ff-484f-8c4a-72b61877ebaf	10.6297953	NOK	USD
-2aa2cd2b-9353-4069-9607-f3ce596f41ff	1.3386720	SGD	USD
-0aab9642-aa6f-485b-8b16-f9feaebeea31	3.6739863	AED	USD
-331b5195-9d61-4b95-983e-50fe4ffeacee	0.9125649	EUR	USD
-d7ef663f-8c31-43d6-a498-387bd228e932	1.5221262	AUD	USD
-8231d829-9fe2-436e-8dc4-dc8e1199a6c1	10.3778521	SEK	USD
-711d65c1-8ae8-4265-9393-3db89b01787c	3.6801788	AED	USD
-c7a3b3c3-f6c2-46e6-b2e9-152d47317ab3	0.9148602	EUR	USD
-1e2668a3-b55a-42a9-8afe-2b0a75cee469	1.5127935	AUD	USD
-91563116-e892-4cc3-8a4b-f52eb7c0e138	10.4015045	SEK	USD
-8460b022-969a-4919-a88d-1bdb6b574d5f	1.5154332	AUD	USD
-da21693e-2faa-47ec-9120-9b6854a541d6	3.6792617	AED	USD
-686cbc31-3119-4bbe-8a96-14631973ac41	7.8312518	HKD	USD
-208ee742-105f-49e2-9e37-e01ccd98451a	1.3490885	CAD	USD
-d1e357b0-1db4-4e61-9eb2-172426ccb4c8	10.5868359	NOK	USD
-e9d666e0-45e2-45af-9222-0d884f8f1abf	149.0373308	JPY	USD
-6ea851c8-0c62-4876-b7f2-514fe085c4dd	10.6246086	NOK	USD
-b955cb33-fef0-4006-b953-7ec285ae722f	4.9545984	BRL	USD
-2c02dfac-a3a1-478c-975a-728cff177600	4.9672368	BRL	USD
-c1690739-ee8a-46a6-a6e7-4d187019ce04	4.9555394	BRL	USD
-b347ff6c-3ede-44f0-ae43-c3faf03b4d00	149.2215714	JPY	USD
-e8a61cb8-ec27-427f-8e38-d76989dcb736	0.7908751	GBP	USD
-d81142b7-fea7-4bca-88a1-09bdc8e8e4cb	17.1379753	MXN	USD
-b43b98ec-4014-41a5-bac3-7d36424ad6ff	3.6740207	AED	USD
-e6d27982-6d7b-474d-bf5a-c5b42f9da16b	1.5153016	AUD	USD
-2ea65e1b-1936-46bf-ba56-0539f6ea22bc	10.5995485	NOK	USD
-370f8261-c893-441a-91ca-a677fc50da78	4.9634853	BRL	USD
-ca74ff6f-6e43-4eb0-a717-ca38b5e147fa	4.9543055	BRL	USD
-4d03dedf-3eb9-458c-9424-8d27f4f87772	1.3364669	SGD	USD
-084229bb-bb15-4e6c-984d-3f3104540b07	10.4161228	SEK	USD
-7836bbdc-efac-4cd8-a494-d05c660b8abb	1.3355810	SGD	USD
-01c020b2-252d-48c9-acc3-0faa3ffe5c23	149.0471538	JPY	USD
-84a3f5d0-d33c-453a-90dc-e2f2bb46f7b1	1.3600176	CAD	USD
-e72f0cb6-4c79-46fa-89dd-91b3db7ef905	10.6272490	NOK	USD
-ab07ba6e-4b0e-4ed1-9316-d047370eb366	0.9090887	EUR	USD
-ddc27f79-9345-476a-964c-91e9ae457306	7.8439577	HKD	USD
-086a52e5-330e-4ee8-abd0-f7aec940cab5	7.8510086	HKD	USD
-26b5a6f9-d630-4573-bb16-bb36142ed654	0.9117658	EUR	USD
-c54dac47-30b4-41c2-b7b4-e19803c7c36b	1.3584702	CAD	USD
-c3224da1-da66-45ee-af4c-c18a5a3402a7	1.5143455	AUD	USD
-29f0076e-ac90-493d-9d38-0acfd06505a9	1.3480862	CAD	USD
-0d27e5f5-3720-4ebf-80ee-2f642b202b1c	10.6297157	NOK	USD
-03dfff83-4164-4571-b55c-5ccd35f20405	0.7885101	GBP	USD
-deec2a3c-773e-40b1-b306-c278730c98cb	7.8494420	HKD	USD
-d61e963b-1103-4c52-aa51-96a9a5472be4	10.5907723	NOK	USD
-50dbdb08-ecf1-4a1f-bab5-87849c22f3e4	10.6011847	NOK	USD
-5722c2a4-73e1-437a-9416-273f7b722176	4.9635756	BRL	USD
-4d98ce10-9c10-4524-a1d9-b22efdaa5f1d	149.2489971	JPY	USD
-8c67ea5f-365e-449d-9e2e-1e85a76a63aa	10.5902744	NOK	USD
-a3e44f02-0e3a-4653-ad1a-5f8f4138153b	0.8917653	CHF	USD
-ed050126-cbf7-4aee-a429-c0968282e135	1.3586395	CAD	USD
-df93b543-f3ba-448a-a27e-8d8574181869	1.5265568	AUD	USD
-5ffe1476-d405-480c-b595-62ec78eb1dd8	1.3584294	CAD	USD
-4e410afe-b5b8-4b4e-a47f-0e928f31c9fc	10.5734135	NOK	USD
-4bf5825f-b71b-4f23-9d9f-0498df5d8bb6	7.8413160	HKD	USD
-bb3b6110-3d22-4d28-b02f-ec4a5fc561d3	4.9672007	BRL	USD
-b1b4a93e-d312-4a40-bc1e-ec360faa04e0	1.3484740	CAD	USD
-da630d45-73f7-42d0-85c5-5b2dc3a0988f	7.8415203	HKD	USD
-c8533e78-1efb-4cb1-962e-50f1cad6b79a	0.7908376	GBP	USD
-e5cfabab-bfff-498a-91ad-0b7dab292ba5	7.8044856	HKD	USD
-9bab5fda-b069-4ba9-9696-6db00a5b94ed	1.3514505	CAD	USD
-90b16e81-4927-4158-a1e7-62d010d6dbd8	1.3375310	SGD	USD
-422232c8-92cb-418e-82cb-a4bbd2dc540c	1.3381151	SGD	USD
-a33e40ad-e356-4af0-982c-82c7111d8f16	1.3346424	SGD	USD
-c0900984-5410-4200-ae5f-28eb0933b2c6	0.8916170	CHF	USD
-45dca3dd-3be0-4526-9af1-61adf7df560e	149.3331572	JPY	USD
-2b68543f-8711-41d1-9604-bc5745db0d29	10.3954802	SEK	USD
-ac412596-eccc-4ecf-a1a1-d0b0b11c0919	0.9100186	EUR	USD
-abdc1190-2401-40ad-9454-7e2706c98467	0.8876191	CHF	USD
-1fefb7d3-c4e3-4965-807f-8ddf92208960	149.3747537	JPY	USD
-34461548-64ff-4afc-8ea1-ba2c21fa4e45	17.1092026	MXN	USD
-bc9162f9-9a53-40f3-b10c-1f0bcf94accd	7.8494626	HKD	USD
-1111034c-867c-4035-a4fc-7f15c2fd8e41	1.5172080	AUD	USD
-09ccff5f-e24c-4582-96e6-c5a32e3b329e	10.6511480	NOK	USD
-4bfe6b52-fb12-48fc-8ebe-928962514ea7	17.0896795	MXN	USD
-e9b8491d-13db-40a2-b8dc-f3a0860938a2	7.8563452	HKD	USD
-c774d5f9-8cd5-4655-b734-58d9d58ff0b9	0.8857173	CHF	USD
-df72e3d9-e640-469b-b652-4fe6ebf00c2a	10.6521521	NOK	USD
-fae68ec6-0571-417a-a35f-d2c76689fcd9	1.3356598	SGD	USD
-012d2cc5-1d17-4e23-a823-05450670097b	0.7902428	GBP	USD
-94ddfa57-b48c-4628-a56d-65e2ce7c2875	1.3484328	CAD	USD
-d9c7e4dc-7360-4d39-a53b-cfa23ce26d2c	17.1280357	MXN	USD
-c72a9fa7-92c7-462b-a3a0-4bfcbeac40ca	10.6593344	NOK	USD
-c0286b13-aafa-4542-935e-104de1861d45	3.6731925	AED	USD
-db3fc094-df2b-434a-aeca-02d9ca4f8cdc	10.3853202	SEK	USD
-0085ee07-867a-4530-ab3a-dfb44968bc6b	0.9184155	EUR	USD
-8cf11e6e-1e2d-455b-b8e0-11a2c524107c	1.3350771	SGD	USD
-ad11b352-c223-4d5c-b758-485c08705c30	10.6559740	NOK	USD
-ff9036c2-1591-44d2-8415-24dad930ebb8	3.6736158	AED	USD
-fe384800-c207-49cd-8126-8e8bbaf9a44f	149.2753993	JPY	USD
-ca5c890e-b5bb-4783-a253-c584768502b6	1.3544557	CAD	USD
-74add336-ab62-4116-8dce-9e20c33d4eb9	1.3496643	CAD	USD
-1367d975-9dfd-4b3b-9fc0-b682482a30f1	3.6758232	AED	USD
-e47ab792-9c50-4433-a59b-6253bdb5cb91	3.6747844	AED	USD
-41b9b2de-c8b5-4140-8313-9d01c058fd1b	7.7992384	HKD	USD
-30a55e49-36ca-4086-8e13-e42d3b6f6863	1.5233235	AUD	USD
-b5510727-9dd4-4c20-8457-a124ad71bfd4	1.5128589	AUD	USD
-332ecca8-1ac6-4195-b0ec-9f1f0053615f	149.2686074	JPY	USD
-2a20680f-51ac-49c7-b039-6f58b30b98a7	1.3372314	SGD	USD
-406c843a-141f-453d-9c72-e136fa2c54c6	4.9717293	BRL	USD
-01786f17-cdee-4903-a458-5ee985cdd3ef	17.1448504	MXN	USD
-dfd65084-77ce-4339-b345-26b32d67172e	3.6760823	AED	USD
-9fbbf8ab-5a3e-4555-a077-aa1fd5f30d41	10.5879283	NOK	USD
-cd7c300a-c466-4c2c-87db-f404f4f5ff87	3.6695804	AED	USD
-76583450-4abb-40ac-ae0a-78f338be655d	0.9108247	EUR	USD
-1de1fe0e-28e5-43d4-8660-caf9df04d0eb	1.3497625	CAD	USD
-b768f062-a7e0-4b7f-b8c5-e926307ccf78	149.4556109	JPY	USD
-e93f1e79-7b1a-4f70-a0f2-815df4096b7d	10.6099097	NOK	USD
-9a875461-00f3-4663-82fb-277132991a68	3.6712060	AED	USD
-2ea30b48-0a99-4e6b-ac58-390e484f3681	3.6731156	AED	USD
-de723235-9384-44bb-acd0-9301c8e6ac56	7.8004283	HKD	USD
-fb5d5ef9-e2ea-45de-b5d1-ff64699d37bc	3.6641543	AED	USD
-75dea4a1-1883-425f-a08d-603e6975e7db	17.1472423	MXN	USD
-8c596b78-a793-40b8-bc07-90c88d580298	10.6517786	NOK	USD
-321504e4-4701-4ca7-a59e-dbad42b50a63	149.2231136	JPY	USD
-ba07273f-dcd8-4fe0-b581-c191115abe3b	4.9731200	BRL	USD
-f2f23c0a-02b4-4136-856f-a528064dfdec	3.6742486	AED	USD
-eee7d34a-1697-43b0-856c-d971533efcef	10.3905774	SEK	USD
-fdb483ec-271c-456f-a310-9a89254df02a	3.6787602	AED	USD
-fc995031-b2f5-4e80-b76f-f4298a60558e	1.5133306	AUD	USD
-7ff254f0-fde5-43ae-86ae-16789c4968c6	3.6708905	AED	USD
-71dafc71-b1ac-46ca-a161-6f48e5069954	1.3602040	CAD	USD
-89db163b-e575-40b7-8168-102d70752e59	1.3393454	SGD	USD
-7a6af195-c10a-4b22-b0b2-86cee7c49dae	0.9190594	EUR	USD
-07b05bd7-26e6-4957-a561-85712464ea07	149.0671310	JPY	USD
-6558e463-4ca4-44fb-8651-9ecd17adf3a1	17.1523327	MXN	USD
-453d348a-6f3a-4e68-9266-85f3dda96f83	0.8886989	CHF	USD
-2102c84a-c35d-40c2-8ca6-9af21e027df2	7.8382227	HKD	USD
-6ac07c15-6021-4d50-bd4b-cc3fb7f629d2	149.3013606	JPY	USD
-5389c999-2a74-4033-8f99-0191c57af180	1.3497911	CAD	USD
-c1bb20d0-545a-4e1b-aaa9-f60f60b6e20c	149.1504200	JPY	USD
-2d0d491b-927a-41a4-871d-29ba0474c671	1.5227622	AUD	USD
-23eacaf5-05b9-4017-8ba6-12a149811016	0.7901233	GBP	USD
-d37bece7-c1bb-4809-a7c9-3ce1ba8c0d5a	0.7888165	GBP	USD
-580613c3-6fe5-4c34-874c-e68c0fca090d	10.5762732	NOK	USD
-b9aa2bca-173c-44f0-9f9a-e14aa2698538	1.5173868	AUD	USD
-6f30852b-49dd-41d0-a0e0-95be454ae18f	1.3409944	SGD	USD
-0456b610-d1c4-4133-a600-62ba3d511964	1.3407823	SGD	USD
-2d3071b9-8c8a-41fc-a365-5f352080db2f	17.1500790	MXN	USD
-9e3e0afe-6e48-46dd-a6e6-e9c432f92603	1.3358514	SGD	USD
-114cf851-db22-499f-8967-37e2a5959291	10.5885428	NOK	USD
-2e7715aa-6e47-4a80-bc02-7f23c017b28f	3.6795905	AED	USD
-9361a3da-5ed0-4905-9cf6-52a6e17982de	1.5263235	AUD	USD
-9adffb5c-485e-4cab-a492-49986cb4b0c4	17.1123760	MXN	USD
-795fbb1a-f17a-4a23-8e2f-bd487c790192	10.6404895	NOK	USD
-3302ff3f-6141-4630-84b5-4b0d3a69d5ef	10.6342392	NOK	USD
-df259142-bd5a-40ab-99ac-a47b4042b112	0.7893768	GBP	USD
-26ffebd1-a29e-4428-ab83-6cf167a1fa9c	1.5176985	AUD	USD
-e77ddbf7-61f3-4fd5-9b6e-98dc456cbdcd	0.7884848	GBP	USD
-7b37b936-a0a9-4c62-a3e1-b426a3a2f0dd	3.6724964	AED	USD
-d1df7a26-3d04-40c3-8aa8-ccd3c2a607fe	0.8915643	CHF	USD
-48cc0374-4cfe-4b9b-8b38-294c274a8e6a	0.8877000	CHF	USD
-fa2a36cd-d4d6-4332-b24c-9ed4acfbf6f7	3.6758900	AED	USD
-dc1fdf64-025c-435d-855a-b356d31ab70b	1.5282085	AUD	USD
-1c8d46f8-531d-4a4d-96ab-50879baf3a69	149.1066115	JPY	USD
-8b769963-7b15-499d-a201-24a0730543ae	0.8879449	CHF	USD
-317bc2c7-2a52-4029-b2c3-2d8579c3eb88	0.8871416	CHF	USD
-24fcfe24-75bc-411d-aef6-92f0ebb6bafc	10.3799055	SEK	USD
-f149b258-4f47-45b7-904f-4cba40bd1da3	3.6762337	AED	USD
-dd3ec034-470c-4802-9e4d-581ae3f525fa	0.7903605	GBP	USD
-2f86bcc9-7e6e-45c0-9447-8a85d9cd11ec	1.5154132	AUD	USD
-cea05748-b115-445d-b9a4-15f28dcb0543	0.9152167	EUR	USD
-61094b22-93fa-4183-a4b4-7c9b4a961ec1	1.5229310	AUD	USD
-00e4abb0-fa0b-47c1-ace4-52568d658e8f	1.3355189	SGD	USD
-46fcd824-3baf-4c71-b6d9-6b3c936a1531	7.8442664	HKD	USD
-c826258b-42a3-4df1-b172-6a9531da5e53	10.4116903	SEK	USD
-41079781-d831-403a-ae10-f8c552118ba2	1.3519421	CAD	USD
-abcb0b19-5ede-42ea-b1b6-f50fbbfc2853	7.8339084	HKD	USD
-e110ac6c-9f62-489f-af3f-cc1df5cd7251	1.3586248	CAD	USD
-9eef41c4-96d6-41c2-81c7-64e5b3ab491e	10.5729108	NOK	USD
-2875373f-2074-4fdb-9232-e0a757cbc089	1.3386131	SGD	USD
-0dfe507d-3b81-41c9-b978-dbb2ab9f3d0a	0.7889314	GBP	USD
-58b51fc2-d79f-49e5-a1e5-259614e6d966	149.3078443	JPY	USD
-cc876d3c-d282-442d-b1f2-4ea61f7cc5d0	10.4203972	SEK	USD
-ed24ffdf-2023-4951-a075-24e0e725e6df	0.9150637	EUR	USD
-60610528-509b-4f4d-b0ac-6bb2f06ecd4d	0.9184435	EUR	USD
-ded84a6e-6224-48a1-b29e-ccbd19639f24	10.5956706	NOK	USD
-bba845a8-c728-4d1f-9de9-d2e3d524a576	1.3578682	CAD	USD
-9cddd43a-8934-49eb-8cfe-44405d1fcfc7	1.3492070	CAD	USD
-7b06eb6a-1bb7-468d-b670-f49c470a12b6	4.9725792	BRL	USD
-bb76feef-64ea-405b-8a0f-b4f67c9388a8	1.3509700	CAD	USD
-42050531-55d3-4b06-9774-d4d6b42a7e89	10.6361057	NOK	USD
-2ae186d6-3507-450b-b9b9-474ba2f60a64	1.3387473	SGD	USD
-4ca48f58-528c-42dd-b22e-8a84fa49ad65	10.5750871	NOK	USD
-2fcd7188-18d6-4486-8f3e-14a29cbef0e5	1.5282341	AUD	USD
-27acc585-4890-4c50-9a11-5b9e6d9992be	4.9736012	BRL	USD
-6054101c-6d3e-477d-ba50-83946eeb6926	149.3592550	JPY	USD
-4d3c8dbc-055f-43ae-9ccd-438922508d71	4.9660717	BRL	USD
-caffdc14-452c-4dd7-aeb1-656fb4aef98f	10.4179011	SEK	USD
-e4b370aa-0c5b-422e-8bd5-99c25afb0ac4	1.3401303	SGD	USD
-2837a489-1115-44c9-9ac8-d555f38d3e20	10.5854915	NOK	USD
-5b01d218-2d2f-419c-ae1e-ed55ede12080	0.9113507	EUR	USD
-1ecddb1e-075a-441f-8757-a4bad34075fc	7.8380115	HKD	USD
-a857906a-5199-49f6-a7ef-c60d138a68d4	1.3488088	CAD	USD
-cd07c746-05e0-4188-8a74-e8698f9a986e	17.1595864	MXN	USD
-7bd9ff35-c09d-4e6f-ac51-33892e095be4	3.6715581	AED	USD
-6fecc66d-6f1e-49f4-b99a-c0e31a93bbe0	17.0943610	MXN	USD
-c33a4508-c5c3-4177-97fc-01014826797b	1.3505937	CAD	USD
-f60353df-279a-404d-a6b8-fbb98767c7cf	0.7888455	GBP	USD
-c8145c54-5ccf-44b4-bcc9-29283cec9afa	10.6490664	NOK	USD
-53446c77-dd87-4ddc-a3c7-53840b6aef4f	17.1377944	MXN	USD
-743d2650-f020-4258-b5d3-bc7fc317443f	10.3743573	SEK	USD
-38c7e06c-7144-4601-bf23-8b105f2d2f01	0.9092616	EUR	USD
-239e3ad5-6886-4431-8974-8e478d237667	0.7890293	GBP	USD
-280ab4dd-9b37-4a63-8d60-3164c061782c	0.7901383	GBP	USD
-34894430-4a45-4502-939a-4345a3af07bc	10.3753121	SEK	USD
-2e780247-b221-4cce-b5ec-346a21ba3e02	1.3483352	CAD	USD
-6816ab39-eacf-4f7d-87c1-7b2c810adb59	1.3398898	SGD	USD
-49114998-9c17-44f4-88f9-c9df16554a90	1.3491877	CAD	USD
-a0037281-ddde-4f26-8e93-faee44c1e58d	4.9546737	BRL	USD
-f4605f7f-8ec4-4a60-ad12-435f58800e87	10.6406114	NOK	USD
-eff571b2-83eb-473d-8ff0-90d4b9e4f6e2	3.6751524	AED	USD
-1f4d0c17-e937-4932-a2ab-fe33c740675a	7.8297976	HKD	USD
-5c896ca5-dc25-4dfc-a24b-96b0d2fe93e0	0.7884617	GBP	USD
-e54efd24-89f6-4ae6-882a-0bba3a88db0e	10.4144910	SEK	USD
-90987e91-c9ba-45d3-a66c-dba898d6aaad	10.3655717	SEK	USD
-829eafea-fb21-4d97-bc68-7a8f0b42b16a	4.9706976	BRL	USD
-dca0ad89-d424-4ee9-a66e-75595f4ec3df	17.1036310	MXN	USD
-9f787f2f-4ac7-42f3-97fb-f04580bd966b	1.3600008	CAD	USD
-d60dec0b-5c5d-4a19-9640-12ab88092d0e	149.1777109	JPY	USD
-ced2e19d-79c2-43d6-b6d8-eb491804abf8	0.7912170	GBP	USD
-4f3668dc-7878-471a-8071-b27a12e6e6b8	1.3368486	SGD	USD
-2f788bd3-9ae4-4cea-8890-b005281e330f	10.4163877	SEK	USD
-64e89987-7d87-44b9-8065-eeba6335c235	17.1342400	MXN	USD
-bd2f7cf5-57c6-48c4-a50d-cde3c079bc21	1.3363951	SGD	USD
-81e8ef96-ee44-47c3-86b7-59925c8e5703	0.9097532	EUR	USD
-fad2cb85-e8da-4170-b5fc-13efe566d2e9	1.3368165	SGD	USD
-c2f227c7-e718-4a22-934e-33cab22fbca6	1.3492933	CAD	USD
-4b4a3b9e-cace-4ffa-a948-1bdff795baad	4.9544005	BRL	USD
-25fe2368-03c1-4f9c-a231-0a9571aac668	3.6737778	AED	USD
-aca915b3-4c87-4424-98af-70bdd09274e9	149.1036913	JPY	USD
-530af792-0e31-46ea-a30a-7ba8e5793b75	3.6761303	AED	USD
-11373b51-014c-48b1-8d57-2c055245fd8a	0.7913505	GBP	USD
-7a14d646-5a5d-44bb-8cc8-9ac5c00dc333	149.1914675	JPY	USD
-c7897333-e87a-4d05-9298-cfcc445cf779	0.8893491	CHF	USD
-0140d6f2-1cf5-4dfc-b4d3-2de057a68bf1	0.7901365	GBP	USD
-a210a846-ee26-4904-9ee8-2b0d706a5dcb	0.8859579	CHF	USD
-87a6f17f-1b42-47f4-a6e9-93c61a8d2f33	4.9621363	BRL	USD
-c88705e0-b903-45d0-8666-9be17bee18d3	10.3659442	SEK	USD
-ed2cf127-290b-477b-b686-32d90a106987	0.7903008	GBP	USD
-ec5bd71e-5765-498d-b074-26a1a061398d	17.1418095	MXN	USD
-c30cfcc0-8774-4eb9-adc1-7032a2395d86	1.3361551	SGD	USD
-38e77746-ac08-408f-8c6a-2280ba61c810	0.7907322	GBP	USD
-cf93a92d-8571-469d-9ef6-e1640bd21d3c	3.6763785	AED	USD
-bba5f696-3e8b-4954-8a33-ae7fc0ac5fdf	4.9703268	BRL	USD
-01c071f5-ecd0-4825-98b2-642837c9c66a	0.9136961	EUR	USD
-9cc2e832-900f-420f-9b23-e59cca32cbab	0.9113754	EUR	USD
-f7860f5d-7ce3-4898-b731-3db4ffefd037	3.6725853	AED	USD
-930a702a-7e30-4e6b-bbac-70c6a6e0ad7c	1.3352180	SGD	USD
-c2667a3d-34d0-464d-894f-b21afacab643	0.9151058	EUR	USD
-ca3f46b9-2c10-4252-8a9b-04e63fe0491e	1.5245825	AUD	USD
-4c36c8c1-91cc-4cca-89dd-99a3abf18779	149.0946086	JPY	USD
-4264d68b-3787-4a5b-bab7-9e7c496c40a6	17.1758498	MXN	USD
-53e001e1-8346-41c0-bbeb-1f33feaa655b	149.5442946	JPY	USD
-424eefac-03dc-4e4b-9a2c-f99205d81e20	7.8338227	HKD	USD
-d13d1458-4dfa-4e52-bbdc-2c0954cc9af2	3.6790680	AED	USD
-4ff172b9-5597-483d-9fd8-04a5353d073a	0.8883467	CHF	USD
-be5928a2-a764-4a8c-86c8-f9ee53a6a22a	1.3355446	SGD	USD
-5e71681a-4550-4209-bf6c-af77861961eb	0.7904947	GBP	USD
-fa893395-f69b-4da0-a3a3-bdb3f8c8da96	0.9178920	EUR	USD
-7465f59d-eb47-45d8-b2d0-3fad114f24ad	4.9750743	BRL	USD
-c33daa58-9f82-48a7-ada3-0da4d9ad7afe	3.6699435	AED	USD
-5cba57ec-a165-4136-88d1-216f26b95091	1.3380732	SGD	USD
-8cb6d0ae-734c-482f-bddd-a1a992662145	3.6710983	AED	USD
-13cab57c-97b8-4bf5-8bd6-b2997d6102b2	1.5215425	AUD	USD
-0438b3f8-a201-4689-9a1b-afd9594a8083	17.1436521	MXN	USD
-918796b2-e75c-4dfc-ae71-358afc0c17b3	1.3485090	CAD	USD
-2f1f4c1b-fec0-4a81-9d8f-95c531b724e6	3.6673849	AED	USD
-07b3b979-fb32-4204-ab41-2d793475ff37	0.9152779	EUR	USD
-c18ecd20-ac12-4e3c-8ea2-f7490bad1fa5	17.0884470	MXN	USD
-f4288115-d670-44e2-a122-5b1efef87766	149.2820081	JPY	USD
-d89700aa-d9a5-4fc4-bb99-167877360db3	0.7884720	GBP	USD
-2c2a7e80-49c6-4e5f-9675-141a9de968c0	10.6510133	NOK	USD
-c67352a6-df30-4099-91dc-13e072e4be53	0.7886379	GBP	USD
-ffc1626b-dabb-448b-900b-e19e7615f51f	17.1432972	MXN	USD
-4b75f58b-a840-4fcb-8a96-cad175078efb	1.3505455	CAD	USD
-bd86de25-32b9-4745-a861-53508b72cdd7	0.9157960	EUR	USD
-129a16e7-1034-4a91-9dbd-b924ae8fc24b	1.5172570	AUD	USD
-2eb7ae6a-ce49-477d-bc39-3a7aa2ea5f9e	10.6307183	NOK	USD
-6eb34164-9327-4e9e-bd1d-94fc7f9a453f	0.9099273	EUR	USD
-966747aa-53a5-43cb-88cb-5e88f6245631	7.8340974	HKD	USD
-0b389e76-6da5-4b2e-a05d-0f49a415a102	17.0976102	MXN	USD
-2dc2e158-8a94-4d03-a63e-8009138b4f06	0.8894135	CHF	USD
-91c4df3d-35ba-4734-9cea-8d675cc71ca6	0.7888183	GBP	USD
-6182c5dd-c8b8-4a9b-b59c-e1ce4d77b545	1.5134737	AUD	USD
-2e5979e7-a8bf-4d91-8721-b87ccda1aa27	1.3369917	SGD	USD
-e21a20d2-ff0d-4982-848e-d716e75377ab	17.1393613	MXN	USD
-81ba7d0f-4da1-4acc-92dd-b1e047082eb0	1.3349289	SGD	USD
-55f58438-8d38-40cf-991f-f1855daaddaf	0.7882786	GBP	USD
-af8cffac-26b9-464d-8a49-ad59dbdbcfe0	4.9714070	BRL	USD
-f2386362-8a1d-43f8-b6f1-a4990a2811a3	149.1299700	JPY	USD
-b90c0c17-ceaf-4c58-a497-d0ea812c8b67	149.1468952	JPY	USD
-4fe79951-e8c5-4d56-994a-fa43c5e421bd	0.9138257	EUR	USD
-b633a083-efad-4939-9198-70627baaa5c6	10.4205831	SEK	USD
-155d4c07-5320-421e-a9d8-a4db39a495cd	1.3357877	SGD	USD
-5b716bd5-dc7f-4dd8-8de3-66a91714ae43	0.9130040	EUR	USD
-b8592d12-aa9b-4655-b447-d29c137a31c4	1.5239632	AUD	USD
-a36fb062-8975-464a-ad13-5f4d4dfb888d	10.3780439	SEK	USD
-751cbbac-6bb8-49ba-9e3b-4abbf6b0dd4a	0.8919969	CHF	USD
-9ec017d2-652a-46a6-a9e7-0d239bdc2a04	10.3955532	SEK	USD
-bb7a8901-0ab1-4669-9f7b-00019896d68b	1.3499665	CAD	USD
-586b4623-1687-44c8-9206-3e084e24110c	1.3384842	SGD	USD
-078a603c-4d60-460b-99f2-9d65d0945901	1.3413952	SGD	USD
-136908ef-c2a2-46d3-ad03-3b2b3959d74a	0.8890934	CHF	USD
-1cd6903d-fdc1-4122-bd69-167561461fb3	1.3382558	SGD	USD
-cbe8c5e5-cfed-459b-9834-4a0cd4c83856	4.9644980	BRL	USD
-cb4ac5dc-1704-4d04-a9bb-10062fbd8a79	0.9115814	EUR	USD
-7cc49357-cb5a-4e36-99f4-f1ea27878908	17.1137127	MXN	USD
-f3f02f4d-c72a-4803-a5d1-475fff9e2d3d	0.9102218	EUR	USD
-202c1f1f-9d16-4afb-8de9-d119c360775c	149.2102795	JPY	USD
-bf0c8f1c-bc48-4ef9-87c1-7092575562c8	10.6014038	NOK	USD
-38bf2893-b8c1-4c68-a6a0-b1302f2f511d	1.3589576	CAD	USD
-749035fd-f2fd-410d-b3d6-24c25e3db734	0.9136611	EUR	USD
-40671294-3e69-4e76-bfa5-5cef7a749b91	149.3936379	JPY	USD
-a4d1a65a-f4c7-4a34-94ad-539ca6badaa5	4.9697896	BRL	USD
-7cf1d9ee-3704-44e7-8653-5455833873da	7.8075887	HKD	USD
-1d9d382d-cf65-48ac-b2c4-0e9a46695e91	1.5199322	AUD	USD
-c50f1f90-bf18-4d72-ba53-68a34ed64c7f	0.9139905	EUR	USD
-b48195aa-f9a8-48ce-9bb4-87d361cb8703	7.8632490	HKD	USD
-32649b83-79b5-4894-a91f-ba201078742b	10.6341673	NOK	USD
-a57075cb-18f4-4e1a-bed9-eb715b9a916d	1.5164432	AUD	USD
-0969de70-9ddc-49cd-895a-a8dffff4bdd3	3.6731833	AED	USD
-de2216a6-9e49-4797-be6e-679f220a685b	3.6698131	AED	USD
-7018ac70-a791-4dfb-9a55-4816611d22c8	3.6754874	AED	USD
-11eb2f86-95ac-4dce-8db7-bd7d8dc2c5cb	3.6756704	AED	USD
-1df83ffa-14a5-4b34-a41e-d3249b832db7	4.9615445	BRL	USD
-a9297b54-4fa7-493d-a716-9332fd5f81e7	1.5281152	AUD	USD
-5bffe2be-5aca-43ed-b428-2206e5f80fe4	10.6410864	NOK	USD
-60ff3285-203e-4b8d-94c3-6f7320b8157d	7.8205410	HKD	USD
-ba229d34-0aaa-4954-96aa-c0c6d9f3b0b0	17.1337115	MXN	USD
-1e628b0c-21e7-4686-9689-d3eff9d2689f	7.8533334	HKD	USD
-3fc55bdb-f759-49a7-8564-7b7c2e9a5672	1.5294341	AUD	USD
-52b853f6-c09d-4d88-af06-23d37060dc52	1.3368697	SGD	USD
-55674b64-c236-4669-8b23-a7cedb2dda74	10.6033610	NOK	USD
-7a73e853-9a09-447a-adb4-aef46953d79c	1.3381955	SGD	USD
-30336cc2-0f13-4014-b207-417a97fc16f6	4.9591483	BRL	USD
-b00f19ec-9bd7-47f8-86b1-7870ed8f9ca1	4.9661872	BRL	USD
-0755a9bf-e6d7-4ca2-9d89-8d28eae76acb	3.6658422	AED	USD
-cd81cf15-c4cc-4cc9-ba61-9b1532141631	10.4262148	SEK	USD
-e09861d8-b693-4d9e-9549-cc80457147fe	0.7908562	GBP	USD
-1c533205-dc75-4dfc-b7a7-d24a25544297	0.9196742	EUR	USD
-a22364aa-5413-4350-b0a9-f3ef177dddbb	0.9130557	EUR	USD
-822d6300-09f4-4eac-916d-5546868c1a81	0.8890823	CHF	USD
-d7af4793-3e6a-49eb-803a-bd48f65733c1	1.5138561	AUD	USD
-6ced1bcb-1fb7-4470-aa15-6176a3ff19a6	0.8917812	CHF	USD
-a69aeedf-77ed-4fda-9be3-d70818adc801	0.7883204	GBP	USD
-8073aefd-8963-42dd-a838-5a7e1c9b5a8b	1.3392530	SGD	USD
-bc28f222-15f4-4de1-899f-d546b2e210df	4.9700599	BRL	USD
-ca3addca-856d-43af-b940-4fb6ba81bfbf	4.9687210	BRL	USD
-3a38957e-d033-4bc9-ae1a-377d164f00c4	10.4182193	SEK	USD
-a34cb5a0-aa9a-482e-9073-f5bb01483dc3	0.9176613	EUR	USD
-c731fcda-77f7-46c1-a888-786935c0d0f9	17.1058949	MXN	USD
-cc373ac7-f58c-421f-b5bd-70d2f52ae61e	0.8894013	CHF	USD
-3b5c4b6f-a8e5-475a-89b5-e7d42c9cd737	4.9683492	BRL	USD
-da1a2f0d-3364-496d-b5fd-00f490ac6612	1.3493679	CAD	USD
-7219eb2d-1bc2-499f-8e21-578ffd08ff82	17.1199074	MXN	USD
-74b07594-62b0-4e19-b15f-34cb4864262c	1.5222136	AUD	USD
-6c8beae6-ab37-47ba-899e-a9aa878a96ea	0.9202808	EUR	USD
-2bf51fac-ffb9-4a00-862d-04f553e19dde	10.3838523	SEK	USD
-719eefef-bfcb-4d81-99a9-26e7ae5bb1dc	10.4165504	SEK	USD
-5602de30-0a49-4411-8859-730ff69f4ee6	0.7892446	GBP	USD
-e18b2415-c82b-4682-9662-06a6f2672120	149.4865098	JPY	USD
-ee6f195a-c7fb-4562-8ec1-b8a10b630933	4.9638795	BRL	USD
-a7150e33-1587-4689-98a5-12129b60a158	1.3592001	CAD	USD
-dc92a105-a8c2-4678-9604-3e0a02cbfc75	148.9917402	JPY	USD
-115d3463-f11c-4b8a-98ba-fe13863540a2	0.7910620	GBP	USD
-5d72f2df-7fe9-46bc-a052-8f0e3b5e3a84	3.6714251	AED	USD
-d2d2cab4-8ced-4979-94da-4c2c28aa53c9	0.8874638	CHF	USD
-68e3d90d-1ccf-4ecf-b11b-bbd8e1c4642e	0.8865507	CHF	USD
-15eedd17-b4b9-457c-b2b0-55fd1a766468	1.5123882	AUD	USD
-b41b40fb-0c33-4d12-a772-dba7d6dd8438	3.6732076	AED	USD
-ffea55d4-a815-495f-8c8c-c428de299a9c	10.6475010	NOK	USD
-70f3f31e-c14a-4d80-b05a-571cd59cdd48	17.1053994	MXN	USD
-cf6bd85e-652e-4ded-82e2-a73ee628d639	1.5157491	AUD	USD
-345be471-42dd-4e9b-9283-9eadf67953d1	1.3500473	CAD	USD
-cc7cbbb6-75e1-4de2-9622-e16d871f8959	10.6287575	NOK	USD
-bf4d3d27-5338-4381-81d0-8371a1642e75	0.7888699	GBP	USD
-1681ce9f-4d56-4a89-b305-63ab6dad23b7	0.7891110	GBP	USD
-5786f63c-c09a-4ecc-bf87-ff9b05eaa3e3	10.6531098	NOK	USD
-7252185e-a3b1-4ec9-9eb4-399f7800f2f7	149.1294586	JPY	USD
-8ec819a2-13b0-4a15-be29-e95fbe8eb04f	1.3497326	CAD	USD
-738a4499-7af6-400f-b5d4-8d7f32702a38	17.1032560	MXN	USD
-74e47dd2-4fa6-45f1-b13f-5560e015e8af	17.1553237	MXN	USD
-b9df1b2b-8f62-48b6-b602-0af33a6f0e5d	1.5145280	AUD	USD
-5d1d1ea9-6fad-4cc6-8791-e993d7969a1f	1.3506769	CAD	USD
-2d88fc00-c645-4e37-98df-76c902307fe1	4.9566491	BRL	USD
-b37a1bd2-67a1-4097-b8b4-160b4dc3d8b4	1.3362429	SGD	USD
-5b35c88c-b169-4cdb-b739-4459d6bfd760	17.1152693	MXN	USD
-32ce9db0-60fb-4b2c-926b-5e0eeff80571	149.2661803	JPY	USD
-8c522c5c-c03c-41c2-a292-8c13fa784759	0.7905508	GBP	USD
-7101e7e6-f838-4602-8ef8-3bd716d2c980	1.3364128	SGD	USD
-0e9ace05-a53b-47f6-a0be-d12317dcf86f	0.8886343	CHF	USD
-224bef9c-16cf-47fb-8f7d-8f39865d26ce	0.7907100	GBP	USD
-eff44671-84cc-4fd3-beaf-176721d242d7	1.3400020	SGD	USD
-a28aea26-b8ed-40c1-8086-7980e1fa5256	3.6715922	AED	USD
-e5de5d51-0269-4509-8624-f3d02c186f25	1.3377983	SGD	USD
-a385515a-4b03-4301-aa8b-84948b7cb927	1.3487997	CAD	USD
-c576f5e7-e533-4011-8aee-dd0a70c0257f	3.6738248	AED	USD
-e8091f7f-574a-4d26-9dc6-6e9edbf74ac8	0.7884319	GBP	USD
-8a06fd2e-d350-444b-898b-adbdd9957884	10.6422511	NOK	USD
-085783d0-c478-435b-bfad-1055aeb24a4f	4.9540680	BRL	USD
-134fe9e4-c7cd-4cab-b47d-9f59c2e4915c	0.8857316	CHF	USD
-ad29157c-ceed-45cb-b5a8-a806489ce5e3	0.7905069	GBP	USD
-c8440da3-af24-4340-b058-cb97130c295e	7.8505882	HKD	USD
-a044c032-f0b7-4330-9c9b-d7c9f743ad92	4.9721322	BRL	USD
-44011b81-ed84-473a-ab79-ba2415e70f51	3.6732201	AED	USD
-2160cf59-6c5c-464d-98d4-e3b8396026ce	10.6434845	NOK	USD
-3c5aa9bc-03ff-4796-8833-3cd7d9dabc26	1.5231550	AUD	USD
-4ed88829-39e6-4bd7-b7e1-564c57972ff8	10.6393922	NOK	USD
-ce2255fd-ccb5-4f48-bbd7-ef397187b5cb	10.3910585	SEK	USD
-39186bce-e267-406b-b179-099a53013c57	0.7920034	GBP	USD
-2fccf70f-bf1d-4711-ae27-c4a0b6b294a1	17.1302701	MXN	USD
-96d7a0d0-9c45-4c7f-bd64-49cb69710caa	149.1530070	JPY	USD
-deb4b230-8fa5-485e-9d64-f1dbc205d2b5	4.9560363	BRL	USD
-2caeed27-b337-4837-b3f2-fe0e2da9aea2	7.8543879	HKD	USD
-62ee018f-a8f4-4f97-bf19-db585c20d1e2	149.3829739	JPY	USD
-6bdc8f7a-7637-430f-ba3d-4e2e3849ab5f	0.7906845	GBP	USD
-fbe55945-3d97-4968-824b-6d8d8ff00b7d	4.9536090	BRL	USD
-fa3877eb-70b7-4101-bfc3-176675137dd8	1.3477220	CAD	USD
-0982978f-c586-4818-8001-aa1c9b182a0a	10.3612385	SEK	USD
-d663bf72-26ca-41af-9043-1a8be9991feb	0.8914650	CHF	USD
-5dd5a03a-e792-44a5-8b2a-3227cc2160ea	0.8888344	CHF	USD
-77371eac-6f7e-4886-bdc8-f6ee8c9b944a	4.9618524	BRL	USD
-5e20c249-8ae8-4883-9fca-052dd4215cf6	10.6384574	NOK	USD
-f52b25f0-ffd6-4624-8637-fba8d7c80e12	1.3504372	CAD	USD
-9399ef84-7a7b-46c0-93ce-c5b7b7af5949	10.4305548	SEK	USD
-3d88b984-cd51-4d8a-af5b-3068855e2114	0.9152638	EUR	USD
-b992cab4-d24e-49c9-8fa2-9728c8ab0c83	4.9636911	BRL	USD
-046e1fe1-f442-4766-b86e-4b7dc64325ff	149.0280177	JPY	USD
-514954f3-99cd-41e8-973b-539c3fa07299	149.2667566	JPY	USD
-81e1d3c6-f30e-4999-a833-d920f75904cc	10.3874115	SEK	USD
-1ff60c31-644c-4d11-9d15-741328531281	0.7903894	GBP	USD
-127a79d0-62a5-40eb-b829-0958a140dc11	0.9111514	EUR	USD
-eba17714-652c-45f8-b8a2-519fbd935b5a	1.3405024	SGD	USD
-eea0110a-5eb6-4ca6-9d07-e250a6c6f135	17.1249678	MXN	USD
-85d3178d-65d4-4812-bfe1-d6a26b85d492	1.3479740	CAD	USD
-5283a0d7-b945-4a5f-876e-9bd75d7a7eee	1.3482915	CAD	USD
-c29ae3a0-f5e2-459a-aba7-44faf56265a1	1.5253339	AUD	USD
-5a93c16d-2f0e-463b-ae6f-d4fc235381c5	0.9094251	EUR	USD
-39339b53-6458-4bb1-b6a6-15270f5eb0fa	10.6457439	NOK	USD
-1297111c-22c8-47db-9260-d8ed3b1714ba	3.6715139	AED	USD
-0d223f67-2312-481b-b009-ed156d3f8dae	0.7886031	GBP	USD
-54662651-b0bd-4107-bbbf-e7e7389bcbdb	7.8558258	HKD	USD
-7d40eb12-af6e-494e-b8b2-4c1109ae9214	0.7901706	GBP	USD
-786bd9a0-22ce-4fea-845f-48aff611dbb6	0.8870562	CHF	USD
-63a3e53a-90df-41a2-8803-cbae9340fa34	0.9104394	EUR	USD
-f4171103-ec38-4a6e-8159-f5d84c16a63e	17.1742358	MXN	USD
-ffac0473-618d-4beb-b20b-e386261568d4	7.8002691	HKD	USD
-47239c3c-a2d1-45b0-aafa-3139265ce38b	17.1042016	MXN	USD
-61f8e8f6-8f76-4f8d-91fd-8804d3a02c81	10.5753613	NOK	USD
-9ccda4e0-0844-4fb0-b233-ed5c4098bc8f	0.8874396	CHF	USD
-26bcf849-56d8-4194-9cc4-00444233033b	10.4206234	SEK	USD
-d833436b-a48d-4001-9f13-31f6c72cd616	0.8880095	CHF	USD
-bc0a4a07-b86e-46ff-9855-f94142d44583	3.6756282	AED	USD
-1754b65b-043e-4faa-9440-c35aa578e4de	149.0648857	JPY	USD
-6ef9f383-4d07-4fb5-ba5e-27a1fd96cac5	4.9769395	BRL	USD
-783cc857-763d-4b2d-a686-5db0b3c81d50	0.7909749	GBP	USD
-cf5b7b44-a920-4f14-801b-4e847536b993	0.8859580	CHF	USD
-ed4bec92-bad4-4093-9381-29a7276c8d86	149.3429405	JPY	USD
-3f68c578-24e3-463d-a7ed-0b39364e24f9	17.1255308	MXN	USD
-e66a8fb1-f9e2-4439-9220-806509c34b52	10.3884815	SEK	USD
-cfe3feef-4c8d-4ffa-9aee-30b4491ce82a	149.3506173	JPY	USD
-89414497-9963-4cd7-a750-23de56a3ab9d	10.6344187	NOK	USD
-abae14fc-8fb0-4b07-aeca-8a35360213b7	4.9699067	BRL	USD
-aae0ded3-44a1-4ccc-ad3d-d71e5e967a77	17.1063968	MXN	USD
-c184f5e7-98c8-4c23-96e3-a0e00e3606bd	7.8465717	HKD	USD
-a26ccd97-1c3b-4383-a796-776dd96b1700	10.5806009	NOK	USD
-449c9aba-c867-45e2-a5db-d592f3f4bce4	3.6695516	AED	USD
-3759a6b8-5355-4da1-ba84-e84709768ab3	10.4068147	SEK	USD
-3a3d47d4-e8d4-44a4-b47c-e236be5478ba	1.3484090	CAD	USD
-d1ffdfb1-5921-46a4-8823-bd06db60c349	10.5795364	NOK	USD
-a2583248-7bcf-470f-98f0-1de73c79f6d6	7.8499040	HKD	USD
-3ad3424e-ee5a-4816-9179-271af2dea806	0.7906182	GBP	USD
-a5a4f9de-e2b7-4e58-9b7b-eb8e7864f1dd	3.6717751	AED	USD
-2d2960f3-1eb0-4367-9068-9d7242156008	149.0303424	JPY	USD
-0b8911d5-0557-4dd7-804e-70805bb22fa5	0.9193055	EUR	USD
-9e928e24-9708-4dc3-8e95-4f1a924584ed	1.5229946	AUD	USD
-dac6b224-facf-412e-b076-24006677841f	10.3841878	SEK	USD
-53e5ba4e-2573-4731-8119-b92e4936c5f4	17.1157352	MXN	USD
-7260fed5-d36c-434a-9db0-79fadd861d21	10.4021210	SEK	USD
-99a3316e-c138-44ea-b7ad-aa7a28989c7f	0.9091344	EUR	USD
-e2b23fc1-d614-478e-8a10-a187c5037e3f	0.9194035	EUR	USD
-beaa221c-5e32-46ac-ab18-d33c441a7f1b	10.6253159	NOK	USD
-af82d579-be7e-4af7-8e98-bae4a0859c72	3.6732947	AED	USD
-e6c571b6-02e9-4bd0-8ba6-2e570754ecc7	1.3381370	SGD	USD
-97573925-a059-47f9-8987-ba1fdb07129c	4.9554628	BRL	USD
-4d87976a-8001-4d3f-a613-79dd4de38fa1	17.0842077	MXN	USD
-75aca0c3-9565-4bf7-b029-1758b777c3c3	0.8863580	CHF	USD
-77d30e1e-2009-4a20-b172-9eb82b901add	17.1810300	MXN	USD
-3a603888-ffd3-4be8-84ea-98a802b406af	149.0874907	JPY	USD
-b5d07ee4-95e6-40b9-abf9-9ddce685eff3	10.5807012	NOK	USD
-605f18f2-df62-4113-8723-825ac6c3ebc7	7.8359616	HKD	USD
-5283fe91-68b1-4c51-b215-1e7fdf1492d7	1.5237969	AUD	USD
-3e41be33-ae7f-487f-b575-357f039c77a2	0.8862885	CHF	USD
-abdd80c6-e1d0-46cb-abf4-e16c3e5f3113	10.6444189	NOK	USD
-10263a06-dc7f-45c8-b3b9-2993a6031872	0.8880365	CHF	USD
-5c204a0d-1f99-446e-a7aa-ec79f26af5c9	10.4258349	SEK	USD
-829b82cf-2bf0-40df-a147-e0ec64acea45	4.9640891	BRL	USD
-43f912e7-345d-4e16-a35e-9062e10259ce	17.1354751	MXN	USD
-42068d71-3ee3-4176-9af8-4aa51401cfc5	1.3406764	SGD	USD
-e1817719-e448-4eff-b945-8550ab3ef614	1.3390067	SGD	USD
-db54cda9-3d96-4c2b-83f3-4a7b52f32bc7	0.8859464	CHF	USD
-36b44808-621d-4b0b-aaa4-b14549cf87cf	0.7904486	GBP	USD
-4ea7368f-b405-48fd-9b30-3791101ab7cd	10.4181854	SEK	USD
-6806cda5-a7f7-435d-9543-8c213a85d42b	3.6731651	AED	USD
-e0859d3d-01f6-454e-845e-44e3d2c04ecb	4.9666894	BRL	USD
-1a709bbd-40da-441b-b7e3-e1b84ac0681f	1.3536221	CAD	USD
-876a95d0-eee3-4fb0-8c38-a56e909df7d7	17.0928966	MXN	USD
-3adb4e0f-2ceb-44c2-8d6a-2fddac4c4b4c	0.8905491	CHF	USD
-68290038-f0ea-44bc-b93b-5632a74f9a25	17.1372930	MXN	USD
-a0471ac0-d09e-4576-9d1b-d6724f1465f3	149.0117889	JPY	USD
-5a669e37-e3aa-4721-9102-ae111d95f0ee	1.3485846	CAD	USD
-815873f8-f034-4fc2-9b64-3987ab41c960	1.5238047	AUD	USD
-24980304-0730-4f37-9e08-135c1cb7fcb9	1.3516227	CAD	USD
-d4cc33b9-a10f-4c60-bc93-a177a07ba7ab	4.9590302	BRL	USD
-e76267bb-c818-4ab4-96e7-fbac3385fa16	148.9895984	JPY	USD
-8865ea30-b0e6-4d57-87fb-dfaa8551ef4c	1.5291562	AUD	USD
-f2a9599c-9601-49ed-ab38-8e187d346e48	0.9192670	EUR	USD
-ab552b64-ed58-4f8f-9d51-fa4fdf857374	0.8871584	CHF	USD
-287e8845-a6a2-47b4-89cb-ac98c154b8a7	0.7892076	GBP	USD
-c43b59c7-641d-4ed7-8573-a4ebc86b7c3c	1.3490168	CAD	USD
-76126e6c-5a04-4fb5-8665-719de0f41966	1.3594121	CAD	USD
-e31dc1ee-dd85-4265-b7ab-f96154f94dea	10.4027102	SEK	USD
-4e7d6171-03cb-4a2a-aa46-a97fc036dea9	1.5156456	AUD	USD
-8d7c29c9-a5d7-4f14-bdee-b226a89d788d	0.7885536	GBP	USD
-2c28cd0a-4857-4471-aba0-89c2f46566aa	1.3381132	SGD	USD
-341bd939-eefb-4eda-b1c7-e48720f2ff49	1.3590463	CAD	USD
-146cd8bb-f504-409b-a74f-421ea86405d7	1.3418660	SGD	USD
-f84b7add-dcfc-4ce1-aab2-8e5aa5717e74	7.8325767	HKD	USD
-060d7cfe-e1b5-4649-a33a-e342eed5136d	17.1112462	MXN	USD
-e574c031-106a-49cb-a206-9e9f69c259d2	1.3557036	CAD	USD
-7384ca84-b313-40f1-836b-28d68095918e	3.6676209	AED	USD
-4aaa4e2d-8907-497d-a7d3-623cc76950e9	1.3362256	SGD	USD
-558b95b1-91fb-4efd-bf77-a5481346dd3f	0.9170143	EUR	USD
-d0ca26b3-a241-4aff-bab0-af52d8ba5c03	0.7890391	GBP	USD
-4e09f689-58fd-4ce5-a7d0-08a2ddbb43aa	7.8587258	HKD	USD
-ad469c32-1c42-443c-93ca-068b91ed924b	3.6747499	AED	USD
-f1219c60-998d-4913-9bf6-6911f9039624	4.9750446	BRL	USD
-aaa66a31-d3c2-43e8-a978-26999657d62f	1.3498414	CAD	USD
-bb3e4bc6-a44b-4972-b404-d69e19eaff26	3.6733556	AED	USD
-e9019152-7816-4c68-b0d5-7563cb06913f	1.3357268	SGD	USD
-f03024eb-5198-4686-847b-f96a4e26e3d3	3.6744437	AED	USD
-5bfc0b4f-f314-4ec8-90ea-9653c59befbc	0.9181170	EUR	USD
-5c803ea2-7a74-4274-9585-bb62b2a2fd5c	4.9585298	BRL	USD
-5988559a-d8fc-4148-aa37-4250f278d170	1.3491690	CAD	USD
-1dc93d1a-460c-4574-82ae-2f66becfe63f	1.3486359	CAD	USD
-149075c0-2da4-492f-8555-7f0d5bb57e46	0.9104314	EUR	USD
-d72adf98-d8b3-4c42-be61-704ea9ceb0d5	149.2366704	JPY	USD
-e8d3fb5c-6b7f-499a-bbe8-7b98f0aca8ce	0.8887287	CHF	USD
-518a2da1-3013-4c8a-9b53-aff66953e04b	17.1175324	MXN	USD
-682f7b13-c218-42f6-b83a-ef535b4b14e6	17.1178569	MXN	USD
-89fd7159-587e-446d-b7f3-58da5d4348d5	0.8896202	CHF	USD
-2ba4acd4-5c35-42e3-bf9f-f82f9562eb1b	0.7906351	GBP	USD
-b864d050-d4df-4714-87a8-c416614b2a30	17.1462789	MXN	USD
-a706b01a-e45f-409d-9f6b-d55693914b7e	10.6300101	NOK	USD
-23e8510c-9b71-4e77-a343-0b2a4dab67ca	3.6709495	AED	USD
-7a2af390-e28d-4c03-8a29-395bb1cd7d8f	10.6384905	NOK	USD
-be25126e-faa9-48f2-b2a5-a92ddd83e302	10.3990226	SEK	USD
-11100a14-324a-4abf-bae9-bb10d24ef766	1.3360972	SGD	USD
-eb2c3ce0-777f-4ee2-b6ea-18c1f8cfa7d8	0.7876452	GBP	USD
-2d519fa8-585a-4c1e-be3a-6d275a1856f7	7.8371793	HKD	USD
-bf6a0905-b2d8-424d-acaf-55cfedffb286	7.8415150	HKD	USD
-3783c222-39f4-4f6f-b448-81c467d622a9	1.3586196	CAD	USD
-6912c5fb-fb28-402e-a475-984491d55b70	4.9646289	BRL	USD
-944a009b-a235-4ae2-b806-43d95e5004d3	0.8897465	CHF	USD
-0f2735d5-5790-47b6-b74d-a03a4de897fd	0.8857861	CHF	USD
-87a0a56c-94b7-4427-8ab7-b831dbd3d62b	7.8344329	HKD	USD
-19513a8e-1f61-445c-b2c0-3728b13c208e	10.6281244	NOK	USD
-be38af58-770c-4e88-9e57-322dce95b10f	1.3501353	CAD	USD
-f4611a4d-4d4e-43e6-80b7-f7516caa15c5	0.8920191	CHF	USD
-9bc6cc48-83fe-406e-af06-3e390d62e4fc	0.9136762	EUR	USD
-d28bf207-fce8-4df4-94ca-f0e40c72de43	17.1073777	MXN	USD
-b56fc3e3-fdc1-4193-9b2b-40605fe07db2	10.4199073	SEK	USD
-35224f88-7485-42f3-83f2-9637170edc0c	17.1250462	MXN	USD
-8c42c3eb-5394-4f29-aa26-4b9eadf2027c	10.6340528	NOK	USD
-19b17dce-cd5e-41ea-b309-264fe856cf59	0.9175435	EUR	USD
-2c174f99-2d98-452f-b847-d3a7a6365ce8	7.8406974	HKD	USD
-1dda9820-4500-4e6a-bd92-608aabf508c4	1.5130353	AUD	USD
-35e01f6d-5fd0-4798-9d9a-055db9d4129d	1.3413105	SGD	USD
-34a78780-a157-49dc-8e1c-3c43fd5bf05e	17.1295752	MXN	USD
-6beb05bb-f225-4548-9c5b-d2f594c72f59	0.7886793	GBP	USD
-814045c2-fed8-4744-974c-54c65a4a8960	0.8860165	CHF	USD
-8ce504ca-acd6-4bff-980f-22f81387c346	3.6706357	AED	USD
-5d38922d-ca5f-4cd2-87ed-620d8f94d5b2	1.3366510	SGD	USD
-a1d9e46f-906f-4a0b-b346-eb164c76689f	149.3642285	JPY	USD
-bb9a0b06-5cae-41b4-87b7-b1d1d61780e0	149.6051598	JPY	USD
-e877c725-2858-4ffe-ade6-27266f0e6ab3	1.3400903	SGD	USD
-7d327a9c-7c84-461a-b339-6aad3c79bec5	10.6226816	NOK	USD
-54351c8d-3e7a-4f76-97ba-bdf88672b574	1.5166737	AUD	USD
-5192fb34-04a5-4cd6-b253-1d950b643f6e	1.5133150	AUD	USD
-e92ad061-7e2e-4fee-b294-2338373e2d9a	0.9200087	EUR	USD
-d6eda650-3ebc-4491-bdba-42ce69bd71d3	10.6487802	NOK	USD
-b71271b4-2287-4d34-90db-b68461d96b9c	1.3494089	CAD	USD
-eb45780b-ac91-460c-9f35-e8a1890790c9	0.7881686	GBP	USD
-c2bd67f4-6e05-4dad-a99a-045d888fdc1b	0.7910555	GBP	USD
-36a069bf-f24f-4de7-a6dc-5ff828c17375	0.7920235	GBP	USD
-cae4ff6f-06ee-4c5b-bdb8-90d342661ce6	1.5236486	AUD	USD
-36c89677-75e4-4d6e-8d81-151073b0dbfc	0.8867712	CHF	USD
-3eaa4bea-a0c3-41ef-869c-5e5c9b1cb77e	0.7908349	GBP	USD
-fac69f03-db58-4702-876f-4e89ccebbf89	3.6726167	AED	USD
-744c1de0-017f-44f8-91f6-d00ba80d373a	0.8891265	CHF	USD
-d261328f-b6cb-4364-bf74-0ead3077422e	1.3405079	SGD	USD
-88222f74-00d4-490a-9c78-7c5dbbdd0a3a	0.7909593	GBP	USD
-c5f51c50-b4bc-491d-90bd-41b04866ddca	1.3366871	SGD	USD
-d778262a-f752-4132-9d4f-be931d767619	1.5280045	AUD	USD
-69caa278-4a4d-4e45-bc8f-ea5b96badaa2	1.3513956	CAD	USD
-dc1051a5-bdc7-484b-925b-72247f133c3a	17.1507868	MXN	USD
-37a5310d-4be7-42a9-a1f4-a0128716c51a	1.5152057	AUD	USD
-43f9f6f7-8149-4145-ad00-723a5fa05d70	7.8524442	HKD	USD
-90202792-8509-47a1-86e3-6b5f65bff53a	1.5279714	AUD	USD
-78c743fb-9021-45df-8930-5d478b770149	10.4021656	SEK	USD
-d282eeec-6913-4f1f-891f-0bf856649f08	0.7915382	GBP	USD
-7d411375-83a0-4d97-8fae-f0328c4ef645	17.1196003	MXN	USD
-1f64a302-3cad-4ea6-b5b8-1b752ee824f0	10.6039171	NOK	USD
-b7ba92a1-6b36-47a2-91cd-8136e5aa95ee	3.6710978	AED	USD
-fbe5aaf1-b317-4d8f-9069-2e9159580b0e	149.2503555	JPY	USD
-d7eb7d7b-2d32-4bdc-b33d-a18077f6ac81	1.5149364	AUD	USD
-20769f34-b93a-4166-8e26-8f4399cdaa62	0.8900709	CHF	USD
-a9a1c1c7-03d8-49f7-a2a7-e899cc274e40	149.3728733	JPY	USD
-762e3817-9478-4a68-b0ab-3dbffac527fa	149.2373066	JPY	USD
-bd46e564-9d01-439e-95c9-9ff70dd6dc41	0.8847774	CHF	USD
-69b4605f-a527-45e7-84ea-bc4afc909699	0.8892401	CHF	USD
-50c5e56e-9005-4be5-8ed4-4f4f480140ce	7.8374553	HKD	USD
-ef940ab5-75c1-4fb4-b374-cf9e04dc7d59	0.8903027	CHF	USD
-5f2243d7-739a-4334-a900-3ec44fe4f54d	0.8881019	CHF	USD
-8c7ae1e9-b4b0-4181-83a2-20e033abd827	0.8892268	CHF	USD
-8fdf1174-1934-44a8-8bcd-7ccea4cad1d7	1.3404610	SGD	USD
-292a4185-0cd7-4087-9a26-735a6191c9c2	10.6372239	NOK	USD
-284c9140-321f-4405-9b9e-549a992d3023	4.9683415	BRL	USD
-a0e32831-73b6-4f70-bcf2-2e385b78dd7f	0.9135487	EUR	USD
-6d99d1ad-0c90-429e-97b3-719f67eee8d1	149.3193104	JPY	USD
-6d4aa54f-ee43-4234-a647-7e159d8b7e0a	10.3974993	SEK	USD
-538a5a73-041a-414d-9c3c-e3645805230c	0.8896033	CHF	USD
-03ba2283-2fe4-4647-8e39-18dfe6377e3f	1.3387831	SGD	USD
-7eb462aa-738c-46c1-bf13-66657d4ee2b0	7.8447508	HKD	USD
-bd93defa-e178-446d-97a5-fe1585767bd8	0.9140908	EUR	USD
-a5c9fddd-442c-4e90-9428-1a7d0a83dc2f	7.8323575	HKD	USD
-622b4dd7-a4fa-4f7f-8304-98d6a4f5591a	1.5126018	AUD	USD
-b9ae71f7-23ea-4d8c-95f9-570c8bf5b013	149.2132238	JPY	USD
-0762bf55-0063-4fc6-b29e-1400dc5751a1	10.4024142	SEK	USD
-0daa798b-511e-4e52-bd01-a3b4c3d9503c	0.8878721	CHF	USD
-e1ff4eeb-9e1e-4af7-903c-c6155f2c7022	3.6698742	AED	USD
-9918a2bd-5e3c-4840-8181-5ccf9b5389b0	0.7902751	GBP	USD
-ddc22a41-860e-4c03-b64e-2bf071814059	1.3501812	CAD	USD
-3f91b11c-f2c5-494f-8de7-1c614a987b71	17.1464098	MXN	USD
-878e525b-ab45-48a6-8c94-ff3984d222d5	1.3502229	CAD	USD
-a0574982-ae9a-4692-89e7-414acdfd4783	4.9603675	BRL	USD
-8d6490ad-532e-4e32-a30f-3fbf62e7ac79	0.7894292	GBP	USD
-555c043a-5ec4-4580-b129-e09009289853	1.3387955	SGD	USD
-4d8d113c-c193-432f-b776-086b23f33631	7.8328258	HKD	USD
-38328f16-4b93-4ce9-8209-02c2d70ef7ab	17.1082995	MXN	USD
-9e365d34-c052-4105-a5c0-95ece325caff	10.4159520	SEK	USD
-3608e855-8fcc-4976-ade2-c146ca60c8c9	17.1275625	MXN	USD
-5a89e00d-1b0f-4a58-bddb-57aabe88fa20	3.6744540	AED	USD
-e8de1ee4-8830-4987-a3bc-86e3b6a3082b	3.6684554	AED	USD
-1c419711-7c7f-4dec-803e-9dc08f9352df	149.4619332	JPY	USD
-6776c8fd-2e79-4c6a-be14-2534457552a3	1.3514854	CAD	USD
-e363de7e-ff06-41f3-a68b-9a4763862118	1.5137237	AUD	USD
-3bfe5129-78fa-48ed-9780-b7614c697406	0.7910053	GBP	USD
-bfd2f8dd-1290-4cd9-b07d-5c5284ab9022	0.9151755	EUR	USD
-c11b1c46-a683-499a-933a-48840d75f567	0.7905732	GBP	USD
-50901821-393d-4cf6-a6dc-74e1031e6337	4.9647242	BRL	USD
-d627d525-f7ea-48e5-b4ef-80b053b65d9b	17.1164586	MXN	USD
-391fe6ee-94b9-4b92-8098-baf786ba2bb7	4.9528798	BRL	USD
-120c5bb5-32d7-4d31-8dc0-87c8e0662088	1.3366797	SGD	USD
-9ae50fad-2bd7-412d-a525-7914da50ca98	0.7884276	GBP	USD
-1d3048b9-df35-4727-9291-ddc00bdc8f91	149.0681237	JPY	USD
-606e91f5-b5d6-4d01-af69-0e8b00ec8fa9	1.3354067	SGD	USD
-d1d2298c-2ff0-4b28-8212-d9db77ad1d50	1.3387919	SGD	USD
-71606164-d89a-4bdf-b04b-96221f3f4bd1	10.6402285	NOK	USD
-9c1b1a60-2ccb-4946-aeb2-db32547e9f1e	149.4855241	JPY	USD
-24d6b19c-8cd8-4073-8884-2c63df8d1007	1.5136902	AUD	USD
-8ae5e435-4191-40fa-9018-71a8095ef11f	10.3625360	SEK	USD
-0738a851-8890-4591-933a-4d9e2bce2d31	0.9115783	EUR	USD
-7d91e40d-60ee-47b5-8896-611e0e435f33	10.3636115	SEK	USD
-c79f16b2-7a7b-4441-9548-2e57002b6f37	10.6570281	NOK	USD
-36ecaff7-c644-47e2-b10e-6d2d2570c034	0.7917673	GBP	USD
-fbaf553d-2dc8-40e8-9ba0-c999b20d87e4	17.0981134	MXN	USD
-0641a100-9171-428a-a67c-daab55e4d3b8	1.5225757	AUD	USD
-cc4d53d2-9796-4b51-856d-97aba34b44cd	1.5218040	AUD	USD
-d95ab64e-edf1-4cab-8605-aafb3da7acf6	1.3505194	CAD	USD
-3edbe982-b1c4-4293-9cfc-129f0cff911a	10.5799209	NOK	USD
-4cb20d13-ae3a-4803-a460-f16ca648d9e8	0.9201553	EUR	USD
-ef72909b-b4a2-4111-bc48-949c85e0402f	10.6160792	NOK	USD
-a2293768-2912-4c43-96ed-98111c957bb2	1.5230609	AUD	USD
-f66c7ad1-fde8-4715-8f2f-3b6d5145e7a4	0.7913804	GBP	USD
-eecd60f0-e18a-4c53-b757-ae1c50865759	4.9627189	BRL	USD
-e247c7cf-09c6-45f3-aca7-8d85b648c6f7	1.5235863	AUD	USD
-7ab406d5-7f8f-46cc-94ef-cfd90cb63085	1.3590920	CAD	USD
-2fadaccb-6a01-4c5c-bc96-b4bdbf68e881	0.8867622	CHF	USD
-be1808e5-f9af-46e0-82b9-992963b41f14	17.1123177	MXN	USD
-56a0bbea-7a9f-4aa7-ad0a-34834c3579b5	17.1489365	MXN	USD
-3e52e65a-3c6d-4957-a08a-5172ea83350f	3.6710193	AED	USD
-7b332fc8-29d2-4ecd-a2a9-f1fba902462b	0.9133822	EUR	USD
-c7c959a5-5f03-4b14-a9cc-a02346e80171	10.4032216	SEK	USD
-40d0d26b-7d76-4f22-945e-4eed92960d40	1.5294154	AUD	USD
-80605b4b-8bd2-469f-8e13-4c883749545c	0.9124648	EUR	USD
-04da7b26-0a4f-4dc9-92d7-f944a14e8ed0	149.3512106	JPY	USD
-2beef66a-8a58-42f0-a812-b0c6c5015416	1.5159902	AUD	USD
-3687e60f-e5d9-4c4f-b919-68d0f597255f	1.5182867	AUD	USD
-03dbc83c-a828-4d16-8160-57be386f74c9	7.8393179	HKD	USD
-78665c2c-0ee3-49b3-9474-5dbbf0b37402	1.5183757	AUD	USD
-0199ac21-3434-4163-9680-4a69b1d45fda	1.5202483	AUD	USD
-313e36a7-e581-4904-be04-f1920d15a86f	0.9164327	EUR	USD
-ee2962b1-db6b-4f5d-b274-3a9364197f24	4.9752723	BRL	USD
-340e788e-96d2-4666-9478-b30899a8b682	7.8550285	HKD	USD
-fd01ae1d-ef31-4ff0-984c-64d1f3e47184	4.9645286	BRL	USD
-12bf9b9b-14b7-42d5-a4b9-0ffc6b59d3e6	1.3537282	CAD	USD
-aaab495e-b006-4948-9eab-0f6cfa89319a	17.1221888	MXN	USD
-9bd41e41-ec00-4a5b-b1b4-c00f640a33f5	0.7910350	GBP	USD
-924cf99b-a6ad-4048-9a36-14366ec6229a	10.4090550	SEK	USD
-6038ce44-fbfd-4001-8427-02b7e10262a7	3.6703744	AED	USD
-059ffd20-54e7-4653-85fe-e18e32bc507b	7.8333030	HKD	USD
-cf8e6611-5a44-4993-ba4e-58a11c2932e7	1.5223476	AUD	USD
-e9734811-2155-4b47-a835-5f231f04b3f0	10.6599365	NOK	USD
-97e6fb0b-72ea-4c25-af56-845b46869ee8	4.9724497	BRL	USD
-c903ae14-7713-4ea3-8559-fe2aea39e657	0.8887880	CHF	USD
-c7b462af-35e1-4a46-b65e-e7afa573fb13	1.3358422	SGD	USD
-fd4f9aeb-9cc8-4e6e-8ace-53e35258686d	4.9492605	BRL	USD
-d445f9d6-b95c-46b3-9ce1-b4650c6d4260	3.6720149	AED	USD
-4eec7ebd-44d7-4e5a-83fc-f6edb37f1b89	1.3400482	SGD	USD
-afe2f882-bd06-484b-8881-f4b0bafadf26	10.3978330	SEK	USD
-1689734b-79e3-40a7-ab74-1f2b8b177714	10.6375198	NOK	USD
-936e3a9d-cdc0-4652-a0b3-2d9d1f805612	149.1480094	JPY	USD
-7c0a0728-e236-4786-aa8b-eff56bea479a	0.9123001	EUR	USD
-90323fae-4a08-4674-9dfb-6bf441b192e0	7.8377035	HKD	USD
-cd32aac4-b15a-48bc-8154-c774a418881b	1.3502307	CAD	USD
-7f10946e-827b-4332-b54a-2e5ce268f833	17.1157223	MXN	USD
-d27324e8-ffdc-4a15-8b11-6286f01ea924	0.8907420	CHF	USD
-c1c41e58-5825-42c8-ae46-e54aa2d6df35	1.3362290	SGD	USD
-c4896771-a7b5-45d8-9ce7-c454781e606c	0.8884829	CHF	USD
-aa92d1e3-e278-48e0-9972-8e3c6d1581be	0.8872850	CHF	USD
-e082ea0e-cb38-4eda-960c-72de708cfb38	1.3415077	SGD	USD
-2ed1ea16-17ed-4ccc-bc9d-6beefe2f5e3e	10.3673230	SEK	USD
-f54cf79c-faa7-4243-9d38-f48c0b9cdfd6	0.7900404	GBP	USD
-a10617d5-12cf-4c10-8e3a-ed9e9e031b8a	3.6754541	AED	USD
-d73460e1-fe86-446d-a023-3d9672dd60d6	1.3504567	CAD	USD
-692c24fc-af76-430c-93a3-9dc2298d26d3	0.7886451	GBP	USD
-6eb2aa2a-228d-4bf2-9807-4cc76dce09fc	1.5168646	AUD	USD
-e0f90031-77f0-4a02-8db8-74d1f19e88f2	7.8493752	HKD	USD
-fd12cf3a-955f-4608-b0c6-05a8c66cf36c	17.1262508	MXN	USD
-f25df55d-cbf8-4c43-9fd6-a96aa7ef8ad1	0.7878531	GBP	USD
-b32b44a2-6bf1-4a90-a2ec-09e09c2cdb8c	10.3808622	SEK	USD
-e3b933b9-2198-46fe-8d3e-c2cba8700168	10.6263341	NOK	USD
-22a84c46-cb5b-4a64-b2c7-1add21f7821d	10.4014618	SEK	USD
-2450886e-5f3d-48cc-9b5c-db415edf12a4	1.3365404	SGD	USD
-ef42240d-afd3-4900-8e0f-66c6f78e9efd	1.3385265	SGD	USD
-22e808c0-f508-4c48-9648-da364894228c	1.5222721	AUD	USD
-3512dad9-d42d-4089-b941-fb6b7b23593c	10.4163917	SEK	USD
-a3253847-ee2e-4773-87a7-eaad36261ea8	17.1437886	MXN	USD
-e4a65768-534e-4e05-90c7-4d7130782d13	4.9697598	BRL	USD
-0ee0c2da-dfee-4b14-8faa-dde1aeef2b39	0.9148681	EUR	USD
-7d68fe8c-1bce-4338-bf1c-05a885fad57c	0.9128635	EUR	USD
-f0507b2c-1405-4a97-984f-4c7f68aa965b	7.8348453	HKD	USD
-d164869b-d9fa-4cbb-9cc1-3cb26e56b9e5	1.5234464	AUD	USD
-bda1e29a-c084-4684-80de-9e8884110526	4.9575503	BRL	USD
-8b7a58ce-4cd8-43bd-a1a6-ff878b80de01	1.5251441	AUD	USD
-8d698db1-9448-4fa4-8cac-dc044643d37a	149.0208006	JPY	USD
-70a2707a-a092-4559-875e-718548b4aa15	0.8867340	CHF	USD
-eafe9c41-b820-4978-a8a6-99617574005f	0.8879319	CHF	USD
-6733a0cc-e23a-49d2-a413-5e55ebcda943	0.7911008	GBP	USD
-fd35987c-91f7-4d9d-85eb-fac89284992e	1.3371628	SGD	USD
-df20e759-b7bd-4520-8f66-091cdd2ff8a1	0.9189083	EUR	USD
-7cad3b6e-850d-4236-9594-db27129ec860	4.9677615	BRL	USD
-1706ef2d-d1ba-440b-a2b4-34f447a01066	4.9538880	BRL	USD
-1d8f8735-e7df-42c6-8eb5-2c8aae4706bb	0.8886627	CHF	USD
-96f00651-c25b-4fc1-966f-794d95c92711	0.9101822	EUR	USD
-cb1b11b8-77e4-4451-9bfe-4ecae9c7349a	0.8888946	CHF	USD
+\.
+
+
+--
+-- Data for Name: f_industry; Type: TABLE DATA; Schema: analytics; Owner: alex_analytics
+--
+
+COPY analytics.f_industry (industry_id, time_id, total_revenue, total_expenses, net_profit, transaction_count, avg_revenue_per_co, revenue_growth_rate, company_count) FROM stdin;
 \.
 
 
@@ -1889,16 +488,14 @@ cb1b11b8-77e4-4451-9bfe-4ecae9c7349a	0.8888946	CHF	USD
 --
 
 COPY analytics.f_transaction (tx_id, amount, c_id, time_id, cncy) FROM stdin;
-2e7ff512-fe3e-4e8a-89d1-26069b73fe04	0.0000	3f8c1dd4-1018-58a9-94d6-cb0f2c49c242	c70bb0c5-1867-487f-8d04-3b63aa679a94	USD
-86f9a285-4f64-467c-a093-1e0d8fdf6839	0.0000	f2ea3ad5-4115-5d5c-86de-1fd36e164e37	c9f6391e-7e1c-4d25-8d00-1d8dd6fb329c	USD
-110b31fd-400f-4272-8165-5754ca52d063	0.0000	7a525a26-1723-5b82-a1b7-00f3554a516c	8e523d1d-6a3f-4784-963b-8e9b74b5dc13	USD
-b48000b7-8c90-47f3-bd5d-decb8560c804	0.0000	e09aa437-45a3-51ee-b775-f305b423ba5e	ff48e316-3191-435a-a45a-b37cc2ba5b02	MXN
-8de8c403-2c6d-44e7-955b-d9d089c316b1	0.0000	90579094-cbff-52b6-8163-4feefd85aadb	9e865a37-3d84-4bbf-afb2-5f6f73e13f10	EUR
-394d994d-891b-40e1-851f-c2cfdf62298c	0.0000	28396d03-bff9-54a2-bb02-c9370889ddcd	865808b7-599c-4cfc-8a60-33471fb8f794	JPY
-7ff5c455-851d-416a-9601-771fffef40d2	0.0000	28396d03-bff9-54a2-bb02-c9370889ddcd	1e0e298f-10d5-405c-9aba-d82cf9112cee	JPY
-78ab119b-fe2f-4411-aade-17ab479166cb	0.0000	33ca4a23-e4ae-5fd0-ba55-95bc3bee2e1d	8473f903-88b2-4894-866f-befaa810da6f	USD
-9524f7ca-af6e-455a-af9c-1fc6045d2a54	0.0000	902167aa-1323-5205-87ce-d94a0e3cba04	591a5435-d7a0-4b6a-8f18-384496fb5143	HKD
-73988a20-37e0-4490-8470-a2e94d5e386c	5140.5017	0ea00bc3-0ff3-5b3d-bafa-05342efa13d0	8473f903-88b2-4894-866f-befaa810da6f	EUR
+\.
+
+
+--
+-- Data for Name: expense_event; Type: TABLE DATA; Schema: raw; Owner: alex_analytics
+--
+
+COPY raw.expense_event (expense_id, c_id, cncy, expense_timestamp, amount, category_id, ingestion_timestamp) FROM stdin;
 \.
 
 
@@ -1907,1579 +504,6 @@ b48000b7-8c90-47f3-bd5d-decb8560c804	0.0000	e09aa437-45a3-51ee-b775-f305b423ba5e
 --
 
 COPY raw.fx_rate (fx_rate_id, base_cncy, quote_cncy, fx_timestamp, rate, ingestion_timestamp, source) FROM stdin;
-7f43ec9f-07a7-4c79-a114-33e5b0c9f668	NOK	USD	2026-03-12 17:52:57.605123-04	10.6006664	2026-03-12 17:52:57.721461-04	api
-85ff84aa-fe86-4b0d-9002-5222fd0a2893	NOK	USD	2026-03-12 17:53:02.605123-04	10.5999662	2026-03-12 17:52:57.721461-04	api
-71c21361-3bbf-4637-be2d-175cc4e7fccb	NOK	USD	2026-03-12 17:53:07.605123-04	10.6033610	2026-03-12 17:52:57.721461-04	api
-33bce948-78c4-4706-82ad-d93167c3958f	NOK	USD	2026-03-12 17:53:12.605123-04	10.6039171	2026-03-12 17:52:57.721461-04	api
-9e3f9317-7ae6-43b2-b9ee-8d58d9cf5d5e	NOK	USD	2026-03-12 17:53:17.605123-04	10.6010774	2026-03-12 17:52:57.721461-04	api
-b70bc31b-68af-4290-86d8-0b95899984df	NOK	USD	2026-03-12 17:53:22.605123-04	10.6029943	2026-03-12 17:52:57.721461-04	api
-d2eca58c-acbb-4cc2-9c27-ecf8a4ca06a4	NOK	USD	2026-03-12 17:53:27.605123-04	10.6099097	2026-03-12 17:52:57.721461-04	api
-f81f1dce-7c8c-4966-bede-5c1eb2cd65bf	NOK	USD	2026-03-12 17:53:32.605123-04	10.6149351	2026-03-12 17:52:57.721461-04	api
-f9526e10-2bb8-4ec5-a41a-f0f027d37862	NOK	USD	2026-03-12 17:53:37.605123-04	10.6112007	2026-03-12 17:52:57.721461-04	api
-b5b9bd80-6a30-4784-984d-69754bd14dba	NOK	USD	2026-03-12 17:53:42.605123-04	10.6044890	2026-03-12 17:52:57.721461-04	api
-8bcad2fa-b6f1-480c-a358-9e9805ce4e1c	NOK	USD	2026-03-12 17:53:47.605123-04	10.6011847	2026-03-12 17:52:57.721461-04	api
-76ee2190-a34c-4d01-beac-802e5ea94d36	NOK	USD	2026-03-12 17:53:52.605123-04	10.6014038	2026-03-12 17:52:57.721461-04	api
-98aaf2b7-b522-4c74-a628-7226782d1886	NOK	USD	2026-03-12 17:53:57.605123-04	10.5890867	2026-03-12 17:52:57.721461-04	api
-af6f14d8-7916-4629-a059-3003f1288f1e	NOK	USD	2026-03-12 17:54:02.605123-04	10.5879283	2026-03-12 17:52:57.721461-04	api
-e8bd1fb2-b3eb-4f4e-8487-8040943d47a1	NOK	USD	2026-03-12 17:54:07.605123-04	10.5813346	2026-03-12 17:52:57.721461-04	api
-dc047c1a-062e-44aa-be02-b82000bbdc7f	NOK	USD	2026-03-12 17:54:12.605123-04	10.5774611	2026-03-12 17:52:57.721461-04	api
-5c3ce17d-2a4f-45fb-8d3f-ee4f52872866	NOK	USD	2026-03-12 17:54:17.605123-04	10.5745830	2026-03-12 17:52:57.721461-04	api
-91652685-57e8-46a3-8711-dae421038e81	NOK	USD	2026-03-12 17:54:22.605123-04	10.5729108	2026-03-12 17:52:57.721461-04	api
-cb84b467-42d9-4826-8984-32eca5bb8f15	NOK	USD	2026-03-12 17:54:27.605123-04	10.5750871	2026-03-12 17:52:57.721461-04	api
-aee95d17-82d7-4f36-b4b1-740faedda2b6	NOK	USD	2026-03-12 17:54:32.605123-04	10.5806009	2026-03-12 17:52:57.721461-04	api
-ac19cf43-a48c-476c-bb38-3233dd567ef5	NOK	USD	2026-03-12 17:54:37.605123-04	10.5799209	2026-03-12 17:52:57.721461-04	api
-b89bd85d-fb63-4e85-915b-2d625db7219f	NOK	USD	2026-03-12 17:54:42.605123-04	10.5871519	2026-03-12 17:52:57.721461-04	api
-55b6e087-12a3-42a6-a6b0-06a1a12abad1	NOK	USD	2026-03-12 17:54:47.605123-04	10.5836312	2026-03-12 17:52:57.721461-04	api
-c86e0518-4837-41c2-bddb-eb8223c6e286	NOK	USD	2026-03-12 17:54:52.605123-04	10.5854915	2026-03-12 17:52:57.721461-04	api
-171cc401-982f-412d-9b33-e26f12db5dbf	NOK	USD	2026-03-12 17:54:57.605123-04	10.5902744	2026-03-12 17:52:57.721461-04	api
-ae1d2b47-0352-4a3f-a13c-a0c8f8194491	NOK	USD	2026-03-12 17:55:02.605123-04	10.5907723	2026-03-12 17:52:57.721461-04	api
-8012c89a-3664-4dc3-9bb5-37f412b4c5c5	NOK	USD	2026-03-12 17:55:07.605123-04	10.5868359	2026-03-12 17:52:57.721461-04	api
-3b04f0d7-1036-4682-8211-3c1168905dac	NOK	USD	2026-03-12 17:55:12.605123-04	10.5819579	2026-03-12 17:52:57.721461-04	api
-c0db03c4-1202-4c8e-b3a4-e5c4bb48dd5e	NOK	USD	2026-03-12 17:55:17.605123-04	10.5795364	2026-03-12 17:52:57.721461-04	api
-3be1f2a0-6de4-4a67-a768-b96b6f3fbb35	NOK	USD	2026-03-12 17:55:22.605123-04	10.5807012	2026-03-12 17:52:57.721461-04	api
-da2b1e6b-d3e5-48a5-b244-1e404af18cf3	NOK	USD	2026-03-12 17:55:27.605123-04	10.5753613	2026-03-12 17:52:57.721461-04	api
-ce9a1538-a161-4bf2-8e3a-3657c0f4e1f6	NOK	USD	2026-03-12 17:55:32.605123-04	10.5742554	2026-03-12 17:52:57.721461-04	api
-e35956cb-2ca1-4d3c-8622-76fb44ccaa91	NOK	USD	2026-03-12 17:55:37.605123-04	10.5734135	2026-03-12 17:52:57.721461-04	api
-e29860ac-7681-4b6a-b450-1791d6439fee	NOK	USD	2026-03-12 17:55:42.605123-04	10.5762732	2026-03-12 17:52:57.721461-04	api
-bb1bf6f3-8eaf-46a4-b067-131f7297bf0e	NOK	USD	2026-03-12 17:55:47.605123-04	10.5774084	2026-03-12 17:52:57.721461-04	api
-771d6dcf-ea36-453c-959c-969eaf9de274	NOK	USD	2026-03-12 17:55:52.605123-04	10.5792881	2026-03-12 17:52:57.721461-04	api
-017555fc-cc5b-47f1-9035-9434d23e3f4f	NOK	USD	2026-03-12 17:55:57.605123-04	10.5758301	2026-03-12 17:52:57.721461-04	api
-01c53286-4d34-4f7d-b614-d7718283aaed	NOK	USD	2026-03-12 17:56:02.605123-04	10.5751447	2026-03-12 17:52:57.721461-04	api
-c8150538-4315-44e4-82ab-e45ad36a53e5	NOK	USD	2026-03-12 17:56:07.605123-04	10.5792909	2026-03-12 17:52:57.721461-04	api
-cb357809-2bf1-4976-8326-f1b9f5251494	NOK	USD	2026-03-12 17:56:12.605123-04	10.5871936	2026-03-12 17:52:57.721461-04	api
-333fe522-2285-4de1-9468-7a2c01ef23c3	NOK	USD	2026-03-12 17:56:17.605123-04	10.5805307	2026-03-12 17:52:57.721461-04	api
-ce7af73e-a18e-43fd-9a6d-0688d65c3eb3	NOK	USD	2026-03-12 17:56:22.605123-04	10.5885428	2026-03-12 17:52:57.721461-04	api
-0a1c386c-29dc-4e4f-9c82-0aaaeff7c2f4	NOK	USD	2026-03-12 17:56:27.605123-04	10.5956706	2026-03-12 17:52:57.721461-04	api
-3181d5f4-d080-437a-8410-44f70fba178f	NOK	USD	2026-03-12 17:56:32.605123-04	10.5998106	2026-03-12 17:52:57.721461-04	api
-d6373851-7bfc-432e-a7b6-b1317b4e4de1	NOK	USD	2026-03-12 17:56:37.605123-04	10.6012123	2026-03-12 17:52:57.721461-04	api
-e7087e49-de93-4228-9e52-2a1ebee76a8b	NOK	USD	2026-03-12 17:56:42.605123-04	10.5995485	2026-03-12 17:52:57.721461-04	api
-cdb7c5a4-5e4c-4f6e-b1a7-2ba3bada11a9	NOK	USD	2026-03-12 17:56:47.605123-04	10.6072785	2026-03-12 17:52:57.721461-04	api
-ebc08512-b7cb-4da0-ab9c-13b1ea980e6a	NOK	USD	2026-03-12 17:56:52.605123-04	10.6176801	2026-03-12 17:52:57.721461-04	api
-4c41477f-9e3a-48e6-9f38-30a6a6a821c8	NOK	USD	2026-03-12 17:56:57.605123-04	10.6272490	2026-03-12 17:52:57.721461-04	api
-d6c0f123-a115-4c8a-827f-eca24e3e1b0e	NOK	USD	2026-03-12 17:57:02.605123-04	10.6342392	2026-03-12 17:52:57.721461-04	api
-e750ceeb-8db2-419b-a7e9-15ec0390da25	NOK	USD	2026-03-12 17:57:07.605123-04	10.6361396	2026-03-12 17:52:57.721461-04	api
-5fb7d721-3ff5-403d-b892-42c903cb597f	NOK	USD	2026-03-12 17:57:12.605123-04	10.6297157	2026-03-12 17:52:57.721461-04	api
-78def41f-c4fb-42d1-90e1-f6843a05b7e5	NOK	USD	2026-03-12 17:57:17.605123-04	10.6296920	2026-03-12 17:52:57.721461-04	api
-83e7d3c3-6124-4bef-9787-25b2fb0fd3e0	NOK	USD	2026-03-12 17:57:22.605123-04	10.6331816	2026-03-12 17:52:57.721461-04	api
-7c18ed5a-c0e3-4c08-a446-0929509963f3	NOK	USD	2026-03-12 17:57:27.605123-04	10.6263341	2026-03-12 17:52:57.721461-04	api
-052fadb5-e439-43af-9d46-78adcaf16748	NOK	USD	2026-03-12 17:57:32.605123-04	10.6284337	2026-03-12 17:52:57.721461-04	api
-1e936a5a-adb6-4a2c-ad99-08a7350cd29e	NOK	USD	2026-03-12 17:57:37.605123-04	10.6307183	2026-03-12 17:52:57.721461-04	api
-77bb92b8-c04c-4323-9620-ee440dea7acd	NOK	USD	2026-03-12 17:57:42.605123-04	10.6344187	2026-03-12 17:52:57.721461-04	api
-38b18398-e0ce-488b-ab50-0809026abe00	NOK	USD	2026-03-12 17:57:47.605123-04	10.6281244	2026-03-12 17:52:57.721461-04	api
-0d7d882e-959b-448c-8a3f-9b118ab6d9b4	NOK	USD	2026-03-12 17:57:52.605123-04	10.6246086	2026-03-12 17:52:57.721461-04	api
-3eefa5d0-7a49-45de-92f4-96a934c9cd14	NOK	USD	2026-03-12 17:57:57.605123-04	10.6222904	2026-03-12 17:52:57.721461-04	api
-2548f334-cafc-4a2c-a3a3-bd973744ee6b	NOK	USD	2026-03-12 17:58:02.605123-04	10.6160792	2026-03-12 17:52:57.721461-04	api
-1cb2ccb2-3fbf-431e-8806-d43e7cccc44f	NOK	USD	2026-03-12 17:58:07.605123-04	10.6253159	2026-03-12 17:52:57.721461-04	api
-3db1acc6-6175-496f-855e-0b74f1e2ea02	NOK	USD	2026-03-12 17:58:12.605123-04	10.6226816	2026-03-12 17:52:57.721461-04	api
-bae876c6-a489-483f-b887-5f8a249fd15e	NOK	USD	2026-03-12 17:58:17.605123-04	10.6244290	2026-03-12 17:52:57.721461-04	api
-eb4c38bc-9212-4e2d-8566-ad4259155d08	NOK	USD	2026-03-12 17:58:22.605123-04	10.6230555	2026-03-12 17:52:57.721461-04	api
-b242d508-8695-48b8-bf72-0bc6c1ac7823	NOK	USD	2026-03-12 17:58:27.605123-04	10.6314695	2026-03-12 17:52:57.721461-04	api
-1cec9c66-fc52-4399-aa55-0395fe4e59c9	NOK	USD	2026-03-12 17:58:32.605123-04	10.6384905	2026-03-12 17:52:57.721461-04	api
-981d7cb8-c83f-4b8a-b247-d198de6db97d	NOK	USD	2026-03-12 17:58:37.605123-04	10.6418600	2026-03-12 17:52:57.721461-04	api
-a7f7e8a2-f498-436e-8460-3dbe48940875	NOK	USD	2026-03-12 17:58:42.605123-04	10.6301417	2026-03-12 17:52:57.721461-04	api
-67715966-053f-426b-821d-b7694231272d	NOK	USD	2026-03-12 17:58:47.605123-04	10.6304183	2026-03-12 17:52:57.721461-04	api
-57ca984d-ec3c-4ef4-b5b2-9271d8d0ee28	NOK	USD	2026-03-12 17:58:52.605123-04	10.6340528	2026-03-12 17:52:57.721461-04	api
-94b2ea90-393c-400d-bec4-d0155a322252	NOK	USD	2026-03-12 17:58:57.605123-04	10.6393922	2026-03-12 17:52:57.721461-04	api
-3753561e-a173-49fb-b9b2-53e3d0b93f01	NOK	USD	2026-03-12 17:59:02.605123-04	10.6361057	2026-03-12 17:52:57.721461-04	api
-b3e0610b-5458-4c95-a078-ba50e434742e	NOK	USD	2026-03-12 17:59:07.605123-04	10.6457996	2026-03-12 17:52:57.721461-04	api
-50cbf811-ac48-4810-bd61-35cbb309258b	NOK	USD	2026-03-12 17:59:12.605123-04	10.6387734	2026-03-12 17:52:57.721461-04	api
-bd5cca11-6857-46bd-a723-f61b48386da5	NOK	USD	2026-03-12 17:59:17.605123-04	10.6352551	2026-03-12 17:52:57.721461-04	api
-9f9313b2-7a55-4d87-8893-bce3db5bc734	NOK	USD	2026-03-12 17:59:22.605123-04	10.6402285	2026-03-12 17:52:57.721461-04	api
-71e57bdc-6083-4a12-b18d-d81e57f9b138	NOK	USD	2026-03-12 17:59:27.605123-04	10.6404895	2026-03-12 17:52:57.721461-04	api
-ad0c1948-e402-4d63-9068-e5f5d73df25f	NOK	USD	2026-03-12 17:59:32.605123-04	10.6511480	2026-03-12 17:52:57.721461-04	api
-487487a3-7aa8-44e8-8a97-268ce71c8d1d	NOK	USD	2026-03-12 17:59:37.605123-04	10.6521521	2026-03-12 17:52:57.721461-04	api
-a4107f23-86fb-481e-aa26-34bf313e05a2	NOK	USD	2026-03-12 17:59:42.605123-04	10.6487802	2026-03-12 17:52:57.721461-04	api
-d0548283-4cc8-428d-9278-38248adda63e	NOK	USD	2026-03-12 17:59:47.605123-04	10.6467701	2026-03-12 17:52:57.721461-04	api
-fadbce1e-7f9b-4570-a675-240a599f6b4d	NOK	USD	2026-03-12 17:59:52.605123-04	10.6409630	2026-03-12 17:52:57.721461-04	api
-709f091b-f6ae-4899-8c47-93214a91829d	NOK	USD	2026-03-12 17:59:57.605123-04	10.6341673	2026-03-12 17:52:57.721461-04	api
-6277cc40-b083-47ea-aef2-31d044226366	NOK	USD	2026-03-12 18:00:02.605123-04	10.6375198	2026-03-12 17:52:57.721461-04	api
-9d34042d-c8f2-4dca-ae36-b7a5ec2f882d	NOK	USD	2026-03-12 18:00:07.605123-04	10.6406114	2026-03-12 17:52:57.721461-04	api
-af41678b-6546-4603-a5dd-11935014b316	NOK	USD	2026-03-12 18:00:12.605123-04	10.6475010	2026-03-12 17:52:57.721461-04	api
-27eb55c4-2e6f-4bdc-a931-13aceb2c10bd	NOK	USD	2026-03-12 18:00:17.605123-04	10.6434845	2026-03-12 17:52:57.721461-04	api
-83179a51-7652-4d06-b0ca-15944c8c1c7e	NOK	USD	2026-03-12 18:00:22.605123-04	10.6524772	2026-03-12 17:52:57.721461-04	api
-3897beda-cc68-4c53-afb9-ea20b935b175	NOK	USD	2026-03-12 18:00:27.605123-04	10.6509467	2026-03-12 17:52:57.721461-04	api
-c011a24e-5f98-46a9-b53b-df0121b3e263	NOK	USD	2026-03-12 18:00:32.605123-04	10.6593344	2026-03-12 17:52:57.721461-04	api
-69cbcbfb-c629-44ff-8486-e0717e6a7673	NOK	USD	2026-03-12 18:00:37.605123-04	10.6570281	2026-03-12 17:52:57.721461-04	api
-ae482352-c6e9-43e2-a9fe-d240bc4aedc2	NOK	USD	2026-03-12 18:00:42.605123-04	10.6531098	2026-03-12 17:52:57.721461-04	api
-9fba839e-eb4c-4b05-b8b5-5767e4c89d10	NOK	USD	2026-03-12 18:00:47.605123-04	10.6544403	2026-03-12 17:52:57.721461-04	api
-12747a32-a8c5-4d32-bc09-14a499fce73d	NOK	USD	2026-03-12 18:00:52.605123-04	10.6599365	2026-03-12 17:52:57.721461-04	api
-aff45281-a922-47c6-a863-d81da358914c	NOK	USD	2026-03-12 18:00:57.605123-04	10.6607947	2026-03-12 17:52:57.721461-04	api
-600beab9-6678-4d50-a36b-3aa7f8c4208c	NOK	USD	2026-03-12 18:01:02.605123-04	10.6576741	2026-03-12 17:52:57.721461-04	api
-1f694b2c-4207-4642-83fd-9cbda4b9339d	NOK	USD	2026-03-12 18:01:07.605123-04	10.6505294	2026-03-12 17:52:57.721461-04	api
-6465ed22-7b6d-4212-bab0-ae855f53ec92	NOK	USD	2026-03-12 18:01:12.605123-04	10.6430685	2026-03-12 17:52:57.721461-04	api
-050c356d-ab7e-4d65-947c-73b8638ec249	NOK	USD	2026-03-12 18:01:17.605123-04	10.6457439	2026-03-12 17:52:57.721461-04	api
-5501f6d7-8f4d-4b11-a693-dbae7eb4fd9f	NOK	USD	2026-03-12 18:01:22.605123-04	10.6510133	2026-03-12 17:52:57.721461-04	api
-1afa921e-cd9c-4ca5-8882-028d29588e28	NOK	USD	2026-03-12 18:01:27.605123-04	10.6501384	2026-03-12 17:52:57.721461-04	api
-921142d9-166a-4f14-b2c5-ee4d2fad8b29	NOK	USD	2026-03-12 18:01:32.605123-04	10.6444189	2026-03-12 17:52:57.721461-04	api
-65ad0e74-2531-4394-8332-fe5d351af9a0	NOK	USD	2026-03-12 18:01:37.605123-04	10.6490664	2026-03-12 17:52:57.721461-04	api
-0c260839-5571-4e4b-acd1-dceb1507c94e	NOK	USD	2026-03-12 18:01:42.605123-04	10.6422511	2026-03-12 17:52:57.721461-04	api
-b2556539-65d7-45b3-9895-f1a924e786ff	NOK	USD	2026-03-12 18:01:47.605123-04	10.6384574	2026-03-12 17:52:57.721461-04	api
-d4465ea9-b21a-44f9-9552-edbdf19c86be	NOK	USD	2026-03-12 18:01:52.605123-04	10.6417613	2026-03-12 17:52:57.721461-04	api
-cd02e0ed-ca32-441c-a24d-e277f431343b	NOK	USD	2026-03-12 18:01:57.605123-04	10.6297953	2026-03-12 17:52:57.721461-04	api
-563058e2-fd8e-4eff-9837-0678aa044bca	NOK	USD	2026-03-12 18:02:02.605123-04	10.6318490	2026-03-12 17:52:57.721461-04	api
-51700141-3535-4b23-b5c9-74cbef3a3997	NOK	USD	2026-03-12 18:02:07.605123-04	10.6287575	2026-03-12 17:52:57.721461-04	api
-4c280e7a-b6c5-4285-bcc5-fd3e9184e6bb	NOK	USD	2026-03-12 18:02:12.605123-04	10.6293382	2026-03-12 17:52:57.721461-04	api
-d849b0a3-30bd-4a70-8a9b-89c61f314185	NOK	USD	2026-03-12 18:02:17.605123-04	10.6289359	2026-03-12 17:52:57.721461-04	api
-1c0be3be-9ec0-404f-880a-9e13b790d021	NOK	USD	2026-03-12 18:02:22.605123-04	10.6300101	2026-03-12 17:52:57.721461-04	api
-af240ad9-8174-4550-a08e-5eb6b9a5ed59	NOK	USD	2026-03-12 18:02:27.605123-04	10.6337003	2026-03-12 17:52:57.721461-04	api
-5b8413b9-febf-461f-91aa-539dc134f750	NOK	USD	2026-03-12 18:02:32.605123-04	10.6296689	2026-03-12 17:52:57.721461-04	api
-b73ee2cd-6079-4559-b0e5-7b4e7590f41d	NOK	USD	2026-03-12 18:02:37.605123-04	10.6372239	2026-03-12 17:52:57.721461-04	api
-72ca8a3a-6e0d-43a3-baba-677262735772	NOK	USD	2026-03-12 18:02:42.605123-04	10.6410864	2026-03-12 17:52:57.721461-04	api
-706bea0c-a647-4928-9092-ffebd98810d5	NOK	USD	2026-03-12 18:02:47.605123-04	10.6455764	2026-03-12 17:52:57.721461-04	api
-b299321a-2b0c-44ba-a259-d926e17280a2	NOK	USD	2026-03-12 18:02:52.605123-04	10.6517786	2026-03-12 17:52:57.721461-04	api
-b4443cb0-58b9-4a33-b06d-0767a5556e1d	NOK	USD	2026-03-12 18:02:57.605123-04	10.6559740	2026-03-12 17:52:57.721461-04	api
-4f92c4cd-a891-4f3b-90b5-7b059bd482b4	SGD	USD	2026-03-12 17:52:57.605123-04	1.3402316	2026-03-12 17:52:57.721461-04	api
-96e4a4ae-bde2-4942-b25f-13ed0231fddb	SGD	USD	2026-03-12 17:53:02.605123-04	1.3407823	2026-03-12 17:52:57.721461-04	api
-5b37a8e9-3f49-44c0-b757-e143b9feb768	SGD	USD	2026-03-12 17:53:07.605123-04	1.3410038	2026-03-12 17:52:57.721461-04	api
-c0feaeeb-e1ae-4a7a-8e86-01d649b17e4a	SGD	USD	2026-03-12 17:53:12.605123-04	1.3401303	2026-03-12 17:52:57.721461-04	api
-e31c452a-e430-4804-a03d-b2d09f6e6442	SGD	USD	2026-03-12 17:53:17.605123-04	1.3407371	2026-03-12 17:52:57.721461-04	api
-1a8116d6-bb95-43d2-82c2-2ecc9e72702e	SGD	USD	2026-03-12 17:53:22.605123-04	1.3410364	2026-03-12 17:52:57.721461-04	api
-cd10423b-c673-4e6a-88fc-56981eb0ad2b	SGD	USD	2026-03-12 17:53:27.605123-04	1.3406764	2026-03-12 17:52:57.721461-04	api
-311417f7-bc80-4bf1-84d9-0d04485a3b8b	SGD	USD	2026-03-12 17:53:32.605123-04	1.3410660	2026-03-12 17:52:57.721461-04	api
-ca7ee6f9-54d6-4967-a248-7f8170e291c0	SGD	USD	2026-03-12 17:53:37.605123-04	1.3413105	2026-03-12 17:52:57.721461-04	api
-d350ae73-1710-4ec0-90fd-9bbb9c392aa7	SGD	USD	2026-03-12 17:53:42.605123-04	1.3415077	2026-03-12 17:52:57.721461-04	api
-4574328d-142a-43c8-92b1-be391514bf9d	SGD	USD	2026-03-12 17:53:47.605123-04	1.3415268	2026-03-12 17:52:57.721461-04	api
-c7f69905-05a7-4dde-bbe1-e1ce1fedffbe	SGD	USD	2026-03-12 17:53:52.605123-04	1.3418936	2026-03-12 17:52:57.721461-04	api
-60870acb-7cb3-4673-8599-b7ec6c9237fc	SGD	USD	2026-03-12 17:53:57.605123-04	1.3413995	2026-03-12 17:52:57.721461-04	api
-61c2b6fd-8d78-451f-a900-b5dd2c5ae3b7	SGD	USD	2026-03-12 17:54:02.605123-04	1.3412903	2026-03-12 17:52:57.721461-04	api
-95011b23-bef9-4006-b1b1-0bcc1ecab14f	SGD	USD	2026-03-12 17:54:07.605123-04	1.3409670	2026-03-12 17:52:57.721461-04	api
-212ec3af-4ae0-4c02-81c4-b2b47bb4cb98	SGD	USD	2026-03-12 17:54:12.605123-04	1.3413686	2026-03-12 17:52:57.721461-04	api
-eb637c09-50b0-4a7a-b077-f8228c1d80d7	SGD	USD	2026-03-12 17:54:17.605123-04	1.3413952	2026-03-12 17:52:57.721461-04	api
-be7700e5-be0d-47bc-a62e-ef7f8d2772d8	SGD	USD	2026-03-12 17:54:22.605123-04	1.3411991	2026-03-12 17:52:57.721461-04	api
-fdd0784f-e9c0-4003-82a3-fa39c6af2271	SGD	USD	2026-03-12 17:54:27.605123-04	1.3406748	2026-03-12 17:52:57.721461-04	api
-f7bfe43b-111c-4c81-b756-06b903b9f978	SGD	USD	2026-03-12 17:54:32.605123-04	1.3405024	2026-03-12 17:52:57.721461-04	api
-da0056e0-87a7-41e0-bbb9-f2f9d6aa2a01	SGD	USD	2026-03-12 17:54:37.605123-04	1.3405079	2026-03-12 17:52:57.721461-04	api
-61c5cc94-72ad-4094-a4ae-0542dd096dc1	SGD	USD	2026-03-12 17:54:42.605123-04	1.3403232	2026-03-12 17:52:57.721461-04	api
-32e443d4-bb13-462d-a4f9-6bf68f4a8e69	SGD	USD	2026-03-12 17:54:47.605123-04	1.3411907	2026-03-12 17:52:57.721461-04	api
-8bffdc20-70a0-4dba-a31a-c10cbfee9ea3	SGD	USD	2026-03-12 17:54:52.605123-04	1.3418660	2026-03-12 17:52:57.721461-04	api
-df0f8187-8c30-4921-8a3e-7c16bc4675d7	SGD	USD	2026-03-12 17:54:57.605123-04	1.3400482	2026-03-12 17:52:57.721461-04	api
-f2af7a37-30f5-432b-a84d-0dbe0b0a0e9d	SGD	USD	2026-03-12 17:55:02.605123-04	1.3387831	2026-03-12 17:52:57.721461-04	api
-0df42489-91a0-405b-886b-31e99302ee77	SGD	USD	2026-03-12 17:55:07.605123-04	1.3386661	2026-03-12 17:52:57.721461-04	api
-5b86f215-5270-4170-8c3b-bf8fb9844686	SGD	USD	2026-03-12 17:55:12.605123-04	1.3383836	2026-03-12 17:52:57.721461-04	api
-09fa8e27-8845-4883-9717-6e09ef4136a1	SGD	USD	2026-03-12 17:55:17.605123-04	1.3385265	2026-03-12 17:52:57.721461-04	api
-8a204059-77e1-4617-941c-e2481c13fdbc	SGD	USD	2026-03-12 17:55:22.605123-04	1.3386720	2026-03-12 17:52:57.721461-04	api
-47ec6e0e-eee4-4630-a184-0154c6906712	SGD	USD	2026-03-12 17:55:27.605123-04	1.3400903	2026-03-12 17:52:57.721461-04	api
-d0e7aa82-b2e6-4984-96bc-4eab400cc314	SGD	USD	2026-03-12 17:55:32.605123-04	1.3393454	2026-03-12 17:52:57.721461-04	api
-7e425e56-584c-4220-9fd0-57fc8b6c0b15	SGD	USD	2026-03-12 17:55:37.605123-04	1.3390925	2026-03-12 17:52:57.721461-04	api
-0369852c-4c40-4f6c-8b8e-88aa7b5e7494	SGD	USD	2026-03-12 17:55:42.605123-04	1.3404610	2026-03-12 17:52:57.721461-04	api
-9e5ac7cf-ee97-42de-a41e-177477cc1e4f	SGD	USD	2026-03-12 17:55:47.605123-04	1.3408945	2026-03-12 17:52:57.721461-04	api
-cce72386-8859-4696-a3e4-437051a5082e	SGD	USD	2026-03-12 17:55:52.605123-04	1.3413391	2026-03-12 17:52:57.721461-04	api
-ebbd677f-cebf-4eb7-9952-ed4bbb91a967	SGD	USD	2026-03-12 17:55:57.605123-04	1.3409944	2026-03-12 17:52:57.721461-04	api
-5f6e1e4e-3ce7-4572-8d98-1fdb7a8aa4e4	SGD	USD	2026-03-12 17:56:02.605123-04	1.3398898	2026-03-12 17:52:57.721461-04	api
-cbdc1c5f-ca3a-45b3-9e5f-58e67d8d2219	SGD	USD	2026-03-12 17:56:07.605123-04	1.3400020	2026-03-12 17:52:57.721461-04	api
-5cacd705-429b-4f92-b50a-713a9bbb9e25	SGD	USD	2026-03-12 17:56:12.605123-04	1.3400751	2026-03-12 17:52:57.721461-04	api
-74c1b777-7c02-4f91-94c1-8507ab5ddd6f	SGD	USD	2026-03-12 17:56:17.605123-04	1.3392530	2026-03-12 17:52:57.721461-04	api
-989a2a90-b894-4ced-a30d-ecbc904e5d98	SGD	USD	2026-03-12 17:56:22.605123-04	1.3387955	2026-03-12 17:52:57.721461-04	api
-24a96aa6-f03d-4d5b-a70f-2cb4b4f7deb4	SGD	USD	2026-03-12 17:56:27.605123-04	1.3387473	2026-03-12 17:52:57.721461-04	api
-70d7a5d9-6175-4887-bcee-935b9926ef0d	SGD	USD	2026-03-12 17:56:32.605123-04	1.3381151	2026-03-12 17:52:57.721461-04	api
-6a6117b5-dc2e-4365-acb5-8428bdde04e4	SGD	USD	2026-03-12 17:56:37.605123-04	1.3380493	2026-03-12 17:52:57.721461-04	api
-5d4c727c-10f7-4d3a-90d9-45201fc23d63	SGD	USD	2026-03-12 17:56:42.605123-04	1.3381132	2026-03-12 17:52:57.721461-04	api
-cc53b85b-4032-4f03-8af5-0cac437a351b	SGD	USD	2026-03-12 17:56:47.605123-04	1.3381370	2026-03-12 17:52:57.721461-04	api
-194e9c63-1c83-4854-9181-f4e5f594f9e6	SGD	USD	2026-03-12 17:56:52.605123-04	1.3377983	2026-03-12 17:52:57.721461-04	api
-2ec8d8e1-469e-4bf6-b746-b70f749fc833	SGD	USD	2026-03-12 17:56:57.605123-04	1.3381955	2026-03-12 17:52:57.721461-04	api
-56078ed1-999d-4c42-b73b-2918f8cc6785	SGD	USD	2026-03-12 17:57:02.605123-04	1.3387919	2026-03-12 17:52:57.721461-04	api
-b1a7db61-9d9b-4ab0-a1c5-05160f47e73f	SGD	USD	2026-03-12 17:57:07.605123-04	1.3390067	2026-03-12 17:52:57.721461-04	api
-75043c3f-b096-4942-9e87-a4d0eb5023ca	SGD	USD	2026-03-12 17:57:12.605123-04	1.3384590	2026-03-12 17:52:57.721461-04	api
-ff6ecccf-e0fa-4ac2-9e64-8a05520023d2	SGD	USD	2026-03-12 17:57:17.605123-04	1.3389488	2026-03-12 17:52:57.721461-04	api
-92fb1f99-c1fa-4183-acc6-48b7e49d9b03	SGD	USD	2026-03-12 17:57:22.605123-04	1.3386131	2026-03-12 17:52:57.721461-04	api
-0b4ede8c-9e1d-4389-9223-d06d119fe427	SGD	USD	2026-03-12 17:57:27.605123-04	1.3392017	2026-03-12 17:52:57.721461-04	api
-bbd26da5-63c9-46e7-a9d8-c4421c2037ee	SGD	USD	2026-03-12 17:57:32.605123-04	1.3384842	2026-03-12 17:52:57.721461-04	api
-ac446c38-a885-444d-963e-190bd55f7cde	SGD	USD	2026-03-12 17:57:37.605123-04	1.3390963	2026-03-12 17:52:57.721461-04	api
-28874caf-68fc-4188-af72-ca0e8eef9aa0	SGD	USD	2026-03-12 17:57:42.605123-04	1.3390829	2026-03-12 17:52:57.721461-04	api
-8fbd1e4a-104b-40f5-9c89-34784e1f4ab1	SGD	USD	2026-03-12 17:57:47.605123-04	1.3382471	2026-03-12 17:52:57.721461-04	api
-26ec30af-1e37-46fe-b459-ea1dea42147c	SGD	USD	2026-03-12 17:57:52.605123-04	1.3380370	2026-03-12 17:52:57.721461-04	api
-ff58c0a7-2df8-4b1e-8690-1f52bfc77a31	SGD	USD	2026-03-12 17:57:57.605123-04	1.3380732	2026-03-12 17:52:57.721461-04	api
-22828305-9909-4163-9168-5367c5f6b983	SGD	USD	2026-03-12 17:58:02.605123-04	1.3382558	2026-03-12 17:52:57.721461-04	api
-d393cae5-3242-49d1-ba8c-e03c1e037507	SGD	USD	2026-03-12 17:58:07.605123-04	1.3375987	2026-03-12 17:52:57.721461-04	api
-965dbf15-7e15-4276-9a87-bc3e90ab88ef	SGD	USD	2026-03-12 17:58:12.605123-04	1.3368583	2026-03-12 17:52:57.721461-04	api
-6870f874-c0a8-4068-8223-7c3406b7bef4	SGD	USD	2026-03-12 17:58:17.605123-04	1.3369917	2026-03-12 17:52:57.721461-04	api
-ce5d4a9e-c858-480c-b1a9-88489aa7fd66	SGD	USD	2026-03-12 17:58:22.605123-04	1.3366797	2026-03-12 17:52:57.721461-04	api
-aa94cccf-1628-45cb-9b2c-6ceb9e1de356	SGD	USD	2026-03-12 17:58:27.605123-04	1.3368371	2026-03-12 17:52:57.721461-04	api
-9d49e5f3-755c-4d6d-a1bb-e86021b103b2	SGD	USD	2026-03-12 17:58:32.605123-04	1.3373449	2026-03-12 17:52:57.721461-04	api
-e4614faf-95e4-4131-b1df-9d248c8d2a13	SGD	USD	2026-03-12 17:58:37.605123-04	1.3362429	2026-03-12 17:52:57.721461-04	api
-79b3b4df-1907-417e-bff4-2ddedcca9fa3	SGD	USD	2026-03-12 17:58:42.605123-04	1.3364128	2026-03-12 17:52:57.721461-04	api
-340a4cec-d58e-4e14-bf92-752b6cecb8aa	SGD	USD	2026-03-12 17:58:47.605123-04	1.3372314	2026-03-12 17:52:57.721461-04	api
-b2640d63-84b5-4752-8956-4ff7afd96ce9	SGD	USD	2026-03-12 17:58:52.605123-04	1.3370325	2026-03-12 17:52:57.721461-04	api
-45759a1e-1dad-4b3a-a06a-18723022ea63	SGD	USD	2026-03-12 17:58:57.605123-04	1.3364906	2026-03-12 17:52:57.721461-04	api
-251d3757-60b5-4223-bbde-e4e61ec0966b	SGD	USD	2026-03-12 17:59:02.605123-04	1.3369933	2026-03-12 17:52:57.721461-04	api
-b09aaa44-5f73-4354-82b7-855875dcaf37	SGD	USD	2026-03-12 17:59:07.605123-04	1.3371628	2026-03-12 17:52:57.721461-04	api
-5538bc9d-27b5-4ebe-bccb-b44a3ad31d9e	SGD	USD	2026-03-12 17:59:12.605123-04	1.3377619	2026-03-12 17:52:57.721461-04	api
-db993a26-9c90-4e10-a6e2-a2ad48d6a349	SGD	USD	2026-03-12 17:59:17.605123-04	1.3375310	2026-03-12 17:52:57.721461-04	api
-ac16350a-a104-42bf-a639-cbf756eecb26	SGD	USD	2026-03-12 17:59:22.605123-04	1.3365404	2026-03-12 17:52:57.721461-04	api
-0bdb29db-098a-4186-8a67-40589bce1f14	SGD	USD	2026-03-12 17:59:27.605123-04	1.3364669	2026-03-12 17:52:57.721461-04	api
-68940c4a-7e5a-47d3-b7f5-de2d38de7eda	SGD	USD	2026-03-12 17:59:32.605123-04	1.3361690	2026-03-12 17:52:57.721461-04	api
-d6e7f4fe-0622-4311-a789-e9834d4b5793	SGD	USD	2026-03-12 17:59:37.605123-04	1.3366871	2026-03-12 17:52:57.721461-04	api
-f9653131-7e31-4f43-bb63-dbad34a48810	SGD	USD	2026-03-12 17:59:42.605123-04	1.3368165	2026-03-12 17:52:57.721461-04	api
-fa81b31d-b94b-47dd-8ee8-a8dfa90b8028	SGD	USD	2026-03-12 17:59:47.605123-04	1.3357268	2026-03-12 17:52:57.721461-04	api
-11faf1a3-d6e7-4695-bc16-cb0b60984015	SGD	USD	2026-03-12 17:59:52.605123-04	1.3349289	2026-03-12 17:52:57.721461-04	api
-8202f456-6eac-4c49-82c4-fa0735af178e	SGD	USD	2026-03-12 17:59:57.605123-04	1.3355189	2026-03-12 17:52:57.721461-04	api
-eba36367-3eba-4988-b28f-ac797422f3b7	SGD	USD	2026-03-12 18:00:02.605123-04	1.3359729	2026-03-12 17:52:57.721461-04	api
-38d0d5cb-b1d2-4ef0-88c9-8a2d465604e8	SGD	USD	2026-03-12 18:00:07.605123-04	1.3355453	2026-03-12 17:52:57.721461-04	api
-935d751b-7e6d-4e01-a833-580d091c0668	SGD	USD	2026-03-12 18:00:12.605123-04	1.3355446	2026-03-12 17:52:57.721461-04	api
-c40b6e48-1ba7-462d-bfd6-ed5b71840564	SGD	USD	2026-03-12 18:00:17.605123-04	1.3358422	2026-03-12 17:52:57.721461-04	api
-69e12018-a6c6-44fa-80b1-54aeb224b3b4	SGD	USD	2026-03-12 18:00:22.605123-04	1.3361551	2026-03-12 17:52:57.721461-04	api
-d4a20796-11ae-4f56-b4b2-6cbd9afff7d0	SGD	USD	2026-03-12 18:00:27.605123-04	1.3367406	2026-03-12 17:52:57.721461-04	api
-c201122f-52c1-44ef-bcb4-b63f58f6b3d4	SGD	USD	2026-03-12 18:00:32.605123-04	1.3369120	2026-03-12 17:52:57.721461-04	api
-f39c5847-29a7-4181-bbfd-491be9295bca	SGD	USD	2026-03-12 18:00:37.605123-04	1.3368486	2026-03-12 17:52:57.721461-04	api
-dd2e2896-9956-42ed-9d58-3decf0709102	SGD	USD	2026-03-12 18:00:42.605123-04	1.3366756	2026-03-12 17:52:57.721461-04	api
-73a3b9db-256c-494c-a2eb-071c2a0cdecc	SGD	USD	2026-03-12 18:00:47.605123-04	1.3373814	2026-03-12 17:52:57.721461-04	api
-db942e6e-fe86-4f4f-a73b-920112e235c4	SGD	USD	2026-03-12 18:00:52.605123-04	1.3358771	2026-03-12 17:52:57.721461-04	api
-255ad97e-269d-4230-be89-7c8b979b306c	SGD	USD	2026-03-12 18:00:57.605123-04	1.3357845	2026-03-12 17:52:57.721461-04	api
-f664e2f8-8503-4b67-aed8-995e33a628ee	SGD	USD	2026-03-12 18:01:02.605123-04	1.3358066	2026-03-12 17:52:57.721461-04	api
-59222609-97c5-4d33-9fe6-8c5590a6b1b1	SGD	USD	2026-03-12 18:01:07.605123-04	1.3348549	2026-03-12 17:52:57.721461-04	api
-3d1f4110-5b94-463b-9749-8c2f48eaef7c	SGD	USD	2026-03-12 18:01:12.605123-04	1.3350771	2026-03-12 17:52:57.721461-04	api
-fc7f9610-afa3-4117-a054-fc8580311a6b	SGD	USD	2026-03-12 18:01:17.605123-04	1.3346424	2026-03-12 17:52:57.721461-04	api
-d7f6015a-9da5-41e7-b574-423370c54504	SGD	USD	2026-03-12 18:01:22.605123-04	1.3352180	2026-03-12 17:52:57.721461-04	api
-b394d618-8dae-4546-9a4c-1bf72a9ae88f	SGD	USD	2026-03-12 18:01:27.605123-04	1.3351342	2026-03-12 17:52:57.721461-04	api
-5c4cf3b7-c8ff-4ab7-8890-9d2d5df8d890	SGD	USD	2026-03-12 18:01:32.605123-04	1.3355810	2026-03-12 17:52:57.721461-04	api
-68b88c3a-4a76-43cc-bfa8-29172f994028	SGD	USD	2026-03-12 18:01:37.605123-04	1.3363951	2026-03-12 17:52:57.721461-04	api
-0a877dd6-dcb4-4011-be13-7574a7afecd3	SGD	USD	2026-03-12 18:01:42.605123-04	1.3366510	2026-03-12 17:52:57.721461-04	api
-0139e4a0-9586-4f7b-9335-6bdd52c6e589	SGD	USD	2026-03-12 18:01:47.605123-04	1.3360659	2026-03-12 17:52:57.721461-04	api
-a652ed78-5f4f-4440-9065-a3511b694e6c	SGD	USD	2026-03-12 18:01:52.605123-04	1.3350547	2026-03-12 17:52:57.721461-04	api
-84ea4338-14e1-45c1-b7d6-fadfdde3e496	SGD	USD	2026-03-12 18:01:57.605123-04	1.3362256	2026-03-12 17:52:57.721461-04	api
-d543bac9-622d-4012-a588-d21410f45a2f	SGD	USD	2026-03-12 18:02:02.605123-04	1.3361513	2026-03-12 17:52:57.721461-04	api
-4f7c3742-cd11-4059-a1ee-95c517cabecd	SGD	USD	2026-03-12 18:02:07.605123-04	1.3356913	2026-03-12 17:52:57.721461-04	api
-c6926a4d-0514-47c0-83a2-ea08040d19c8	SGD	USD	2026-03-12 18:02:12.605123-04	1.3357877	2026-03-12 17:52:57.721461-04	api
-3ea3de44-c470-4a83-bf58-930c42910481	SGD	USD	2026-03-12 18:02:17.605123-04	1.3356598	2026-03-12 17:52:57.721461-04	api
-4f77db3e-d132-430a-aeb4-dbce8d5bc5a8	SGD	USD	2026-03-12 18:02:22.605123-04	1.3362290	2026-03-12 17:52:57.721461-04	api
-f9217993-af23-4b7c-9c8f-4922d5a9dba6	SGD	USD	2026-03-12 18:02:27.605123-04	1.3362517	2026-03-12 17:52:57.721461-04	api
-07c1d1af-55ab-4048-8351-cd35972c93a2	SGD	USD	2026-03-12 18:02:32.605123-04	1.3362609	2026-03-12 17:52:57.721461-04	api
-6a5081e6-0375-40f4-9d0c-30cac24f8de9	SGD	USD	2026-03-12 18:02:37.605123-04	1.3357835	2026-03-12 17:52:57.721461-04	api
-a3b2813a-b401-4f6c-b6b4-d602d5f4511b	SGD	USD	2026-03-12 18:02:42.605123-04	1.3360972	2026-03-12 17:52:57.721461-04	api
-622eeb2c-2f8a-4648-9d65-a42003738dac	SGD	USD	2026-03-12 18:02:47.605123-04	1.3354067	2026-03-12 17:52:57.721461-04	api
-619d59e0-70f1-4bf7-892e-5f6ab5ff19a1	SGD	USD	2026-03-12 18:02:52.605123-04	1.3358514	2026-03-12 17:52:57.721461-04	api
-1e1c046d-7668-42c5-a959-27a4adceb270	SGD	USD	2026-03-12 18:02:57.605123-04	1.3368697	2026-03-12 17:52:57.721461-04	api
-9f0a286a-1f81-4fde-a899-5cc694db834a	AED	USD	2026-03-12 17:52:57.605123-04	3.6703469	2026-03-12 17:52:57.721461-04	api
-12a306f6-6938-4d5d-8101-40d4ec6a376a	AED	USD	2026-03-12 17:53:02.605123-04	3.6693877	2026-03-12 17:52:57.721461-04	api
-e76f2df1-01f4-4f27-8f25-51f9d4989b23	AED	USD	2026-03-12 17:53:07.605123-04	3.6686300	2026-03-12 17:52:57.721461-04	api
-81667c96-681d-435b-868b-07f0e0dba24b	AED	USD	2026-03-12 17:53:12.605123-04	3.6641543	2026-03-12 17:52:57.721461-04	api
-c28639d1-8f8b-4d08-bc61-7acf8a1ba280	AED	USD	2026-03-12 17:53:17.605123-04	3.6674530	2026-03-12 17:52:57.721461-04	api
-b246a0b9-f210-4f9c-abf5-cd29f5ce3c21	AED	USD	2026-03-12 17:53:22.605123-04	3.6695516	2026-03-12 17:52:57.721461-04	api
-f895fbaa-03bf-4a4f-9ed4-21f8b2e52231	AED	USD	2026-03-12 17:53:27.605123-04	3.6689546	2026-03-12 17:52:57.721461-04	api
-7c2cc9f1-75da-45c3-a1e4-849fe07380e1	AED	USD	2026-03-12 17:53:32.605123-04	3.6703744	2026-03-12 17:52:57.721461-04	api
-75b03b56-e29a-44f2-8742-e63708844647	AED	USD	2026-03-12 17:53:37.605123-04	3.6708905	2026-03-12 17:52:57.721461-04	api
-03de844f-16cf-4024-bd21-c517530b5b38	AED	USD	2026-03-12 17:53:42.605123-04	3.6698742	2026-03-12 17:52:57.721461-04	api
-cdf1aece-36b9-4e70-ad95-ea39d04573d0	AED	USD	2026-03-12 17:53:47.605123-04	3.6716684	2026-03-12 17:52:57.721461-04	api
-295256cb-fc4f-465f-8325-f7b12b2de615	AED	USD	2026-03-12 17:53:52.605123-04	3.6710983	2026-03-12 17:52:57.721461-04	api
-7133cf49-bba1-49ae-b12b-484f3ddeb056	AED	USD	2026-03-12 17:53:57.605123-04	3.6704948	2026-03-12 17:52:57.721461-04	api
-c308e406-a80a-4ec6-b648-ddfafcbc3f04	AED	USD	2026-03-12 17:54:02.605123-04	3.6690413	2026-03-12 17:52:57.721461-04	api
-9b1c054b-1220-40bd-a9f0-28f784ba0d62	AED	USD	2026-03-12 17:54:07.605123-04	3.6698760	2026-03-12 17:52:57.721461-04	api
-ca1aa928-418e-417b-bb2b-79842151b40f	AED	USD	2026-03-12 17:54:12.605123-04	3.6696940	2026-03-12 17:52:57.721461-04	api
-238a2018-147e-4b8c-8377-618dd97aa61e	AED	USD	2026-03-12 17:54:17.605123-04	3.6706946	2026-03-12 17:52:57.721461-04	api
-368e60ce-3374-43fc-afb6-5984ef2bd4ef	AED	USD	2026-03-12 17:54:22.605123-04	3.6695804	2026-03-12 17:52:57.721461-04	api
-46614f8d-bd6d-4252-a034-921320b65b78	AED	USD	2026-03-12 17:54:27.605123-04	3.6698131	2026-03-12 17:52:57.721461-04	api
-5bc3ced0-3a6e-4a5a-b1cd-9ce5e5e576a3	AED	USD	2026-03-12 17:54:32.605123-04	3.6681762	2026-03-12 17:52:57.721461-04	api
-656ce786-00e5-402a-8e35-1cb8e40dbbd8	AED	USD	2026-03-12 17:54:37.605123-04	3.6697199	2026-03-12 17:52:57.721461-04	api
-4f47f7ce-b141-4b51-91ab-8a6eb44c900e	AED	USD	2026-03-12 17:54:42.605123-04	3.6700649	2026-03-12 17:52:57.721461-04	api
-ef8cf25b-35ea-4ee1-bb86-9edad804e6e6	AED	USD	2026-03-12 17:54:47.605123-04	3.6706716	2026-03-12 17:52:57.721461-04	api
-e8907089-8ddb-4bf4-95f2-78be159069c4	AED	USD	2026-03-12 17:54:52.605123-04	3.6714251	2026-03-12 17:52:57.721461-04	api
-2eed776b-e4b4-448f-b542-d3088c9d08e6	AED	USD	2026-03-12 17:54:57.605123-04	3.6695701	2026-03-12 17:52:57.721461-04	api
-c5420627-79f8-418d-9b65-a559a710782a	AED	USD	2026-03-12 17:55:02.605123-04	3.6710073	2026-03-12 17:52:57.721461-04	api
-d15bf3d8-110a-415d-b1ee-063892c05036	AED	USD	2026-03-12 17:55:07.605123-04	3.6747844	2026-03-12 17:52:57.721461-04	api
-3d48b282-b04c-4465-a7da-1d1642d34b1f	AED	USD	2026-03-12 17:55:12.605123-04	3.6717751	2026-03-12 17:52:57.721461-04	api
-cad07e83-891b-4382-9503-7b2b75f726d0	AED	USD	2026-03-12 17:55:17.605123-04	3.6686015	2026-03-12 17:52:57.721461-04	api
-a2ad4fcb-8c76-449d-8717-aa1874e7ece8	AED	USD	2026-03-12 17:55:22.605123-04	3.6658422	2026-03-12 17:52:57.721461-04	api
-5f0de7bd-da67-4a83-893d-b02b2afbf4ef	AED	USD	2026-03-12 17:55:27.605123-04	3.6673849	2026-03-12 17:52:57.721461-04	api
-58aacd14-9bcf-47bc-ac57-ecc7be1bcc3c	AED	USD	2026-03-12 17:55:32.605123-04	3.6676209	2026-03-12 17:52:57.721461-04	api
-00d659bd-7f76-44e7-b0a9-6aa8f56ffa4d	AED	USD	2026-03-12 17:55:37.605123-04	3.6695989	2026-03-12 17:52:57.721461-04	api
-1d1299c2-e395-49ec-819d-8fb3930b2566	AED	USD	2026-03-12 17:55:42.605123-04	3.6709247	2026-03-12 17:52:57.721461-04	api
-4ffd2c01-ec3c-4758-96cd-9acd2f53d750	AED	USD	2026-03-12 17:55:47.605123-04	3.6713112	2026-03-12 17:52:57.721461-04	api
-6c1d521e-51e6-4976-b3a6-8e0ecbf598d4	AED	USD	2026-03-12 17:55:52.605123-04	3.6718326	2026-03-12 17:52:57.721461-04	api
-d507452c-ea06-4b0d-aaf9-a05a4e155a9b	AED	USD	2026-03-12 17:55:57.605123-04	3.6715210	2026-03-12 17:52:57.721461-04	api
-daae2819-b8c5-435b-a156-cc10e20cdf71	AED	USD	2026-03-12 17:56:02.605123-04	3.6731156	2026-03-12 17:52:57.721461-04	api
-0b2d4c02-33d9-4e1a-bd93-9b568a3b9af7	AED	USD	2026-03-12 17:56:07.605123-04	3.6710414	2026-03-12 17:52:57.721461-04	api
-bff9eb10-1961-451e-8f61-39205a80a8f6	AED	USD	2026-03-12 17:56:12.605123-04	3.6702671	2026-03-12 17:52:57.721461-04	api
-56f08462-486b-44c5-a4a0-0aa40d7762c0	AED	USD	2026-03-12 17:56:17.605123-04	3.6707130	2026-03-12 17:52:57.721461-04	api
-dd18fc0a-8b5c-4396-ba4f-9178e05e8e15	AED	USD	2026-03-12 17:56:22.605123-04	3.6740207	2026-03-12 17:52:57.721461-04	api
-96c0a991-d535-4f09-8a4a-8dcf28c1a45e	AED	USD	2026-03-12 17:56:27.605123-04	3.6726167	2026-03-12 17:52:57.721461-04	api
-7d4a25be-3516-4d50-be73-83b66aa0038d	AED	USD	2026-03-12 17:56:32.605123-04	3.6706357	2026-03-12 17:52:57.721461-04	api
-7181d9d4-8659-4ed7-a5eb-7d1961c2888d	AED	USD	2026-03-12 17:56:37.605123-04	3.6696021	2026-03-12 17:52:57.721461-04	api
-175f721b-bbb2-4ce4-ad98-923a155f7fa5	AED	USD	2026-03-12 17:56:42.605123-04	3.6713809	2026-03-12 17:52:57.721461-04	api
-ad4b4973-fb87-4f88-82cd-0e895fe531d5	AED	USD	2026-03-12 17:56:47.605123-04	3.6709495	2026-03-12 17:52:57.721461-04	api
-b6a674fc-0223-4c9d-af6d-1956b003a246	AED	USD	2026-03-12 17:56:52.605123-04	3.6733811	2026-03-12 17:52:57.721461-04	api
-710c349a-9074-4dd1-8776-e1a4f4b98844	AED	USD	2026-03-12 17:56:57.605123-04	3.6699435	2026-03-12 17:52:57.721461-04	api
-7f45723e-100c-4082-9fd5-cdd76fc4e27f	AED	USD	2026-03-12 17:57:02.605123-04	3.6720149	2026-03-12 17:52:57.721461-04	api
-ea844a79-c026-4348-b261-85d313a48257	AED	USD	2026-03-12 17:57:07.605123-04	3.6739154	2026-03-12 17:52:57.721461-04	api
-10626714-7545-449e-bb76-9919df101b13	AED	USD	2026-03-12 17:57:12.605123-04	3.6713103	2026-03-12 17:52:57.721461-04	api
-c0418722-36f6-43ae-9e51-b2622a2854bc	AED	USD	2026-03-12 17:57:17.605123-04	3.6715922	2026-03-12 17:52:57.721461-04	api
-5a9d1a7d-9c6d-4438-9952-0bb50e53d2e0	AED	USD	2026-03-12 17:57:22.605123-04	3.6738248	2026-03-12 17:52:57.721461-04	api
-6eb72a68-7e42-4ad5-b0ae-543f6412838c	AED	USD	2026-03-12 17:57:27.605123-04	3.6739863	2026-03-12 17:52:57.721461-04	api
-23802729-3485-46cc-9b6d-e5b3150d3d3f	AED	USD	2026-03-12 17:57:32.605123-04	3.6758232	2026-03-12 17:52:57.721461-04	api
-a0c6b336-841b-4a6f-a394-50f8a264036f	AED	USD	2026-03-12 17:57:37.605123-04	3.6801906	2026-03-12 17:52:57.721461-04	api
-508744df-ef02-4c92-9477-abb8edd8a136	AED	USD	2026-03-12 17:57:42.605123-04	3.6806947	2026-03-12 17:52:57.721461-04	api
-189b10d5-29af-407e-a7d6-7cd14df3c267	AED	USD	2026-03-12 17:57:47.605123-04	3.6801788	2026-03-12 17:52:57.721461-04	api
-a0f8e9e0-44e9-414a-9b31-ff46e14d73ac	AED	USD	2026-03-12 17:57:52.605123-04	3.6787602	2026-03-12 17:52:57.721461-04	api
-8ab8c8a2-8cf0-4e7d-b8b0-2cb2ad99164c	AED	USD	2026-03-12 17:57:57.605123-04	3.6799525	2026-03-12 17:52:57.721461-04	api
-4a6b925d-662f-47c2-93da-e5128480f852	AED	USD	2026-03-12 17:58:02.605123-04	3.6795905	2026-03-12 17:52:57.721461-04	api
-b6617636-4d80-4035-a9d1-21e38dd4104d	AED	USD	2026-03-12 17:58:07.605123-04	3.6792617	2026-03-12 17:52:57.721461-04	api
-fdf420c5-5fb2-4a21-b8a9-853f2feb64b4	AED	USD	2026-03-12 17:58:12.605123-04	3.6790680	2026-03-12 17:52:57.721461-04	api
-bf823d36-cc05-4d20-9b63-cd3bea2b58f1	AED	USD	2026-03-12 17:58:17.605123-04	3.6802637	2026-03-12 17:52:57.721461-04	api
-c08e8d31-2018-4749-a5ad-46c829dd5d68	AED	USD	2026-03-12 17:58:22.605123-04	3.6783020	2026-03-12 17:52:57.721461-04	api
-553a3e4b-a14c-47f1-80ee-e587407177f3	AED	USD	2026-03-12 17:58:27.605123-04	3.6754894	2026-03-12 17:52:57.721461-04	api
-0e28df04-4edf-4ad8-9580-ac94029ad7fd	AED	USD	2026-03-12 17:58:32.605123-04	3.6710193	2026-03-12 17:52:57.721461-04	api
-49218cdd-befd-471f-afc4-7e1c3b032463	AED	USD	2026-03-12 17:58:37.605123-04	3.6732201	2026-03-12 17:52:57.721461-04	api
-1217160f-d0e1-457e-9387-9daa5cc7fc4b	AED	USD	2026-03-12 17:58:42.605123-04	3.6733556	2026-03-12 17:52:57.721461-04	api
-d2b9364d-f7e6-4deb-b052-a0e548650dcf	AED	USD	2026-03-12 17:58:47.605123-04	3.6761303	2026-03-12 17:52:57.721461-04	api
-483c7c58-fef5-42f6-98eb-ff80cb06c556	AED	USD	2026-03-12 17:58:52.605123-04	3.6761138	2026-03-12 17:52:57.721461-04	api
-9f96e878-2bbb-453b-b425-370a1eeb638d	AED	USD	2026-03-12 17:58:57.605123-04	3.6747499	2026-03-12 17:52:57.721461-04	api
-92f9086f-29dc-474f-ad82-33bafb44e154	AED	USD	2026-03-12 17:59:02.605123-04	3.6756282	2026-03-12 17:52:57.721461-04	api
-4e9171d7-b97e-44b7-89b0-7ed7eba4d025	AED	USD	2026-03-12 17:59:07.605123-04	3.6754874	2026-03-12 17:52:57.721461-04	api
-0b39c72e-61d6-4b6c-8429-f4730614b46c	AED	USD	2026-03-12 17:59:12.605123-04	3.6731833	2026-03-12 17:52:57.721461-04	api
-6c157be0-2c7e-4fc4-9daa-a1701e83693e	AED	USD	2026-03-12 17:59:17.605123-04	3.6715581	2026-03-12 17:52:57.721461-04	api
-8c227cd8-a4b6-4938-aec8-84a64eb1bb85	AED	USD	2026-03-12 17:59:22.605123-04	3.6748030	2026-03-12 17:52:57.721461-04	api
-87f014d9-a901-476e-ba64-7a5773a7a401	AED	USD	2026-03-12 17:59:27.605123-04	3.6754541	2026-03-12 17:52:57.721461-04	api
-57017f72-d14e-4089-a86f-4bff2257ce01	AED	USD	2026-03-12 17:59:32.605123-04	3.6762194	2026-03-12 17:52:57.721461-04	api
-0a9854ba-cdf4-4588-a337-6ee994fb8667	AED	USD	2026-03-12 17:59:37.605123-04	3.6757111	2026-03-12 17:52:57.721461-04	api
-ebf4e5f2-8588-4066-bc53-29acbbab77d1	AED	USD	2026-03-12 17:59:42.605123-04	3.6744437	2026-03-12 17:52:57.721461-04	api
-7c23853e-7624-4d6b-ab4d-75bf5c587c63	AED	USD	2026-03-12 17:59:47.605123-04	3.6760823	2026-03-12 17:52:57.721461-04	api
-42ea2494-0721-4eca-beb3-16bd649729c9	AED	USD	2026-03-12 17:59:52.605123-04	3.6758900	2026-03-12 17:52:57.721461-04	api
-7aea7995-2612-4cc1-9ed6-9082827493f1	AED	USD	2026-03-12 17:59:57.605123-04	3.6744950	2026-03-12 17:52:57.721461-04	api
-6ec77060-1f7a-49b1-b215-c28c6d357c06	AED	USD	2026-03-12 18:00:02.605123-04	3.6742486	2026-03-12 17:52:57.721461-04	api
-c09c3211-3283-4f92-9b3b-d969e4c7e639	AED	USD	2026-03-12 18:00:07.605123-04	3.6725853	2026-03-12 17:52:57.721461-04	api
-72d842c5-729a-49ca-aca6-0b4adb8bd0d1	AED	USD	2026-03-12 18:00:12.605123-04	3.6729343	2026-03-12 17:52:57.721461-04	api
-0152a03b-ad5f-4ce2-8e05-e6a8fbc7aabb	AED	USD	2026-03-12 18:00:17.605123-04	3.6750086	2026-03-12 17:52:57.721461-04	api
-50e91c86-62d0-41c8-89fa-7030404e703c	AED	USD	2026-03-12 18:00:22.605123-04	3.6734727	2026-03-12 17:52:57.721461-04	api
-33cd5e74-99ea-4194-80a7-02470d666664	AED	USD	2026-03-12 18:00:27.605123-04	3.6760975	2026-03-12 17:52:57.721461-04	api
-0f35e842-bc2e-423d-b6d1-ea70a8899702	AED	USD	2026-03-12 18:00:32.605123-04	3.6748705	2026-03-12 17:52:57.721461-04	api
-2cd16de5-285c-4c3a-a3d3-98d9fc10845b	AED	USD	2026-03-12 18:00:37.605123-04	3.6751524	2026-03-12 17:52:57.721461-04	api
-b9cc927e-8183-4b24-826d-04cc6ae0cc4f	AED	USD	2026-03-12 18:00:42.605123-04	3.6736158	2026-03-12 17:52:57.721461-04	api
-26e34880-ed18-4256-8db3-ca1f52723159	AED	USD	2026-03-12 18:00:47.605123-04	3.6732076	2026-03-12 17:52:57.721461-04	api
-d415b779-98cb-46e6-9404-55890cc23151	AED	USD	2026-03-12 18:00:52.605123-04	3.6732947	2026-03-12 17:52:57.721461-04	api
-25f0ccb5-0013-4840-8270-70c81f43e674	AED	USD	2026-03-12 18:00:57.605123-04	3.6724964	2026-03-12 17:52:57.721461-04	api
-b43bef90-c8f7-4538-b954-a3f4d794823a	AED	USD	2026-03-12 18:01:02.605123-04	3.6712060	2026-03-12 17:52:57.721461-04	api
-4ad4ba83-70e4-42d5-b4f2-842d6f043cdf	AED	USD	2026-03-12 18:01:07.605123-04	3.6699619	2026-03-12 17:52:57.721461-04	api
-45c81f80-ec9f-4bab-93da-cd044e4ccee8	AED	USD	2026-03-12 18:01:12.605123-04	3.6684554	2026-03-12 17:52:57.721461-04	api
-b0c2a885-6b84-48ec-9768-cc3e40a4bacb	AED	USD	2026-03-12 18:01:17.605123-04	3.6655766	2026-03-12 17:52:57.721461-04	api
-c2624197-7faa-477e-a78e-a079bbd526c0	AED	USD	2026-03-12 18:01:22.605123-04	3.6650947	2026-03-12 17:52:57.721461-04	api
-2ed8288e-1c39-4fe8-bbd1-1bc2153f44f8	AED	USD	2026-03-12 18:01:27.605123-04	3.6658299	2026-03-12 17:52:57.721461-04	api
-ee601a3e-cc4b-49f1-8c0c-5428a3a4ab08	AED	USD	2026-03-12 18:01:32.605123-04	3.6674953	2026-03-12 17:52:57.721461-04	api
-7d0a3fab-7aba-4b93-9413-d28a11df4a72	AED	USD	2026-03-12 18:01:37.605123-04	3.6686821	2026-03-12 17:52:57.721461-04	api
-15ecddf5-6a90-483e-8f31-c9edee451b95	AED	USD	2026-03-12 18:01:42.605123-04	3.6731925	2026-03-12 17:52:57.721461-04	api
-3a21ddeb-a43a-48c7-bebf-79a9211e4024	AED	USD	2026-03-12 18:01:47.605123-04	3.6737778	2026-03-12 17:52:57.721461-04	api
-7b96dbd7-dfe7-4aec-a545-20685f338c72	AED	USD	2026-03-12 18:01:52.605123-04	3.6729397	2026-03-12 17:52:57.721461-04	api
-b3d48b82-d73a-4a44-ba75-0fb3a49f609b	AED	USD	2026-03-12 18:01:57.605123-04	3.6763785	2026-03-12 17:52:57.721461-04	api
-db74a6ed-d91a-473f-b3dd-1ad2d84442ed	AED	USD	2026-03-12 18:02:02.605123-04	3.6744540	2026-03-12 17:52:57.721461-04	api
-3a3a9cd9-1700-47e8-afc4-097ebcecbc3d	AED	USD	2026-03-12 18:02:07.605123-04	3.6762337	2026-03-12 17:52:57.721461-04	api
-c4e4955a-eaa7-48f3-be3d-85a3fdaeb3d9	AED	USD	2026-03-12 18:02:12.605123-04	3.6744785	2026-03-12 17:52:57.721461-04	api
-980dc797-b167-4012-b52c-7ca0c913ee3c	AED	USD	2026-03-12 18:02:17.605123-04	3.6751291	2026-03-12 17:52:57.721461-04	api
-cb9e2bfa-788c-4246-be22-bb9f836bb94e	AED	USD	2026-03-12 18:02:22.605123-04	3.6715139	2026-03-12 17:52:57.721461-04	api
-f840c613-92e1-4afb-9780-e3bf99172640	AED	USD	2026-03-12 18:02:27.605123-04	3.6731651	2026-03-12 17:52:57.721461-04	api
-f259e63e-a0c9-4308-981d-ce81a3b57e97	AED	USD	2026-03-12 18:02:32.605123-04	3.6728745	2026-03-12 17:52:57.721461-04	api
-e78eacf0-cca7-4f83-9b70-9bfd45dcb26d	AED	USD	2026-03-12 18:02:37.605123-04	3.6710978	2026-03-12 17:52:57.721461-04	api
-8e6764d9-1697-4bcb-b519-9fbdd7795893	AED	USD	2026-03-12 18:02:42.605123-04	3.6741799	2026-03-12 17:52:57.721461-04	api
-42770348-f869-4377-a2d1-39cdc9c54497	AED	USD	2026-03-12 18:02:47.605123-04	3.6755862	2026-03-12 17:52:57.721461-04	api
-1f052f82-15f7-4917-bb08-5610d0b363df	AED	USD	2026-03-12 18:02:52.605123-04	3.6756704	2026-03-12 17:52:57.721461-04	api
-4fbbea75-075f-4dc4-b639-c121390f13b0	AED	USD	2026-03-12 18:02:57.605123-04	3.6743006	2026-03-12 17:52:57.721461-04	api
-aadbce38-7666-4f5d-b430-859408f72fe0	BRL	USD	2026-03-12 17:52:57.605123-04	4.9750743	2026-03-12 17:52:57.721461-04	api
-e08debc0-48d4-4847-afde-3d98bd8adbb9	BRL	USD	2026-03-12 17:53:02.605123-04	4.9687210	2026-03-12 17:52:57.721461-04	api
-3eb2b4c0-e0dc-42db-ae59-37f1544a182c	BRL	USD	2026-03-12 17:53:07.605123-04	4.9697598	2026-03-12 17:52:57.721461-04	api
-894f5f73-460e-4cc7-868b-d68481d032e8	BRL	USD	2026-03-12 17:53:12.605123-04	4.9683492	2026-03-12 17:52:57.721461-04	api
-d9386ff5-17d4-474e-838b-961da22f59ad	BRL	USD	2026-03-12 17:53:17.605123-04	4.9672249	2026-03-12 17:52:57.721461-04	api
-e82c308f-36e5-492d-b4fe-11e0413964d6	BRL	USD	2026-03-12 17:53:22.605123-04	4.9666894	2026-03-12 17:52:57.721461-04	api
-74cf4cea-fbd6-4667-a600-cd19d5f8e448	BRL	USD	2026-03-12 17:53:27.605123-04	4.9616756	2026-03-12 17:52:57.721461-04	api
-80ce5961-d82b-4d38-8ce0-1930b3697112	BRL	USD	2026-03-12 17:53:32.605123-04	4.9611003	2026-03-12 17:52:57.721461-04	api
-6dc127c1-6326-4cd8-ac86-f684c700e411	BRL	USD	2026-03-12 17:53:37.605123-04	4.9589546	2026-03-12 17:52:57.721461-04	api
-1281d15a-97fa-4e8e-8f42-97e8791b0a38	BRL	USD	2026-03-12 17:53:42.605123-04	4.9672007	2026-03-12 17:52:57.721461-04	api
-c57278ac-ddef-40dc-b154-c4e009d4eeb7	BRL	USD	2026-03-12 17:53:47.605123-04	4.9677615	2026-03-12 17:52:57.721461-04	api
-8af427cf-43d6-4464-be13-09a11814574b	BRL	USD	2026-03-12 17:53:52.605123-04	4.9668857	2026-03-12 17:52:57.721461-04	api
-5be96058-aeab-49f5-92ed-c5fd1e26f1da	BRL	USD	2026-03-12 17:53:57.605123-04	4.9661872	2026-03-12 17:52:57.721461-04	api
-9f80d052-70c3-44f5-b655-f2eb2924af5a	BRL	USD	2026-03-12 17:54:02.605123-04	4.9645286	2026-03-12 17:52:57.721461-04	api
-b30c29c0-d71e-42d1-9d3a-221b5edeab51	BRL	USD	2026-03-12 17:54:07.605123-04	4.9619102	2026-03-12 17:52:57.721461-04	api
-bc17e8e7-4965-4695-ad86-a64b20ebbb96	BRL	USD	2026-03-12 17:54:12.605123-04	4.9609407	2026-03-12 17:52:57.721461-04	api
-5e5700be-d09c-4e3d-beb5-a0c7d29ebdb5	BRL	USD	2026-03-12 17:54:17.605123-04	4.9621363	2026-03-12 17:52:57.721461-04	api
-4a02ae3a-6cd1-4497-a44e-37713cd1dee9	BRL	USD	2026-03-12 17:54:22.605123-04	4.9615445	2026-03-12 17:52:57.721461-04	api
-448452df-2a25-46d6-9a5c-92cfabe63e65	BRL	USD	2026-03-12 17:54:27.605123-04	4.9639210	2026-03-12 17:52:57.721461-04	api
-dc8f6d77-4444-4991-ad3d-205d4af67794	BRL	USD	2026-03-12 17:54:32.605123-04	4.9634251	2026-03-12 17:52:57.721461-04	api
-e0713d1f-c086-43de-9c41-d10d30d456d4	BRL	USD	2026-03-12 17:54:37.605123-04	4.9634853	2026-03-12 17:52:57.721461-04	api
-515dc3a6-f04b-432c-81d5-0497d0e72461	BRL	USD	2026-03-12 17:54:42.605123-04	4.9673231	2026-03-12 17:52:57.721461-04	api
-667b2d28-681a-4515-a302-1056c30260e4	BRL	USD	2026-03-12 17:54:47.605123-04	4.9686772	2026-03-12 17:52:57.721461-04	api
-f2ee4b21-ac8c-4255-b7dd-bdcb389c793e	BRL	USD	2026-03-12 17:54:52.605123-04	4.9674222	2026-03-12 17:52:57.721461-04	api
-a6bcd30f-ba61-4a2c-bca9-9fff937f131b	BRL	USD	2026-03-12 17:54:57.605123-04	4.9669681	2026-03-12 17:52:57.721461-04	api
-82a31203-b66f-46fb-94f8-05a8e3a02c25	BRL	USD	2026-03-12 17:55:02.605123-04	4.9683107	2026-03-12 17:52:57.721461-04	api
-e61d6116-1809-4928-9a5c-952a7f799982	BRL	USD	2026-03-12 17:55:07.605123-04	4.9731200	2026-03-12 17:52:57.721461-04	api
-cb614c59-b24c-420e-b5bf-0d08de6b218e	BRL	USD	2026-03-12 17:55:12.605123-04	4.9724497	2026-03-12 17:52:57.721461-04	api
-42ea42b1-4fd0-43fc-87b7-6aab55ac884d	BRL	USD	2026-03-12 17:55:17.605123-04	4.9718442	2026-03-12 17:52:57.721461-04	api
-224f9ac0-f83a-49d2-b18e-9156592fc468	BRL	USD	2026-03-12 17:55:22.605123-04	4.9743365	2026-03-12 17:52:57.721461-04	api
-8b0b828a-64f8-42e4-9cbb-ae8286c3922b	BRL	USD	2026-03-12 17:55:27.605123-04	4.9721322	2026-03-12 17:52:57.721461-04	api
-fe4963d6-bc17-4e17-aefe-a5beecaeb56f	BRL	USD	2026-03-12 17:55:32.605123-04	4.9714070	2026-03-12 17:52:57.721461-04	api
-6318510a-285c-419e-bbe0-e1f351e479d9	BRL	USD	2026-03-12 17:55:37.605123-04	4.9736012	2026-03-12 17:52:57.721461-04	api
-0f2f4c44-a1df-48fa-b0ab-3724fa508559	BRL	USD	2026-03-12 17:55:42.605123-04	4.9750446	2026-03-12 17:52:57.721461-04	api
-d3c1ca85-09d0-4af4-bece-eeed3f69b79a	BRL	USD	2026-03-12 17:55:47.605123-04	4.9752723	2026-03-12 17:52:57.721461-04	api
-051c633e-aa22-498f-b5d9-ae48501715cb	BRL	USD	2026-03-12 17:55:52.605123-04	4.9769395	2026-03-12 17:52:57.721461-04	api
-8ce14cd5-0040-40d3-bc87-75b745484959	BRL	USD	2026-03-12 17:55:57.605123-04	4.9699067	2026-03-12 17:52:57.721461-04	api
-4a0b3088-42ba-4117-9aa2-ea6719939e2b	BRL	USD	2026-03-12 17:56:02.605123-04	4.9724453	2026-03-12 17:52:57.721461-04	api
-af851c2a-5fd5-4fb6-9863-8d55766bceb6	BRL	USD	2026-03-12 17:56:07.605123-04	4.9700599	2026-03-12 17:52:57.721461-04	api
-d1e6f59a-8dfa-4713-82e1-f10d0527b332	BRL	USD	2026-03-12 17:56:12.605123-04	4.9659151	2026-03-12 17:52:57.721461-04	api
-9571f5c0-7862-4828-9ee4-6e832398f779	BRL	USD	2026-03-12 17:56:17.605123-04	4.9666015	2026-03-12 17:52:57.721461-04	api
-b453c186-2838-4b50-aa14-2d20bedabef3	BRL	USD	2026-03-12 17:56:22.605123-04	4.9683415	2026-03-12 17:52:57.721461-04	api
-7d113c0f-4daf-44dc-9a8e-88023ebb4ae2	BRL	USD	2026-03-12 17:56:27.605123-04	4.9672368	2026-03-12 17:52:57.721461-04	api
-588549c9-dc4c-4f4b-92a3-a9211632eeed	BRL	USD	2026-03-12 17:56:32.605123-04	4.9645641	2026-03-12 17:52:57.721461-04	api
-58738c22-0ac0-49e6-b639-cc21a6d272aa	BRL	USD	2026-03-12 17:56:37.605123-04	4.9646289	2026-03-12 17:52:57.721461-04	api
-01e9ae94-bbf8-4586-b829-86198d7f5b78	BRL	USD	2026-03-12 17:56:42.605123-04	4.9644980	2026-03-12 17:52:57.721461-04	api
-56afce0e-2dc6-4385-b35d-bce5564edb42	BRL	USD	2026-03-12 17:56:47.605123-04	4.9679883	2026-03-12 17:52:57.721461-04	api
-52f5fc55-0a43-4bb1-92b1-a07dfcb4b4b8	BRL	USD	2026-03-12 17:56:52.605123-04	4.9698452	2026-03-12 17:52:57.721461-04	api
-de653e02-b2f9-49f2-9b6b-5c5b04945b0e	BRL	USD	2026-03-12 17:56:57.605123-04	4.9703268	2026-03-12 17:52:57.721461-04	api
-cdd79a19-884f-4f1d-92e0-2ed05e89fe0c	BRL	USD	2026-03-12 17:57:02.605123-04	4.9730902	2026-03-12 17:52:57.721461-04	api
-09979e47-1a3f-4b1a-bfec-e609a415427f	BRL	USD	2026-03-12 17:57:07.605123-04	4.9725792	2026-03-12 17:52:57.721461-04	api
-df31c6a9-dd29-4e57-8fd5-6d56f3f1398a	BRL	USD	2026-03-12 17:57:12.605123-04	4.9702776	2026-03-12 17:52:57.721461-04	api
-e98c19dd-8ccd-47cf-98cb-f1eb1b06efd2	BRL	USD	2026-03-12 17:57:17.605123-04	4.9717293	2026-03-12 17:52:57.721461-04	api
-3790032c-38de-45e2-8e3b-81ee360a50bc	BRL	USD	2026-03-12 17:57:22.605123-04	4.9731776	2026-03-12 17:52:57.721461-04	api
-5b877749-1571-48e5-b3d5-70ae1a543952	BRL	USD	2026-03-12 17:57:27.605123-04	4.9726435	2026-03-12 17:52:57.721461-04	api
-2673d501-9088-4575-ae77-23e71ed5ad9e	BRL	USD	2026-03-12 17:57:32.605123-04	4.9706976	2026-03-12 17:52:57.721461-04	api
-2c24a86d-5730-4258-86fd-abd925e61766	BRL	USD	2026-03-12 17:57:37.605123-04	4.9712671	2026-03-12 17:52:57.721461-04	api
-5641525b-5f98-4bbe-bd1e-70a7aca131c3	BRL	USD	2026-03-12 17:57:42.605123-04	4.9650721	2026-03-12 17:52:57.721461-04	api
-08497fa9-74d0-420a-8796-427d810af953	BRL	USD	2026-03-12 17:57:47.605123-04	4.9667856	2026-03-12 17:52:57.721461-04	api
-037917ad-d043-4048-a252-afcbf152141f	BRL	USD	2026-03-12 17:57:52.605123-04	4.9680060	2026-03-12 17:52:57.721461-04	api
-c185d4b9-77b5-46f7-b270-aae720791590	BRL	USD	2026-03-12 17:57:57.605123-04	4.9639368	2026-03-12 17:52:57.721461-04	api
-9beb46f4-8a5f-4677-abaf-d0d083c1e280	BRL	USD	2026-03-12 17:58:02.605123-04	4.9640891	2026-03-12 17:52:57.721461-04	api
-84163a42-d685-4a01-afec-fc9ca5d16b78	BRL	USD	2026-03-12 17:58:07.605123-04	4.9616967	2026-03-12 17:52:57.721461-04	api
-b5248260-d810-49e9-a302-ad031a6dd0d0	BRL	USD	2026-03-12 17:58:12.605123-04	4.9635756	2026-03-12 17:52:57.721461-04	api
-1ef48aa4-239a-46c0-a72c-467617f7a65e	BRL	USD	2026-03-12 17:58:17.605123-04	4.9585298	2026-03-12 17:52:57.721461-04	api
-a1d81da3-5e22-4eb2-b8b2-ffc2e77aba98	BRL	USD	2026-03-12 17:58:22.605123-04	4.9562630	2026-03-12 17:52:57.721461-04	api
-54d8f3ac-55ad-4abe-9997-c5b023270aa8	BRL	USD	2026-03-12 17:58:27.605123-04	4.9580218	2026-03-12 17:52:57.721461-04	api
-ebf6f218-91f1-4fed-b160-338d4006acd4	BRL	USD	2026-03-12 17:58:32.605123-04	4.9608893	2026-03-12 17:52:57.721461-04	api
-519d3e99-bb27-4899-9855-e9eac061266d	BRL	USD	2026-03-12 17:58:37.605123-04	4.9555394	2026-03-12 17:52:57.721461-04	api
-f9ca1300-d7c4-440d-98a1-17e2f4812cc3	BRL	USD	2026-03-12 17:58:42.605123-04	4.9543055	2026-03-12 17:52:57.721461-04	api
-90bc5fb1-47b7-4607-adf9-06ee55be6b41	BRL	USD	2026-03-12 17:58:47.605123-04	4.9551182	2026-03-12 17:52:57.721461-04	api
-abda8e2d-fe08-45e2-99fc-838e7ffcd4d5	BRL	USD	2026-03-12 17:58:52.605123-04	4.9536090	2026-03-12 17:52:57.721461-04	api
-806dfbe6-fe42-4ae5-81e6-e22fb841511d	BRL	USD	2026-03-12 17:58:57.605123-04	4.9575503	2026-03-12 17:52:57.721461-04	api
-cf62c28b-f31b-4508-80b4-58e3438fba39	BRL	USD	2026-03-12 17:59:02.605123-04	4.9545984	2026-03-12 17:52:57.721461-04	api
-1cb7b260-806a-4ccf-9f01-c3acc1a68958	BRL	USD	2026-03-12 17:59:07.605123-04	4.9554768	2026-03-12 17:52:57.721461-04	api
-5cdf3625-5efb-409c-a87c-b2434a20dd4b	BRL	USD	2026-03-12 17:59:12.605123-04	4.9528798	2026-03-12 17:52:57.721461-04	api
-acd3e663-68cc-4f3a-8060-1522178e1c96	BRL	USD	2026-03-12 17:59:17.605123-04	4.9563628	2026-03-12 17:52:57.721461-04	api
-ec948115-3054-47de-b806-7831483503de	BRL	USD	2026-03-12 17:59:22.605123-04	4.9563091	2026-03-12 17:52:57.721461-04	api
-b8a83dae-180d-4d92-9014-46cb5b8174cc	BRL	USD	2026-03-12 17:59:27.605123-04	4.9553867	2026-03-12 17:52:57.721461-04	api
-81f2c53a-99cf-409a-b120-9ae3b6b84db9	BRL	USD	2026-03-12 17:59:32.605123-04	4.9511314	2026-03-12 17:52:57.721461-04	api
-1542e9d8-fe5c-4e54-809d-75dd4ec7dd97	BRL	USD	2026-03-12 17:59:37.605123-04	4.9552966	2026-03-12 17:52:57.721461-04	api
-a4cd6b13-91fd-46f1-8b4f-92951d751e27	BRL	USD	2026-03-12 17:59:42.605123-04	4.9571621	2026-03-12 17:52:57.721461-04	api
-0b3123e6-6c0e-49db-9e0a-2a3e0233eafe	BRL	USD	2026-03-12 17:59:47.605123-04	4.9590302	2026-03-12 17:52:57.721461-04	api
-357bddc2-e775-493e-a497-260b4618920e	BRL	USD	2026-03-12 17:59:52.605123-04	4.9618524	2026-03-12 17:52:57.721461-04	api
-9f49c22e-146e-4be6-8b7a-502a4654093e	BRL	USD	2026-03-12 17:59:57.605123-04	4.9627189	2026-03-12 17:52:57.721461-04	api
-095c34d8-db33-43f3-b75a-72e7a676c58a	BRL	USD	2026-03-12 18:00:02.605123-04	4.9611329	2026-03-12 17:52:57.721461-04	api
-8ef4a7ca-fe27-43b2-a6f3-ff793e8d60fb	BRL	USD	2026-03-12 18:00:07.605123-04	4.9591483	2026-03-12 17:52:57.721461-04	api
-c427c01e-831c-4b56-8f2e-57343c9d7521	BRL	USD	2026-03-12 18:00:12.605123-04	4.9571645	2026-03-12 17:52:57.721461-04	api
-a006c63f-b89a-4f96-a6bf-3f65b30226bc	BRL	USD	2026-03-12 18:00:17.605123-04	4.9605615	2026-03-12 17:52:57.721461-04	api
-1b4fa56f-eaed-4d4b-a455-6f22ef34c74e	BRL	USD	2026-03-12 18:00:22.605123-04	4.9569407	2026-03-12 17:52:57.721461-04	api
-927ffcf0-36cc-4dd4-a776-8ecc8b0d082e	BRL	USD	2026-03-12 18:00:27.605123-04	4.9554628	2026-03-12 17:52:57.721461-04	api
-3c1e30e1-3540-4de7-acb7-90425a637a63	BRL	USD	2026-03-12 18:00:32.605123-04	4.9546669	2026-03-12 17:52:57.721461-04	api
-64d5ba6e-38bb-4225-b9ce-7b24a7fa059a	BRL	USD	2026-03-12 18:00:37.605123-04	4.9552234	2026-03-12 17:52:57.721461-04	api
-9ffafab3-bf67-4672-b78d-830ba0bc1298	BRL	USD	2026-03-12 18:00:42.605123-04	4.9566491	2026-03-12 17:52:57.721461-04	api
-d7f02048-48f2-4a5c-b4a9-307c2f0cc392	BRL	USD	2026-03-12 18:00:47.605123-04	4.9535544	2026-03-12 17:52:57.721461-04	api
-e139dbcc-cfbd-4308-ac8b-38183b8e5ad7	BRL	USD	2026-03-12 18:00:52.605123-04	4.9492714	2026-03-12 17:52:57.721461-04	api
-6dbea5ec-53b6-45a9-a110-c08fed4b7808	BRL	USD	2026-03-12 18:00:57.605123-04	4.9492605	2026-03-12 17:52:57.721461-04	api
-ac3375a5-e76f-40ea-af2a-577f7771ed15	BRL	USD	2026-03-12 18:01:02.605123-04	4.9522645	2026-03-12 17:52:57.721461-04	api
-f9cb7a7a-0663-4d74-b20f-c019589c0978	BRL	USD	2026-03-12 18:01:07.605123-04	4.9541395	2026-03-12 17:52:57.721461-04	api
-3bfb4ab2-3af7-4460-9c85-0f1249207ce1	BRL	USD	2026-03-12 18:01:12.605123-04	4.9546737	2026-03-12 17:52:57.721461-04	api
-573a57e5-5568-44b9-875f-ed2cc6f8440e	BRL	USD	2026-03-12 18:01:17.605123-04	4.9538880	2026-03-12 17:52:57.721461-04	api
-c2418435-b475-4bcd-b2ff-bb395f4bb2d2	BRL	USD	2026-03-12 18:01:22.605123-04	4.9546144	2026-03-12 17:52:57.721461-04	api
-6955413f-b5cf-4ebb-8d6b-78683aee398f	BRL	USD	2026-03-12 18:01:27.605123-04	4.9540116	2026-03-12 17:52:57.721461-04	api
-b187b835-2e1c-427d-8876-c32ad5b95659	BRL	USD	2026-03-12 18:01:32.605123-04	4.9560363	2026-03-12 17:52:57.721461-04	api
-01ce85d5-a33d-4afc-a3f7-e18e0d32f0e5	BRL	USD	2026-03-12 18:01:37.605123-04	4.9540680	2026-03-12 17:52:57.721461-04	api
-17884098-f01b-4cb3-8a60-d8e7ad64b2c2	BRL	USD	2026-03-12 18:01:42.605123-04	4.9544005	2026-03-12 17:52:57.721461-04	api
-1706820d-ba3d-4076-a804-88a8bbdcd5bb	BRL	USD	2026-03-12 18:01:47.605123-04	4.9541261	2026-03-12 17:52:57.721461-04	api
-e3d85017-ab50-4849-8f6f-c56a554e288e	BRL	USD	2026-03-12 18:01:52.605123-04	4.9554722	2026-03-12 17:52:57.721461-04	api
-2719f24f-ecf0-4f7a-88e3-1881953d3bf3	BRL	USD	2026-03-12 18:01:57.605123-04	4.9560289	2026-03-12 17:52:57.721461-04	api
-d3c2c447-41c2-4ba4-b332-667211456175	BRL	USD	2026-03-12 18:02:02.605123-04	4.9623519	2026-03-12 17:52:57.721461-04	api
-ca772095-0501-4a82-9925-8bc8a891c3a7	BRL	USD	2026-03-12 18:02:07.605123-04	4.9660717	2026-03-12 17:52:57.721461-04	api
-eb19f384-5f2e-4cc5-a32a-226c3abcc3ca	BRL	USD	2026-03-12 18:02:12.605123-04	4.9697896	2026-03-12 17:52:57.721461-04	api
-e2e27585-6e08-4121-a2dd-7ae200606c2e	BRL	USD	2026-03-12 18:02:17.605123-04	4.9647242	2026-03-12 17:52:57.721461-04	api
-7c312c2a-53eb-40db-af8c-57ddb997fc4e	BRL	USD	2026-03-12 18:02:22.605123-04	4.9638795	2026-03-12 17:52:57.721461-04	api
-5680d568-4673-48b0-9e4e-f732c471de60	BRL	USD	2026-03-12 18:02:27.605123-04	4.9623692	2026-03-12 17:52:57.721461-04	api
-279a9b8b-02ae-47e3-8601-01721674a20e	BRL	USD	2026-03-12 18:02:32.605123-04	4.9636911	2026-03-12 17:52:57.721461-04	api
-5f358270-2193-4fc8-8b20-124f65cbdc54	BRL	USD	2026-03-12 18:02:37.605123-04	4.9580382	2026-03-12 17:52:57.721461-04	api
-6df0bb57-f2f8-4c4a-bc18-928baf05a03c	BRL	USD	2026-03-12 18:02:42.605123-04	4.9609506	2026-03-12 17:52:57.721461-04	api
-58d5f093-ba84-4960-96c6-f68859df71fa	BRL	USD	2026-03-12 18:02:47.605123-04	4.9635980	2026-03-12 17:52:57.721461-04	api
-95c56c50-5bf0-4827-994c-6daee72623e9	BRL	USD	2026-03-12 18:02:52.605123-04	4.9603675	2026-03-12 17:52:57.721461-04	api
-35b357b8-e6bc-46f4-94fc-9599752d98f8	BRL	USD	2026-03-12 18:02:57.605123-04	4.9579411	2026-03-12 17:52:57.721461-04	api
-d27ca1ab-1039-4b45-907b-16948ef671f5	JPY	USD	2026-03-12 17:52:57.605123-04	149.4512865	2026-03-12 17:52:57.721461-04	api
-d57f90d2-d8a9-42d3-853c-b45c4c466ce3	JPY	USD	2026-03-12 17:53:02.605123-04	149.4382313	2026-03-12 17:52:57.721461-04	api
-e9bc4528-dd0a-4e65-a95c-64dcf19b4f4b	JPY	USD	2026-03-12 17:53:07.605123-04	149.5625950	2026-03-12 17:52:57.721461-04	api
-d06be115-08d7-46c4-8928-7a8b5925e778	JPY	USD	2026-03-12 17:53:12.605123-04	149.6118950	2026-03-12 17:52:57.721461-04	api
-49c59531-ab6f-4131-8b61-5cd1a0100e60	JPY	USD	2026-03-12 17:53:17.605123-04	149.4891591	2026-03-12 17:52:57.721461-04	api
-33213531-aee8-42b3-b072-a7c247e2180c	JPY	USD	2026-03-12 17:53:22.605123-04	149.4887702	2026-03-12 17:52:57.721461-04	api
-4a74febb-a2d2-4dd8-8e1c-a4d38166c1c5	JPY	USD	2026-03-12 17:53:27.605123-04	149.4421770	2026-03-12 17:52:57.721461-04	api
-bdaf2499-8009-4ae9-8ac5-d04d58652f16	JPY	USD	2026-03-12 17:53:32.605123-04	149.4532834	2026-03-12 17:52:57.721461-04	api
-9b6ba1ea-28f0-4703-b417-3e689986125f	JPY	USD	2026-03-12 17:53:37.605123-04	149.3331572	2026-03-12 17:52:57.721461-04	api
-bee0336c-b9f7-4ed6-bc26-103bd2099ba1	JPY	USD	2026-03-12 17:53:42.605123-04	149.3512106	2026-03-12 17:52:57.721461-04	api
-7954c191-a860-4193-8bc1-5fc67833ce75	JPY	USD	2026-03-12 17:53:47.605123-04	149.3687888	2026-03-12 17:52:57.721461-04	api
-210555c5-ebef-463e-8cff-7ae5c2281f57	JPY	USD	2026-03-12 17:53:52.605123-04	149.4865098	2026-03-12 17:52:57.721461-04	api
-10424186-1dcb-48ec-8857-2e63252b4b63	JPY	USD	2026-03-12 17:53:57.605123-04	149.5101788	2026-03-12 17:52:57.721461-04	api
-b9b054ab-d247-4c24-99c1-09c7f68dac8f	JPY	USD	2026-03-12 17:54:02.605123-04	149.5483496	2026-03-12 17:52:57.721461-04	api
-e21c1d42-56e4-473a-9d2d-09ca38a7aa48	JPY	USD	2026-03-12 17:54:07.605123-04	149.4367447	2026-03-12 17:52:57.721461-04	api
-d3563493-ad26-4329-9f56-c0e1c0066d23	JPY	USD	2026-03-12 17:54:12.605123-04	149.6051598	2026-03-12 17:52:57.721461-04	api
-aa3854d5-714e-472b-ae7d-865d0c8165e5	JPY	USD	2026-03-12 17:54:17.605123-04	149.4619332	2026-03-12 17:52:57.721461-04	api
-17f396cd-1936-405c-adcf-7b6dfb4cac3c	JPY	USD	2026-03-12 17:54:22.605123-04	149.5442946	2026-03-12 17:52:57.721461-04	api
-07f00388-f282-407f-adbf-49e478115641	JPY	USD	2026-03-12 17:54:27.605123-04	149.5196290	2026-03-12 17:52:57.721461-04	api
-3cc1f5d2-848e-4e48-bd57-662ea4465e07	JPY	USD	2026-03-12 17:54:32.605123-04	149.4538065	2026-03-12 17:52:57.721461-04	api
-f4d82e7d-5d5c-4002-bc29-97553e7d05ff	JPY	USD	2026-03-12 17:54:37.605123-04	149.4047724	2026-03-12 17:52:57.721461-04	api
-e2c2febb-88e0-447a-9f3c-ede64a811420	JPY	USD	2026-03-12 17:54:42.605123-04	149.3545797	2026-03-12 17:52:57.721461-04	api
-ef624614-3352-4bdd-8104-85efc0208ca8	JPY	USD	2026-03-12 17:54:47.605123-04	149.3829739	2026-03-12 17:52:57.721461-04	api
-a79ce98b-2a69-4ae7-95a0-e6b7171c8855	JPY	USD	2026-03-12 17:54:52.605123-04	149.3747537	2026-03-12 17:52:57.721461-04	api
-edb898ac-baea-495e-be46-5d0ee5eddd4d	JPY	USD	2026-03-12 17:54:57.605123-04	149.4855241	2026-03-12 17:52:57.721461-04	api
-0c96df66-f4d3-465b-8cab-b8a0a094e9ea	JPY	USD	2026-03-12 17:55:02.605123-04	149.3488370	2026-03-12 17:52:57.721461-04	api
-20c3c955-5287-4fd0-9418-833df5aa2ac4	JPY	USD	2026-03-12 17:55:07.605123-04	149.3486069	2026-03-12 17:52:57.721461-04	api
-6ab860be-a322-4b8b-b898-96cd028ed103	JPY	USD	2026-03-12 17:55:12.605123-04	149.2820081	2026-03-12 17:52:57.721461-04	api
-cba45975-4b3c-4476-916d-006157d54377	JPY	USD	2026-03-12 17:55:17.605123-04	149.3399312	2026-03-12 17:52:57.721461-04	api
-77137e1d-d56d-49b9-b360-11f86be2c160	JPY	USD	2026-03-12 17:55:22.605123-04	149.1818595	2026-03-12 17:52:57.721461-04	api
-6813163e-90b3-4887-b63c-5d09bafa2e5e	JPY	USD	2026-03-12 17:55:27.605123-04	149.1562252	2026-03-12 17:52:57.721461-04	api
-0a3188dc-436d-4f5c-ab71-8d0434f79905	JPY	USD	2026-03-12 17:55:32.605123-04	149.1719003	2026-03-12 17:52:57.721461-04	api
-bc83187a-2211-41b3-9f8c-1ca110fc17de	JPY	USD	2026-03-12 17:55:37.605123-04	149.0612358	2026-03-12 17:52:57.721461-04	api
-3f1b126d-4811-4c02-90b0-bb7515d33f3a	JPY	USD	2026-03-12 17:55:42.605123-04	149.1346826	2026-03-12 17:52:57.721461-04	api
-b1994e61-aa44-4a47-b572-5766bf3e84cb	JPY	USD	2026-03-12 17:55:47.605123-04	149.1480094	2026-03-12 17:52:57.721461-04	api
-d434e5a6-a52b-4261-86ed-2438db9641c0	JPY	USD	2026-03-12 17:55:52.605123-04	149.2231136	2026-03-12 17:52:57.721461-04	api
-60ef2234-aa65-4c36-bd07-294a36953f27	JPY	USD	2026-03-12 17:55:57.605123-04	149.2946971	2026-03-12 17:52:57.721461-04	api
-7fc085a7-1339-4469-886d-c2ddbe6574fe	JPY	USD	2026-03-12 17:56:02.605123-04	149.2215714	2026-03-12 17:52:57.721461-04	api
-bf88c99d-ce23-49b0-9e9b-3680b43540dd	JPY	USD	2026-03-12 17:56:07.605123-04	149.1620591	2026-03-12 17:52:57.721461-04	api
-8022fc56-ea8b-453c-9eb7-c24cca496f72	JPY	USD	2026-03-12 17:56:12.605123-04	149.1468952	2026-03-12 17:52:57.721461-04	api
-5288e782-7674-4ab0-8e61-4004c362a9c1	JPY	USD	2026-03-12 17:56:17.605123-04	149.2026835	2026-03-12 17:52:57.721461-04	api
-0c59f5fd-e2c4-4585-97f5-ecf4d93cc4d5	JPY	USD	2026-03-12 17:56:22.605123-04	149.2661803	2026-03-12 17:52:57.721461-04	api
-170f7a3a-5c66-4360-8de1-56ad2d09c543	JPY	USD	2026-03-12 17:56:27.605123-04	149.2132238	2026-03-12 17:52:57.721461-04	api
-32d13b08-5b4e-4604-90f6-3ec61df09869	JPY	USD	2026-03-12 17:56:32.605123-04	149.1679297	2026-03-12 17:52:57.721461-04	api
-747049ff-7b92-4571-ad68-ac90f7ddd8fe	JPY	USD	2026-03-12 17:56:37.605123-04	149.1084368	2026-03-12 17:52:57.721461-04	api
-c9399c51-f8a9-4279-9e3f-a73cff97bf6e	JPY	USD	2026-03-12 17:56:42.605123-04	149.0648857	2026-03-12 17:52:57.721461-04	api
-23ea6989-c5c2-4877-afd2-37463c0a491b	JPY	USD	2026-03-12 17:56:47.605123-04	149.0471538	2026-03-12 17:52:57.721461-04	api
-499a6d56-73cf-4a7d-87bc-5c76959fc115	JPY	USD	2026-03-12 17:56:52.605123-04	149.0373308	2026-03-12 17:52:57.721461-04	api
-f1b71ad5-23b0-45c2-be4e-cf67f5b1fc00	JPY	USD	2026-03-12 17:56:57.605123-04	149.1907776	2026-03-12 17:52:57.721461-04	api
-ffc9aa8e-379d-4fab-ab1e-f60c7a7f9d23	JPY	USD	2026-03-12 17:57:02.605123-04	149.1530070	2026-03-12 17:52:57.721461-04	api
-94e5d63a-71c4-41b6-a68b-bc9beaafd6ff	JPY	USD	2026-03-12 17:57:07.605123-04	149.1314765	2026-03-12 17:52:57.721461-04	api
-4b9a30d3-dee3-4fed-8d75-2c81e72a3ff5	JPY	USD	2026-03-12 17:57:12.605123-04	149.1656747	2026-03-12 17:52:57.721461-04	api
-75af59a4-b926-46e0-b430-16c6e80682c9	JPY	USD	2026-03-12 17:57:17.605123-04	149.0946086	2026-03-12 17:52:57.721461-04	api
-221a9834-b267-4e71-a154-611dcd8d48ae	JPY	USD	2026-03-12 17:57:22.605123-04	149.0671310	2026-03-12 17:52:57.721461-04	api
-5676426a-bd0c-4469-81aa-55dec07194dc	JPY	USD	2026-03-12 17:57:27.605123-04	149.0681237	2026-03-12 17:52:57.721461-04	api
-468186c4-7fa1-4794-a119-0b6e4fdb1434	JPY	USD	2026-03-12 17:57:32.605123-04	149.1258351	2026-03-12 17:52:57.721461-04	api
-8fd86f42-0414-4e2b-b398-1cda2327db99	JPY	USD	2026-03-12 17:57:37.605123-04	149.0277414	2026-03-12 17:52:57.721461-04	api
-055a6b19-a82e-490b-9add-9d7cfe90c362	JPY	USD	2026-03-12 17:57:42.605123-04	149.1299700	2026-03-12 17:52:57.721461-04	api
-1d8e0b83-88d9-4f8b-8d35-4dee018f900f	JPY	USD	2026-03-12 17:57:47.605123-04	149.1036913	2026-03-12 17:52:57.721461-04	api
-37364ef0-5338-4f3b-8481-d9bb0f4d20e1	JPY	USD	2026-03-12 17:57:52.605123-04	149.1163222	2026-03-12 17:52:57.721461-04	api
-37cc4b1e-b1f2-46a0-a105-1adc8d9f6fa5	JPY	USD	2026-03-12 17:57:57.605123-04	149.1794929	2026-03-12 17:52:57.721461-04	api
-aced6a37-7e33-4529-ba2b-935d9e8c1ddf	JPY	USD	2026-03-12 17:58:02.605123-04	149.2287894	2026-03-12 17:52:57.721461-04	api
-58b136f6-3108-4a8c-9822-2300587fa652	JPY	USD	2026-03-12 17:58:07.605123-04	149.3078443	2026-03-12 17:52:57.721461-04	api
-846dd2c9-92ad-42dd-a6ab-d85d885dae52	JPY	USD	2026-03-12 17:58:12.605123-04	149.3207748	2026-03-12 17:52:57.721461-04	api
-0581ac1e-eba5-4b07-8815-90b0e8b2f31d	JPY	USD	2026-03-12 17:58:17.605123-04	149.3193104	2026-03-12 17:52:57.721461-04	api
-f0559784-8393-4400-9053-462ed470109f	JPY	USD	2026-03-12 17:58:22.605123-04	149.3429405	2026-03-12 17:52:57.721461-04	api
-ff88687b-befa-49d7-8037-f344fa6452d2	JPY	USD	2026-03-12 17:58:27.605123-04	149.2686074	2026-03-12 17:52:57.721461-04	api
-3432da90-0c85-49c2-99d1-7f2abb171370	JPY	USD	2026-03-12 17:58:32.605123-04	149.3592550	2026-03-12 17:52:57.721461-04	api
-41d2be94-e03c-48f4-b1b6-96b49b829374	JPY	USD	2026-03-12 17:58:37.605123-04	149.3013606	2026-03-12 17:52:57.721461-04	api
-901be1c0-1b7b-42b3-a293-826cea2e3173	JPY	USD	2026-03-12 17:58:42.605123-04	149.2073122	2026-03-12 17:52:57.721461-04	api
-bacb61b8-c050-4919-b14c-2aea3b99dbd1	JPY	USD	2026-03-12 17:58:47.605123-04	149.3608067	2026-03-12 17:52:57.721461-04	api
-d7194d40-6bbe-4b13-a0e4-a752edb8e31f	JPY	USD	2026-03-12 17:58:52.605123-04	149.3506173	2026-03-12 17:52:57.721461-04	api
-43404c6d-c1ec-42c9-8d83-b2d04fbc7ea5	JPY	USD	2026-03-12 17:58:57.605123-04	149.2625918	2026-03-12 17:52:57.721461-04	api
-bfe54728-5209-4dc4-b5a8-6e686b52bd5d	JPY	USD	2026-03-12 17:59:02.605123-04	149.4008931	2026-03-12 17:52:57.721461-04	api
-ff98d2aa-ce96-48b5-83a8-33ed4c8d7151	JPY	USD	2026-03-12 17:59:07.605123-04	149.3762654	2026-03-12 17:52:57.721461-04	api
-9eeae5f3-5aba-4ff5-a81a-e204adc4e5a7	JPY	USD	2026-03-12 17:59:12.605123-04	149.4556109	2026-03-12 17:52:57.721461-04	api
-1f43e92a-827d-44a2-b0f9-fdcd701d3295	JPY	USD	2026-03-12 17:59:17.605123-04	149.3936379	2026-03-12 17:52:57.721461-04	api
-e01ceff5-efe2-462d-a21b-7d3d4f92b2ed	JPY	USD	2026-03-12 17:59:22.605123-04	149.3750560	2026-03-12 17:52:57.721461-04	api
-50e42df5-d95c-479a-876a-7f590bdd674e	JPY	USD	2026-03-12 17:59:27.605123-04	149.2489971	2026-03-12 17:52:57.721461-04	api
-0da35c86-2a7b-4d41-bb04-fa0331f19002	JPY	USD	2026-03-12 17:59:32.605123-04	149.1066115	2026-03-12 17:52:57.721461-04	api
-48933e33-bb7e-49e0-b7ca-5036c51867de	JPY	USD	2026-03-12 17:59:37.605123-04	149.0338328	2026-03-12 17:52:57.721461-04	api
-d51817fd-3ee8-415d-b910-a2505edfdc48	JPY	USD	2026-03-12 17:59:42.605123-04	149.0280177	2026-03-12 17:52:57.721461-04	api
-8744dd44-6043-465e-a986-d4b95d778b0b	JPY	USD	2026-03-12 17:59:47.605123-04	149.0874907	2026-03-12 17:52:57.721461-04	api
-37ed8cf1-4f20-4cd7-810a-ecf379dc51f6	JPY	USD	2026-03-12 17:59:52.605123-04	149.2684600	2026-03-12 17:52:57.721461-04	api
-a853c9e4-a66f-43f7-ac4c-1b47de87cb9c	JPY	USD	2026-03-12 17:59:57.605123-04	149.1914675	2026-03-12 17:52:57.721461-04	api
-513ccf49-ccb0-40fc-84e8-24706b78ffc3	JPY	USD	2026-03-12 18:00:02.605123-04	149.2667566	2026-03-12 17:52:57.721461-04	api
-a559a180-1ebb-4ac2-b869-af2d8ea21961	JPY	USD	2026-03-12 18:00:07.605123-04	149.2216594	2026-03-12 17:52:57.721461-04	api
-4abc9a8f-0ff4-4fd7-9b6c-8287e55b7ce6	JPY	USD	2026-03-12 18:00:12.605123-04	149.2102795	2026-03-12 17:52:57.721461-04	api
-8302efe6-0c09-4c2b-a2c2-dea534d697bb	JPY	USD	2026-03-12 18:00:17.605123-04	149.0998159	2026-03-12 17:52:57.721461-04	api
-4e3424c3-44e1-4e35-91b4-feb43f5eb307	JPY	USD	2026-03-12 18:00:22.605123-04	148.9895984	2026-03-12 17:52:57.721461-04	api
-029f67c2-2b00-4002-8931-38cb71c90199	JPY	USD	2026-03-12 18:00:27.605123-04	148.9316185	2026-03-12 17:52:57.721461-04	api
-26b03b13-101d-4138-a8c0-39b4fa5a5268	JPY	USD	2026-03-12 18:00:32.605123-04	148.8427990	2026-03-12 17:52:57.721461-04	api
-038adf0d-93ac-4deb-b5c4-844e351d5aa6	JPY	USD	2026-03-12 18:00:37.605123-04	148.8425345	2026-03-12 17:52:57.721461-04	api
-a2b094c9-2fc2-49ed-ac44-0bdeef83d556	JPY	USD	2026-03-12 18:00:42.605123-04	148.7902617	2026-03-12 17:52:57.721461-04	api
-5020fc24-97bd-4d74-9efc-9000494af682	JPY	USD	2026-03-12 18:00:47.605123-04	148.8833365	2026-03-12 17:52:57.721461-04	api
-956a1718-f437-40c0-ace3-5904c105d2d6	JPY	USD	2026-03-12 18:00:52.605123-04	148.8947280	2026-03-12 17:52:57.721461-04	api
-d9343592-81a9-4c4d-aa6b-63ab848d7e0c	JPY	USD	2026-03-12 18:00:57.605123-04	148.9070301	2026-03-12 17:52:57.721461-04	api
-dad646d6-a006-4e1b-85e3-dc8b72df57c7	JPY	USD	2026-03-12 18:01:02.605123-04	148.9917402	2026-03-12 17:52:57.721461-04	api
-2709dd86-1e0e-49e7-aa40-d5deed3e9a97	JPY	USD	2026-03-12 18:01:07.605123-04	149.0303424	2026-03-12 17:52:57.721461-04	api
-b0886541-b4d6-45f4-b59b-c8224355fa90	JPY	USD	2026-03-12 18:01:12.605123-04	149.0275606	2026-03-12 17:52:57.721461-04	api
-0baa344c-198e-4270-8956-8bc123c1fe11	JPY	USD	2026-03-12 18:01:17.605123-04	149.0208006	2026-03-12 17:52:57.721461-04	api
-319f77d0-f265-4be4-862b-e72928648f88	JPY	USD	2026-03-12 18:01:22.605123-04	149.0117889	2026-03-12 17:52:57.721461-04	api
-74078099-7d3b-453c-8ccc-9bdb56fe856f	JPY	USD	2026-03-12 18:01:27.605123-04	149.0920327	2026-03-12 17:52:57.721461-04	api
-5aaa9b9b-b2bd-492d-a7ec-04d3bc2cd414	JPY	USD	2026-03-12 18:01:32.605123-04	149.1504200	2026-03-12 17:52:57.721461-04	api
-2d01441c-17da-41e1-a075-6e9534e779d2	JPY	USD	2026-03-12 18:01:37.605123-04	149.1777109	2026-03-12 17:52:57.721461-04	api
-330543c0-f6ef-43a5-920e-389f6df67f1c	JPY	USD	2026-03-12 18:01:42.605123-04	149.2373066	2026-03-12 17:52:57.721461-04	api
-cb8d8318-cde3-42c2-887a-3004f9d3f67a	JPY	USD	2026-03-12 18:01:47.605123-04	149.1966798	2026-03-12 17:52:57.721461-04	api
-5e0ba7b9-ed66-4a3d-8fd1-91316df1b5e8	JPY	USD	2026-03-12 18:01:52.605123-04	149.2348061	2026-03-12 17:52:57.721461-04	api
-8fde4311-dc85-49a5-8d10-18c854a6bac5	JPY	USD	2026-03-12 18:01:57.605123-04	149.1294586	2026-03-12 17:52:57.721461-04	api
-aa4155bf-8c96-420c-b06f-140268d7d75a	JPY	USD	2026-03-12 18:02:02.605123-04	149.2299513	2026-03-12 17:52:57.721461-04	api
-28d106bd-335b-4b6f-b746-7a76c0243c7f	JPY	USD	2026-03-12 18:02:07.605123-04	149.2366704	2026-03-12 17:52:57.721461-04	api
-6b1abd1b-1a67-45c3-82b3-c963d38086f2	JPY	USD	2026-03-12 18:02:12.605123-04	149.2503555	2026-03-12 17:52:57.721461-04	api
-e37813a6-757c-4054-9b55-f64830c4150d	JPY	USD	2026-03-12 18:02:17.605123-04	149.2950914	2026-03-12 17:52:57.721461-04	api
-3bc820c0-99fa-48f6-bc3b-5ea1bc537a46	JPY	USD	2026-03-12 18:02:22.605123-04	149.2943666	2026-03-12 17:52:57.721461-04	api
-fd001dd4-8660-420f-9e6b-14d9aa54c221	JPY	USD	2026-03-12 18:02:27.605123-04	149.2753993	2026-03-12 17:52:57.721461-04	api
-d4e3724e-b924-4a72-bce4-7d9f84a3f4d8	JPY	USD	2026-03-12 18:02:32.605123-04	149.3642285	2026-03-12 17:52:57.721461-04	api
-9641f4c6-c4ac-4f73-8c13-cb5c1e653add	JPY	USD	2026-03-12 18:02:37.605123-04	149.3728733	2026-03-12 17:52:57.721461-04	api
-598eac68-7d54-44ac-9b06-c66c59616ef1	JPY	USD	2026-03-12 18:02:42.605123-04	149.3044858	2026-03-12 17:52:57.721461-04	api
-1a15715d-be2f-4815-88ec-6cf95ececedf	JPY	USD	2026-03-12 18:02:47.605123-04	149.3373034	2026-03-12 17:52:57.721461-04	api
-399bf4d3-56a8-4a25-b605-2e345be382e0	JPY	USD	2026-03-12 18:02:52.605123-04	149.2100386	2026-03-12 17:52:57.721461-04	api
-16c93798-cc4f-46f9-91a7-4680c4720276	JPY	USD	2026-03-12 18:02:57.605123-04	149.3336015	2026-03-12 17:52:57.721461-04	api
-0b206584-ee18-4204-92f5-f9aa9e01d663	EUR	USD	2026-03-12 17:52:57.605123-04	0.9196312	2026-03-12 17:52:57.721461-04	api
-f557447f-df7a-486a-a0d5-29b7855ca7fd	EUR	USD	2026-03-12 17:53:02.605123-04	0.9190224	2026-03-12 17:52:57.721461-04	api
-8eac86f9-78da-410b-ba56-5f27e686eb47	EUR	USD	2026-03-12 17:53:07.605123-04	0.9189083	2026-03-12 17:52:57.721461-04	api
-2d270dea-57c7-4696-bb69-1f231a41f970	EUR	USD	2026-03-12 17:53:12.605123-04	0.9191015	2026-03-12 17:52:57.721461-04	api
-2c48a9ed-536e-469f-a234-445f4f146c5c	EUR	USD	2026-03-12 17:53:17.605123-04	0.9196237	2026-03-12 17:52:57.721461-04	api
-8b6d00a7-ae20-431f-a2bd-e2d058828259	EUR	USD	2026-03-12 17:53:22.605123-04	0.9196742	2026-03-12 17:52:57.721461-04	api
-4f88ed7f-fcc6-4696-9d7c-af576d040320	EUR	USD	2026-03-12 17:53:27.605123-04	0.9194201	2026-03-12 17:52:57.721461-04	api
-48a1413c-c84c-48b9-b756-b8bf20e2e700	EUR	USD	2026-03-12 17:53:32.605123-04	0.9190594	2026-03-12 17:52:57.721461-04	api
-234604b7-ac8e-452d-b0d8-0f95870af0c9	EUR	USD	2026-03-12 17:53:37.605123-04	0.9194035	2026-03-12 17:52:57.721461-04	api
-4ff174a3-2fad-4957-b2d9-03ed412a843e	EUR	USD	2026-03-12 17:53:42.605123-04	0.9201553	2026-03-12 17:52:57.721461-04	api
-3aaeb744-48cc-4b34-a8ab-eb9dbaf0c9c2	EUR	USD	2026-03-12 17:53:47.605123-04	0.9202808	2026-03-12 17:52:57.721461-04	api
-3e3c8959-4006-43ed-b381-85ba79dac4ad	EUR	USD	2026-03-12 17:53:52.605123-04	0.9197135	2026-03-12 17:52:57.721461-04	api
-b752ed0a-b98d-48e5-8d25-4b0199de7106	EUR	USD	2026-03-12 17:53:57.605123-04	0.9192729	2026-03-12 17:52:57.721461-04	api
-4a9c56d8-4545-4b30-b43b-4333c8b8f01f	EUR	USD	2026-03-12 17:54:02.605123-04	0.9200087	2026-03-12 17:52:57.721461-04	api
-4667775f-fdc0-4d03-9bdd-c326bda65bd5	EUR	USD	2026-03-12 17:54:07.605123-04	0.9201020	2026-03-12 17:52:57.721461-04	api
-7d55c7c6-9572-4674-93b5-c9962a249d59	EUR	USD	2026-03-12 17:54:12.605123-04	0.9193055	2026-03-12 17:52:57.721461-04	api
-ca5062dd-dc30-4d38-bb31-9c2530939a7d	EUR	USD	2026-03-12 17:54:17.605123-04	0.9192670	2026-03-12 17:52:57.721461-04	api
-406159e2-add5-4140-b342-41a849635189	EUR	USD	2026-03-12 17:54:22.605123-04	0.9187325	2026-03-12 17:52:57.721461-04	api
-e6bb56d8-c613-4550-a74e-b121e0ff60fe	EUR	USD	2026-03-12 17:54:27.605123-04	0.9184435	2026-03-12 17:52:57.721461-04	api
-fae1fb36-a247-4ea0-942f-c6c6befc420f	EUR	USD	2026-03-12 17:54:32.605123-04	0.9182194	2026-03-12 17:52:57.721461-04	api
-c34a4ee3-953c-4768-959c-b92fceab9e9e	EUR	USD	2026-03-12 17:54:37.605123-04	0.9178920	2026-03-12 17:52:57.721461-04	api
-3bea2333-adad-4154-a50a-6cc4dfa63a1b	EUR	USD	2026-03-12 17:54:42.605123-04	0.9181460	2026-03-12 17:52:57.721461-04	api
-a4e79769-8c0a-425f-b222-a2446f72b5a5	EUR	USD	2026-03-12 17:54:47.605123-04	0.9181170	2026-03-12 17:52:57.721461-04	api
-8cb8e7ae-188d-48c1-a1ae-521a57cfc308	EUR	USD	2026-03-12 17:54:52.605123-04	0.9178465	2026-03-12 17:52:57.721461-04	api
-dcae2694-5db3-4f66-a0ae-338d4e6b388a	EUR	USD	2026-03-12 17:54:57.605123-04	0.9180345	2026-03-12 17:52:57.721461-04	api
-18a95f4e-d294-488c-b1d8-736ecaf8a087	EUR	USD	2026-03-12 17:55:02.605123-04	0.9184155	2026-03-12 17:52:57.721461-04	api
-e1e2043c-0500-49ab-8930-43fe7fb9c933	EUR	USD	2026-03-12 17:55:07.605123-04	0.9176613	2026-03-12 17:52:57.721461-04	api
-46ab4ba3-b5fd-4df6-b316-c5937a77f3ab	EUR	USD	2026-03-12 17:55:12.605123-04	0.9175435	2026-03-12 17:52:57.721461-04	api
-f1b57d86-e0eb-4f94-8822-bcb0f0495509	EUR	USD	2026-03-12 17:55:17.605123-04	0.9170937	2026-03-12 17:52:57.721461-04	api
-76eac520-ca09-4ea4-8fae-79e7f02179c1	EUR	USD	2026-03-12 17:55:22.605123-04	0.9170143	2026-03-12 17:52:57.721461-04	api
-714c9bff-6bfa-4648-83c8-66f35b7bb295	EUR	USD	2026-03-12 17:55:27.605123-04	0.9164233	2026-03-12 17:52:57.721461-04	api
-4d368b12-f2fa-4448-9416-5f7dac84e72b	EUR	USD	2026-03-12 17:55:32.605123-04	0.9164327	2026-03-12 17:52:57.721461-04	api
-d2c86b57-0919-42b0-99c1-f742ee7db6e9	EUR	USD	2026-03-12 17:55:37.605123-04	0.9164154	2026-03-12 17:52:57.721461-04	api
-648e66ba-1754-4c8f-a2b6-704413d082c1	EUR	USD	2026-03-12 17:55:42.605123-04	0.9162759	2026-03-12 17:52:57.721461-04	api
-09f38db5-081e-42d0-832d-4bbeb96433cd	EUR	USD	2026-03-12 17:55:47.605123-04	0.9157960	2026-03-12 17:52:57.721461-04	api
-2e1fffeb-a4ef-4b2d-a40d-8441461916cd	EUR	USD	2026-03-12 17:55:52.605123-04	0.9156146	2026-03-12 17:52:57.721461-04	api
-e50f57db-9637-46b5-8c6b-ff5bd6f7841e	EUR	USD	2026-03-12 17:55:57.605123-04	0.9151151	2026-03-12 17:52:57.721461-04	api
-b13b2cd9-93ff-43ca-8309-c96dca555065	EUR	USD	2026-03-12 17:56:02.605123-04	0.9144952	2026-03-12 17:52:57.721461-04	api
-85c845c3-dafe-45b7-a54e-29611bdcdf74	EUR	USD	2026-03-12 17:56:07.605123-04	0.9145980	2026-03-12 17:52:57.721461-04	api
-1b3b1d62-eb37-463d-a18d-5a0efbdc7fa6	EUR	USD	2026-03-12 17:56:12.605123-04	0.9140908	2026-03-12 17:52:57.721461-04	api
-ef976d97-8ed3-4fd6-b947-2e7f616abb97	EUR	USD	2026-03-12 17:56:17.605123-04	0.9146259	2026-03-12 17:52:57.721461-04	api
-6bbd35c9-0122-4133-92ad-9bfd722d1bc3	EUR	USD	2026-03-12 17:56:22.605123-04	0.9149536	2026-03-12 17:52:57.721461-04	api
-c6e8afac-5458-46e8-b043-30637fb896f0	EUR	USD	2026-03-12 17:56:27.605123-04	0.9140401	2026-03-12 17:52:57.721461-04	api
-7381fe84-345a-4008-858d-d0c78d0d9b63	EUR	USD	2026-03-12 17:56:32.605123-04	0.9141645	2026-03-12 17:52:57.721461-04	api
-212a19d9-b4ad-4ca0-96c9-8b5e1d072673	EUR	USD	2026-03-12 17:56:37.605123-04	0.9136611	2026-03-12 17:52:57.721461-04	api
-07ea14c0-d9f2-470c-9b03-a6a41c2ee815	EUR	USD	2026-03-12 17:56:42.605123-04	0.9136762	2026-03-12 17:52:57.721461-04	api
-6063a349-5aac-47af-beb3-bc8363d466b0	EUR	USD	2026-03-12 17:56:47.605123-04	0.9136961	2026-03-12 17:52:57.721461-04	api
-c444f641-b532-49a7-b18b-e8183d0646c3	EUR	USD	2026-03-12 17:56:52.605123-04	0.9127882	2026-03-12 17:52:57.721461-04	api
-d329da8e-37f5-4017-a664-f177a85c1b05	EUR	USD	2026-03-12 17:56:57.605123-04	0.9126816	2026-03-12 17:52:57.721461-04	api
-3404417b-7420-43a5-8654-3aa1d978c509	EUR	USD	2026-03-12 17:57:02.605123-04	0.9125649	2026-03-12 17:52:57.721461-04	api
-c355b8f0-e2ca-4207-9904-10748021ef44	EUR	USD	2026-03-12 17:57:07.605123-04	0.9130040	2026-03-12 17:52:57.721461-04	api
-a75f5021-d119-4dd7-9c48-3ed7ea6dba08	EUR	USD	2026-03-12 17:57:12.605123-04	0.9124648	2026-03-12 17:52:57.721461-04	api
-7942ee99-74df-4010-9a4d-628351ba935f	EUR	USD	2026-03-12 17:57:17.605123-04	0.9128016	2026-03-12 17:52:57.721461-04	api
-3ecc3aa1-49bd-4748-8263-c63d727f8221	EUR	USD	2026-03-12 17:57:22.605123-04	0.9123001	2026-03-12 17:52:57.721461-04	api
-d6631edd-c024-4df0-a930-2be0bc918adb	EUR	USD	2026-03-12 17:57:27.605123-04	0.9121490	2026-03-12 17:52:57.721461-04	api
-3bc73ffb-819a-438b-b9c4-545ceb8d03f8	EUR	USD	2026-03-12 17:57:32.605123-04	0.9117658	2026-03-12 17:52:57.721461-04	api
-2618e13f-c29d-42ee-a49a-72aafe24c6f3	EUR	USD	2026-03-12 17:57:37.605123-04	0.9124265	2026-03-12 17:52:57.721461-04	api
-021a238e-ba10-49d6-ae98-c9d014d3b663	EUR	USD	2026-03-12 17:57:42.605123-04	0.9126858	2026-03-12 17:52:57.721461-04	api
-dcaecf47-889b-49d0-9acb-880c4cfa16ca	EUR	USD	2026-03-12 17:57:47.605123-04	0.9137961	2026-03-12 17:52:57.721461-04	api
-9a3033d2-8f57-4f20-904b-1031f8f1ebde	EUR	USD	2026-03-12 17:57:52.605123-04	0.9140895	2026-03-12 17:52:57.721461-04	api
-f346667e-0310-477a-ae86-dd82c65f2ac3	EUR	USD	2026-03-12 17:57:57.605123-04	0.9144757	2026-03-12 17:52:57.721461-04	api
-c8e93c29-56ed-4d01-b3d4-79447870cab4	EUR	USD	2026-03-12 17:58:02.605123-04	0.9148602	2026-03-12 17:52:57.721461-04	api
-215453f4-da1c-4440-9ad1-83496544bf28	EUR	USD	2026-03-12 17:58:07.605123-04	0.9145828	2026-03-12 17:52:57.721461-04	api
-5fdb811f-01cc-460d-a46f-2dccc6007a2e	EUR	USD	2026-03-12 17:58:12.605123-04	0.9145508	2026-03-12 17:52:57.721461-04	api
-1df9be11-d340-4ee5-90b7-48af6c30513e	EUR	USD	2026-03-12 17:58:17.605123-04	0.9151685	2026-03-12 17:52:57.721461-04	api
-02fa4f82-b486-4791-843c-e5fe7775cc5c	EUR	USD	2026-03-12 17:58:22.605123-04	0.9149870	2026-03-12 17:52:57.721461-04	api
-1ecf966b-0c66-4224-aaf8-2e2e7a56931c	EUR	USD	2026-03-12 17:58:27.605123-04	0.9150734	2026-03-12 17:52:57.721461-04	api
-483d73d7-aba3-4ad2-8cc7-086ef049a3f4	EUR	USD	2026-03-12 17:58:32.605123-04	0.9150637	2026-03-12 17:52:57.721461-04	api
-138ac208-3423-4715-9b1a-a102ad720478	EUR	USD	2026-03-12 17:58:37.605123-04	0.9153425	2026-03-12 17:52:57.721461-04	api
-34d52f6a-60a9-4ed9-9bc1-eed65e84ca32	EUR	USD	2026-03-12 17:58:42.605123-04	0.9151755	2026-03-12 17:52:57.721461-04	api
-1b12d502-e502-4a81-9544-84f7246c98d8	EUR	USD	2026-03-12 17:58:47.605123-04	0.9151058	2026-03-12 17:52:57.721461-04	api
-2f402f29-b6cf-40bd-b1b8-7cfb5be91b94	EUR	USD	2026-03-12 17:58:52.605123-04	0.9152167	2026-03-12 17:52:57.721461-04	api
-f60ca5cd-7ec5-4798-9df8-4303926e1a09	EUR	USD	2026-03-12 17:58:57.605123-04	0.9152638	2026-03-12 17:52:57.721461-04	api
-232fc707-83a5-4790-862c-057e8d92381c	EUR	USD	2026-03-12 17:59:02.605123-04	0.9148681	2026-03-12 17:52:57.721461-04	api
-365558b2-6cb0-4ed4-8932-092e285d4243	EUR	USD	2026-03-12 17:59:07.605123-04	0.9152779	2026-03-12 17:52:57.721461-04	api
-eed86afc-8715-4837-b888-11b56fd2aa88	EUR	USD	2026-03-12 17:59:12.605123-04	0.9146839	2026-03-12 17:52:57.721461-04	api
-d4cc2917-9834-4abc-b25f-99dddb6ceb7f	EUR	USD	2026-03-12 17:59:17.605123-04	0.9141347	2026-03-12 17:52:57.721461-04	api
-bf660f7a-6220-4b5d-bc47-b7eadb17eca9	EUR	USD	2026-03-12 17:59:22.605123-04	0.9135487	2026-03-12 17:52:57.721461-04	api
-af7a4203-130c-482b-932f-f6510e54171c	EUR	USD	2026-03-12 17:59:27.605123-04	0.9139905	2026-03-12 17:52:57.721461-04	api
-aa931cea-18c8-4f4d-9295-eabdd486b1a4	EUR	USD	2026-03-12 17:59:32.605123-04	0.9138257	2026-03-12 17:52:57.721461-04	api
-1375d74a-e7c9-40ea-8584-f2a7afbbd953	EUR	USD	2026-03-12 17:59:37.605123-04	0.9133822	2026-03-12 17:52:57.721461-04	api
-fc1098be-7608-4625-8fab-e26191a277e5	EUR	USD	2026-03-12 17:59:42.605123-04	0.9128635	2026-03-12 17:52:57.721461-04	api
-fe3824ac-7b5f-46f2-be5f-48757fe1119a	EUR	USD	2026-03-12 17:59:47.605123-04	0.9130557	2026-03-12 17:52:57.721461-04	api
-2849ef18-b196-42e7-9954-60a2fd17d5ed	EUR	USD	2026-03-12 17:59:52.605123-04	0.9125743	2026-03-12 17:52:57.721461-04	api
-43968b92-d73e-4e3c-9915-c13ae8d793a1	EUR	USD	2026-03-12 17:59:57.605123-04	0.9119941	2026-03-12 17:52:57.721461-04	api
-c52f2f83-bd12-422e-a5f7-73992c3bc028	EUR	USD	2026-03-12 18:00:02.605123-04	0.9122741	2026-03-12 17:52:57.721461-04	api
-2827485a-2391-4cea-8dbb-f5a467543181	EUR	USD	2026-03-12 18:00:07.605123-04	0.9117284	2026-03-12 17:52:57.721461-04	api
-cb15fff2-c6a2-46b0-9212-99a128a6cad2	EUR	USD	2026-03-12 18:00:12.605123-04	0.9115814	2026-03-12 17:52:57.721461-04	api
-f546dc89-120f-4b0a-bb62-08b87428da73	EUR	USD	2026-03-12 18:00:17.605123-04	0.9115783	2026-03-12 17:52:57.721461-04	api
-52eb30e1-358b-4a1d-9301-e4ac6db65082	EUR	USD	2026-03-12 18:00:22.605123-04	0.9113754	2026-03-12 17:52:57.721461-04	api
-0255625a-368f-401b-b80b-29950c1159d5	EUR	USD	2026-03-12 18:00:27.605123-04	0.9113507	2026-03-12 17:52:57.721461-04	api
-3731f6a0-4781-4704-9474-e23febabec33	EUR	USD	2026-03-12 18:00:32.605123-04	0.9119610	2026-03-12 17:52:57.721461-04	api
-f1964943-4568-4889-9ebf-abe02afb8886	EUR	USD	2026-03-12 18:00:37.605123-04	0.9117253	2026-03-12 17:52:57.721461-04	api
-54e5dbef-1aac-4c5c-8f97-a7d7c1a03647	EUR	USD	2026-03-12 18:00:42.605123-04	0.9111514	2026-03-12 17:52:57.721461-04	api
-64ce4d1d-0076-48b0-bde7-85829377e1f1	EUR	USD	2026-03-12 18:00:47.605123-04	0.9103150	2026-03-12 17:52:57.721461-04	api
-96b90739-c7af-4c4c-b8f5-6cc852b31d68	EUR	USD	2026-03-12 18:00:52.605123-04	0.9102218	2026-03-12 17:52:57.721461-04	api
-5ce42884-566f-4a34-a427-e28fdec83ba7	EUR	USD	2026-03-12 18:00:57.605123-04	0.9100615	2026-03-12 17:52:57.721461-04	api
-3b4d7dcb-b6df-4ef8-939d-63557ba7b7fd	EUR	USD	2026-03-12 18:01:02.605123-04	0.9101822	2026-03-12 17:52:57.721461-04	api
-db33bb98-ec75-4b7b-abee-a3de9bb36074	EUR	USD	2026-03-12 18:01:07.605123-04	0.9099709	2026-03-12 17:52:57.721461-04	api
-ea60fb51-e99d-4e88-bf1b-552768fb55ae	EUR	USD	2026-03-12 18:01:12.605123-04	0.9097532	2026-03-12 17:52:57.721461-04	api
-60e8921d-d1cc-4a06-b40b-58fa61d525c0	EUR	USD	2026-03-12 18:01:17.605123-04	0.9094251	2026-03-12 17:52:57.721461-04	api
-c10cbb03-f203-478e-9ca8-f642b2eefe23	EUR	USD	2026-03-12 18:01:22.605123-04	0.9091888	2026-03-12 17:52:57.721461-04	api
-6e56dee7-3398-42c1-a034-9b03abd35d60	EUR	USD	2026-03-12 18:01:27.605123-04	0.9092616	2026-03-12 17:52:57.721461-04	api
-c09a0d76-6bdb-42b1-a1a3-903e007eac96	EUR	USD	2026-03-12 18:01:32.605123-04	0.9090887	2026-03-12 17:52:57.721461-04	api
-325fd8f9-7a1e-4f36-805b-73113a76cb83	EUR	USD	2026-03-12 18:01:37.605123-04	0.9091344	2026-03-12 17:52:57.721461-04	api
-bbdebcb4-c5aa-4a0d-8a5d-0390c61c1963	EUR	USD	2026-03-12 18:01:42.605123-04	0.9099990	2026-03-12 17:52:57.721461-04	api
-42b982a5-0de3-4760-a3d7-7f1d4e1c04da	EUR	USD	2026-03-12 18:01:47.605123-04	0.9102170	2026-03-12 17:52:57.721461-04	api
-c90bb44c-d646-484b-a8d7-251018a3da27	EUR	USD	2026-03-12 18:01:52.605123-04	0.9095000	2026-03-12 17:52:57.721461-04	api
-b984b63e-0a01-4e57-9e1d-34312d4e388f	EUR	USD	2026-03-12 18:01:57.605123-04	0.9102887	2026-03-12 17:52:57.721461-04	api
-cd2078fe-af8f-4bb8-a853-45225bd232bb	EUR	USD	2026-03-12 18:02:02.605123-04	0.9104470	2026-03-12 17:52:57.721461-04	api
-8f175bf2-63b9-486b-9a33-1cd96c0b8b64	EUR	USD	2026-03-12 18:02:07.605123-04	0.9100186	2026-03-12 17:52:57.721461-04	api
-3f320afe-c654-43a3-93ff-1accba2a33a4	EUR	USD	2026-03-12 18:02:12.605123-04	0.9104314	2026-03-12 17:52:57.721461-04	api
-53b07e3d-5e36-4a71-b197-cf2ef8daf62c	EUR	USD	2026-03-12 18:02:17.605123-04	0.9104394	2026-03-12 17:52:57.721461-04	api
-583331d9-af5b-474e-aafa-4b6284875757	EUR	USD	2026-03-12 18:02:22.605123-04	0.9101594	2026-03-12 17:52:57.721461-04	api
-66720609-a73a-46fd-a5bc-4407c78c3f77	EUR	USD	2026-03-12 18:02:27.605123-04	0.9098711	2026-03-12 17:52:57.721461-04	api
-c48f09ff-6941-4a47-baa5-23ab609db10b	EUR	USD	2026-03-12 18:02:32.605123-04	0.9094193	2026-03-12 17:52:57.721461-04	api
-d68dc39a-c7c9-4f46-b772-5adfddf92ddd	EUR	USD	2026-03-12 18:02:37.605123-04	0.9094412	2026-03-12 17:52:57.721461-04	api
-348d1fea-8b18-4cb3-a8f2-66bc24c9cf40	EUR	USD	2026-03-12 18:02:42.605123-04	0.9099273	2026-03-12 17:52:57.721461-04	api
-fc1dfc1b-99e1-48d7-9ef3-a73084a4d2cf	EUR	USD	2026-03-12 18:02:47.605123-04	0.9097795	2026-03-12 17:52:57.721461-04	api
-b3b4195b-599d-4034-af97-e9b1b46656ed	EUR	USD	2026-03-12 18:02:52.605123-04	0.9099709	2026-03-12 17:52:57.721461-04	api
-f0d7d08c-a1de-4075-b559-f07b1871e1d6	EUR	USD	2026-03-12 18:02:57.605123-04	0.9108247	2026-03-12 17:52:57.721461-04	api
-9339544a-46ed-4080-b7c9-e2f3b7edfdbc	HKD	USD	2026-03-12 17:52:57.605123-04	7.8241188	2026-03-12 17:52:57.721461-04	api
-3ac2838d-d045-4b4f-ba28-e52f665b6b86	HKD	USD	2026-03-12 17:53:02.605123-04	7.8310716	2026-03-12 17:52:57.721461-04	api
-6830cd16-d252-4d7c-8dea-fb9d8d3d264c	HKD	USD	2026-03-12 17:53:07.605123-04	7.8210805	2026-03-12 17:52:57.721461-04	api
-c0d4fcd4-153a-4ae5-aa03-035ca03c61fe	HKD	USD	2026-03-12 17:53:12.605123-04	7.8205410	2026-03-12 17:52:57.721461-04	api
-13d4d132-43f6-45f2-a7c6-790e61979a9b	HKD	USD	2026-03-12 17:53:17.605123-04	7.8245059	2026-03-12 17:52:57.721461-04	api
-408ca44c-d236-488c-9ee6-5a8c8a4e8598	HKD	USD	2026-03-12 17:53:22.605123-04	7.8297976	2026-03-12 17:52:57.721461-04	api
-b1e8f3a0-0ec3-49fa-a1a7-4445ff81fea5	HKD	USD	2026-03-12 17:53:27.605123-04	7.8323575	2026-03-12 17:52:57.721461-04	api
-8ae81e15-0c20-475c-a34a-57755dd9cb79	HKD	USD	2026-03-12 17:53:32.605123-04	7.8382227	2026-03-12 17:52:57.721461-04	api
-4f2a2318-b77d-4e03-9f2a-0415f01e1e6b	HKD	USD	2026-03-12 17:53:37.605123-04	7.8393592	2026-03-12 17:52:57.721461-04	api
-f744871c-d8d9-44ed-a60f-3f78ab1e563b	HKD	USD	2026-03-12 17:53:42.605123-04	7.8415203	2026-03-12 17:52:57.721461-04	api
-32e8e297-c812-4dc4-b734-f1e69a48e903	HKD	USD	2026-03-12 17:53:47.605123-04	7.8422211	2026-03-12 17:52:57.721461-04	api
-203933d6-12f5-425d-9ca5-974d51c75e33	HKD	USD	2026-03-12 17:53:52.605123-04	7.8380115	2026-03-12 17:52:57.721461-04	api
-14b07033-3535-4262-bef2-e04d8894180f	HKD	USD	2026-03-12 17:53:57.605123-04	7.8346942	2026-03-12 17:52:57.721461-04	api
-fa38e3e3-2d89-4866-a480-7e8e79cea2bc	HKD	USD	2026-03-12 17:54:02.605123-04	7.8361813	2026-03-12 17:52:57.721461-04	api
-b713b8a3-b05f-4a99-ae08-397eaae363d4	HKD	USD	2026-03-12 17:54:07.605123-04	7.8339084	2026-03-12 17:52:57.721461-04	api
-f1d4f7f7-f426-4e2a-8b41-8f08964757aa	HKD	USD	2026-03-12 17:54:12.605123-04	7.8388906	2026-03-12 17:52:57.721461-04	api
-8330a536-8b86-4b7c-ac91-d976cc413914	HKD	USD	2026-03-12 17:54:17.605123-04	7.8439577	2026-03-12 17:52:57.721461-04	api
-2cb1b6a3-015d-422b-bd9f-7ba084b5b19d	HKD	USD	2026-03-12 17:54:22.605123-04	7.8510157	2026-03-12 17:52:57.721461-04	api
-3cd9d8f5-594d-43e3-90e3-e0e3cece06f3	HKD	USD	2026-03-12 17:54:27.605123-04	7.8509133	2026-03-12 17:52:57.721461-04	api
-2e1848c5-ed53-4197-9f05-f600303bf543	HKD	USD	2026-03-12 17:54:32.605123-04	7.8563469	2026-03-12 17:52:57.721461-04	api
-40d43639-fd6a-4960-8bcb-9c040f91fbcb	HKD	USD	2026-03-12 17:54:37.605123-04	7.8527894	2026-03-12 17:52:57.721461-04	api
-7df96f74-e8a6-4136-99b5-c5ae2a886d6e	HKD	USD	2026-03-12 17:54:42.605123-04	7.8495849	2026-03-12 17:52:57.721461-04	api
-f563a734-fdb7-47e4-95c0-447154688b0f	HKD	USD	2026-03-12 17:54:47.605123-04	7.8499040	2026-03-12 17:52:57.721461-04	api
-b54b7a9c-c0fb-491f-82a0-593701a23309	HKD	USD	2026-03-12 17:54:52.605123-04	7.8510086	2026-03-12 17:52:57.721461-04	api
-45fc3e01-6883-431f-a732-2e6b015c13d1	HKD	USD	2026-03-12 17:54:57.605123-04	7.8447343	2026-03-12 17:52:57.721461-04	api
-0cd59c54-e1b9-4a94-979b-d12872233da5	HKD	USD	2026-03-12 17:55:02.605123-04	7.8379487	2026-03-12 17:52:57.721461-04	api
-ee8ecd22-2cac-48b9-8059-62206dd6b945	HKD	USD	2026-03-12 17:55:07.605123-04	7.8393404	2026-03-12 17:52:57.721461-04	api
-4306e7a3-1e00-4759-ac44-a96a0dced2a6	HKD	USD	2026-03-12 17:55:12.605123-04	7.8359616	2026-03-12 17:52:57.721461-04	api
-72b7a94b-3b3e-4906-9e01-8011c3378a7f	HKD	USD	2026-03-12 17:55:17.605123-04	7.8406974	2026-03-12 17:52:57.721461-04	api
-e2fbd903-1d37-4b6a-9db5-a0e3e9ebbdd6	HKD	USD	2026-03-12 17:55:22.605123-04	7.8422443	2026-03-12 17:52:57.721461-04	api
-bb68ac80-e7c6-4689-a00a-e11a579c93ac	HKD	USD	2026-03-12 17:55:27.605123-04	7.8434489	2026-03-12 17:52:57.721461-04	api
-c23fc56e-7b70-45c1-a474-806112b55472	HKD	USD	2026-03-12 17:55:32.605123-04	7.8442664	2026-03-12 17:52:57.721461-04	api
-6aff4626-8855-4069-94f0-8da3991d2b07	HKD	USD	2026-03-12 17:55:37.605123-04	7.8477793	2026-03-12 17:52:57.721461-04	api
-428231d4-8149-4f48-b53c-4cbfd5d98867	HKD	USD	2026-03-12 17:55:42.605123-04	7.8471788	2026-03-12 17:52:57.721461-04	api
-206e7691-5a53-4695-90f5-ea3a0b8b671a	HKD	USD	2026-03-12 17:55:47.605123-04	7.8514396	2026-03-12 17:52:57.721461-04	api
-a3c797d8-0c3f-4ab8-9c42-07c5efd9665d	HKD	USD	2026-03-12 17:55:52.605123-04	7.8493752	2026-03-12 17:52:57.721461-04	api
-df3f6cc7-f37e-4f8d-985a-53f6637c2044	HKD	USD	2026-03-12 17:55:57.605123-04	7.8484922	2026-03-12 17:52:57.721461-04	api
-b2baad13-5da3-4318-845a-63f71d3b8e3c	HKD	USD	2026-03-12 17:56:02.605123-04	7.8458222	2026-03-12 17:52:57.721461-04	api
-fc3f7a06-2eeb-4472-91d8-c679cfcc10cd	HKD	USD	2026-03-12 17:56:07.605123-04	7.8481671	2026-03-12 17:52:57.721461-04	api
-3651785e-f996-486f-a118-c446563ae0b8	HKD	USD	2026-03-12 17:56:12.605123-04	7.8483080	2026-03-12 17:52:57.721461-04	api
-424e227e-ac51-47cd-b7c9-d0fa58775e88	HKD	USD	2026-03-12 17:56:17.605123-04	7.8449250	2026-03-12 17:52:57.721461-04	api
-a2b7bdb2-ff54-455b-b67a-ce93010ea102	HKD	USD	2026-03-12 17:56:22.605123-04	7.8527812	2026-03-12 17:52:57.721461-04	api
-08758bb4-4eed-49d3-95cd-26db04162240	HKD	USD	2026-03-12 17:56:27.605123-04	7.8513533	2026-03-12 17:52:57.721461-04	api
-3d6faca1-802b-4075-abdd-c4df667b9270	HKD	USD	2026-03-12 17:56:32.605123-04	7.8508968	2026-03-12 17:52:57.721461-04	api
-22c07499-0413-4943-90c8-e2d78f6c86e1	HKD	USD	2026-03-12 17:56:37.605123-04	7.8524442	2026-03-12 17:52:57.721461-04	api
-44fa3222-7112-4183-93ba-9f8bd1c1941c	HKD	USD	2026-03-12 17:56:42.605123-04	7.8593088	2026-03-12 17:52:57.721461-04	api
-a166e73a-2c27-48e8-83f8-9c67d75c8e8b	HKD	USD	2026-03-12 17:56:47.605123-04	7.8587258	2026-03-12 17:52:57.721461-04	api
-c22031cb-f9bd-45d1-abd9-d87ab5611199	HKD	USD	2026-03-12 17:56:52.605123-04	7.8614893	2026-03-12 17:52:57.721461-04	api
-dd9238ab-fad4-4cbf-ad37-de36284c97bb	HKD	USD	2026-03-12 17:56:57.605123-04	7.8618777	2026-03-12 17:52:57.721461-04	api
-3a0cfaa9-07fd-40c2-ae44-fe12da261ba4	HKD	USD	2026-03-12 17:57:02.605123-04	7.8561257	2026-03-12 17:52:57.721461-04	api
-ce28fd08-0fba-4d3e-8acf-0e8319a64df8	HKD	USD	2026-03-12 17:57:07.605123-04	7.8592372	2026-03-12 17:52:57.721461-04	api
-558bf7f9-61ab-49a3-a953-714ea5b35939	HKD	USD	2026-03-12 17:57:12.605123-04	7.8632490	2026-03-12 17:52:57.721461-04	api
-f8e90598-0067-471f-b14f-0aef5a07054a	HKD	USD	2026-03-12 17:57:17.605123-04	7.8623055	2026-03-12 17:52:57.721461-04	api
-dfecc1c4-0275-45f1-9835-b3a9943d23a9	HKD	USD	2026-03-12 17:57:22.605123-04	7.8622448	2026-03-12 17:52:57.721461-04	api
-56d42ed1-f241-4877-a760-83c19eb5ee9a	HKD	USD	2026-03-12 17:57:27.605123-04	7.8563452	2026-03-12 17:52:57.721461-04	api
-537453a8-51f9-47d3-859d-4d005477c5e8	HKD	USD	2026-03-12 17:57:32.605123-04	7.8503650	2026-03-12 17:52:57.721461-04	api
-cbeb1b87-5017-46cb-bb8f-2bb977e6e576	HKD	USD	2026-03-12 17:57:37.605123-04	7.8488284	2026-03-12 17:52:57.721461-04	api
-86fd1e1f-fcd1-440c-9bb5-096f5fa0b439	HKD	USD	2026-03-12 17:57:42.605123-04	7.8512852	2026-03-12 17:52:57.721461-04	api
-e5c7bd9c-9cf2-4120-b929-a4ecceb58dcd	HKD	USD	2026-03-12 17:57:47.605123-04	7.8494420	2026-03-12 17:52:57.721461-04	api
-1e99ab83-1cd2-4ced-bb6d-c4d716aca0ef	HKD	USD	2026-03-12 17:57:52.605123-04	7.8505882	2026-03-12 17:52:57.721461-04	api
-96d4a1b4-a91a-4a8b-81be-4ce412e7a05a	HKD	USD	2026-03-12 17:57:57.605123-04	7.8543879	2026-03-12 17:52:57.721461-04	api
-a8f11dca-ec7e-49cb-917f-7d2a6e5c36fc	HKD	USD	2026-03-12 17:58:02.605123-04	7.8547640	2026-03-12 17:52:57.721461-04	api
-cefe5882-1711-437f-9019-87209547bd85	HKD	USD	2026-03-12 17:58:07.605123-04	7.8570205	2026-03-12 17:52:57.721461-04	api
-0404dc68-3915-4696-88e8-e03a49bf91c5	HKD	USD	2026-03-12 17:58:12.605123-04	7.8627105	2026-03-12 17:52:57.721461-04	api
-8685fd19-8f4e-47b3-b805-044bda0912fe	HKD	USD	2026-03-12 17:58:17.605123-04	7.8578135	2026-03-12 17:52:57.721461-04	api
-0d23c4fd-cc0c-4a12-b753-e1287dc3f0a0	HKD	USD	2026-03-12 17:58:22.605123-04	7.8607374	2026-03-12 17:52:57.721461-04	api
-ea00d2ed-8237-41cb-b4d6-68d2aac50617	HKD	USD	2026-03-12 17:58:27.605123-04	7.8533334	2026-03-12 17:52:57.721461-04	api
-5fe6caa1-1d56-461c-aaa1-15d80e01d0af	HKD	USD	2026-03-12 17:58:32.605123-04	7.8550285	2026-03-12 17:52:57.721461-04	api
-ec41bd0a-b4f7-436d-a57a-44d070b38777	HKD	USD	2026-03-12 17:58:37.605123-04	7.8558258	2026-03-12 17:52:57.721461-04	api
-78d3631f-7ae5-4b29-a2f0-806734b4422d	HKD	USD	2026-03-12 17:58:42.605123-04	7.8536919	2026-03-12 17:52:57.721461-04	api
-bbbffa25-b0d9-49cd-baaa-655b00c6fbd8	HKD	USD	2026-03-12 17:58:47.605123-04	7.8494626	2026-03-12 17:52:57.721461-04	api
-b83b5d53-9e7b-48b4-846e-a06f35191a95	HKD	USD	2026-03-12 17:58:52.605123-04	7.8492200	2026-03-12 17:52:57.721461-04	api
-2f244812-0843-4d86-b16a-a05bdffe32ab	HKD	USD	2026-03-12 17:58:57.605123-04	7.8476101	2026-03-12 17:52:57.721461-04	api
-af6b6efd-7373-41aa-af68-dd55fc76e8f9	HKD	USD	2026-03-12 17:59:02.605123-04	7.8479932	2026-03-12 17:52:57.721461-04	api
-0250a4b5-b819-46f7-aba6-48cb3b7fb4bf	HKD	USD	2026-03-12 17:59:07.605123-04	7.8444318	2026-03-12 17:52:57.721461-04	api
-7162614c-65ea-435c-b302-f8be580f6204	HKD	USD	2026-03-12 17:59:12.605123-04	7.8465717	2026-03-12 17:52:57.721461-04	api
-86b9a233-18ee-4421-a688-800b3f755779	HKD	USD	2026-03-12 17:59:17.605123-04	7.8425088	2026-03-12 17:52:57.721461-04	api
-a13040d2-a3c5-4786-aac1-81b247c3a23f	HKD	USD	2026-03-12 17:59:22.605123-04	7.8413160	2026-03-12 17:52:57.721461-04	api
-d3e135ca-94f8-4578-9af2-ea650a3a0d8a	HKD	USD	2026-03-12 17:59:27.605123-04	7.8397793	2026-03-12 17:52:57.721461-04	api
-e038a607-f683-4d5f-987e-4670ebc9fb45	HKD	USD	2026-03-12 17:59:32.605123-04	7.8447508	2026-03-12 17:52:57.721461-04	api
-4ce0bbf8-a284-4cde-b46a-99f239cd3865	HKD	USD	2026-03-12 17:59:37.605123-04	7.8388863	2026-03-12 17:52:57.721461-04	api
-17c62c4f-05e6-467f-a2ba-6bfae5ed2a22	HKD	USD	2026-03-12 17:59:42.605123-04	7.8372638	2026-03-12 17:52:57.721461-04	api
-8cb27974-4d55-41a9-a29f-3ad533c720fd	HKD	USD	2026-03-12 17:59:47.605123-04	7.8418988	2026-03-12 17:52:57.721461-04	api
-de7d639c-76a8-4b7a-b169-965114e3a07b	HKD	USD	2026-03-12 17:59:52.605123-04	7.8393179	2026-03-12 17:52:57.721461-04	api
-f1583083-3f28-435f-981e-ee56ca548cc0	HKD	USD	2026-03-12 17:59:57.605123-04	7.8344611	2026-03-12 17:52:57.721461-04	api
-6aa37adf-1fe1-4730-ba38-156ee1aa13b8	HKD	USD	2026-03-12 18:00:02.605123-04	7.8355691	2026-03-12 17:52:57.721461-04	api
-fd789171-860e-4e87-bb4f-e0e3b996cfcd	HKD	USD	2026-03-12 18:00:07.605123-04	7.8344329	2026-03-12 17:52:57.721461-04	api
-da85d3f4-1bf9-443c-b33a-433c18c1c4a1	HKD	USD	2026-03-12 18:00:12.605123-04	7.8377035	2026-03-12 17:52:57.721461-04	api
-1308c5bc-8f0f-4973-beb0-be1aacd395cd	HKD	USD	2026-03-12 18:00:17.605123-04	7.8340974	2026-03-12 17:52:57.721461-04	api
-6b662d52-09ad-430e-ae5f-6d2a05bea9e1	HKD	USD	2026-03-12 18:00:22.605123-04	7.8348453	2026-03-12 17:52:57.721461-04	api
-800ca2f9-57cf-4f99-bad5-62d95110e52b	HKD	USD	2026-03-12 18:00:27.605123-04	7.8374553	2026-03-12 17:52:57.721461-04	api
-d97354f0-ff0d-4691-bdee-e7776e9d5da4	HKD	USD	2026-03-12 18:00:32.605123-04	7.8415150	2026-03-12 17:52:57.721461-04	api
-929b7441-3ff9-41bf-9b52-875b7dd1d687	HKD	USD	2026-03-12 18:00:37.605123-04	7.8371793	2026-03-12 17:52:57.721461-04	api
-662cd171-0379-477c-adb4-7df82e0f6b5f	HKD	USD	2026-03-12 18:00:42.605123-04	7.8427605	2026-03-12 17:52:57.721461-04	api
-bce47964-0dc9-4507-a95d-7477d5d5d746	HKD	USD	2026-03-12 18:00:47.605123-04	7.8392293	2026-03-12 17:52:57.721461-04	api
-5ca56b67-a9ba-4c16-b80b-df5fc2f55ed7	HKD	USD	2026-03-12 18:00:52.605123-04	7.8333030	2026-03-12 17:52:57.721461-04	api
-bdb733a5-3b19-486e-a61c-8c1465b9aa46	HKD	USD	2026-03-12 18:00:57.605123-04	7.8295652	2026-03-12 17:52:57.721461-04	api
-40675f27-f295-409c-8a0b-e6ba8f263b55	HKD	USD	2026-03-12 18:01:02.605123-04	7.8301714	2026-03-12 17:52:57.721461-04	api
-583f215f-93c0-405d-9b32-af908a2d4c7c	HKD	USD	2026-03-12 18:01:07.605123-04	7.8289117	2026-03-12 17:52:57.721461-04	api
-2b24c9ca-91d5-4238-b057-abceb316bb40	HKD	USD	2026-03-12 18:01:12.605123-04	7.8306360	2026-03-12 17:52:57.721461-04	api
-6a89d7ae-f699-49af-8811-34b0ecc5ec20	HKD	USD	2026-03-12 18:01:17.605123-04	7.8325767	2026-03-12 17:52:57.721461-04	api
-d073d745-fdfb-4225-8273-44bcfc5bea9f	HKD	USD	2026-03-12 18:01:22.605123-04	7.8338227	2026-03-12 17:52:57.721461-04	api
-737a0b5f-daa9-4342-8d1e-04e5d4324163	HKD	USD	2026-03-12 18:01:27.605123-04	7.8328258	2026-03-12 17:52:57.721461-04	api
-c285e1d7-da19-49c4-a726-63d2f55b3379	HKD	USD	2026-03-12 18:01:32.605123-04	7.8399337	2026-03-12 17:52:57.721461-04	api
-d66e5b3f-a574-4ee5-b937-90dcca5695aa	HKD	USD	2026-03-12 18:01:37.605123-04	7.8312518	2026-03-12 17:52:57.721461-04	api
-2a869379-d4cc-425e-bde0-7bf93a89ac1a	HKD	USD	2026-03-12 18:01:42.605123-04	7.8244636	2026-03-12 17:52:57.721461-04	api
-2a35c97b-e670-49dc-97a7-779dbbda379f	HKD	USD	2026-03-12 18:01:47.605123-04	7.8224808	2026-03-12 17:52:57.721461-04	api
-6b5eeb9c-c304-4311-b8bc-f1032ed30d72	HKD	USD	2026-03-12 18:01:52.605123-04	7.8175729	2026-03-12 17:52:57.721461-04	api
-54946cfc-c836-45c9-91ae-d8b1fefe9360	HKD	USD	2026-03-12 18:01:57.605123-04	7.8075887	2026-03-12 17:52:57.721461-04	api
-0541bddf-aff4-4eac-a3cd-5ea8fe23bc39	HKD	USD	2026-03-12 18:02:02.605123-04	7.8044856	2026-03-12 17:52:57.721461-04	api
-9dc00245-5492-430c-a65d-c7c5107d8a6b	HKD	USD	2026-03-12 18:02:07.605123-04	7.8015623	2026-03-12 17:52:57.721461-04	api
-6d1c2306-e4fa-410d-8583-19abd204e457	HKD	USD	2026-03-12 18:02:12.605123-04	7.7920169	2026-03-12 17:52:57.721461-04	api
-8ac4dad7-563d-49d1-878e-1ec88ebfdc8f	HKD	USD	2026-03-12 18:02:17.605123-04	7.7953631	2026-03-12 17:52:57.721461-04	api
-3a07d267-d9cf-481c-b9c0-4f37361d90b0	HKD	USD	2026-03-12 18:02:22.605123-04	7.8004283	2026-03-12 17:52:57.721461-04	api
-02bd9b84-b68f-43f4-a917-7e9b5f48e30b	HKD	USD	2026-03-12 18:02:27.605123-04	7.8052438	2026-03-12 17:52:57.721461-04	api
-a21f6065-dc5f-486e-9f23-3e1e2c2ee6c2	HKD	USD	2026-03-12 18:02:32.605123-04	7.8032602	2026-03-12 17:52:57.721461-04	api
-7392d1c2-f360-40f9-86e8-e52baedf9412	HKD	USD	2026-03-12 18:02:37.605123-04	7.8038361	2026-03-12 17:52:57.721461-04	api
-2a7a4988-51ac-4aa9-b278-20a2bdbfa88b	HKD	USD	2026-03-12 18:02:42.605123-04	7.7994641	2026-03-12 17:52:57.721461-04	api
-66ddee59-a939-47c7-baa7-119745d0c438	HKD	USD	2026-03-12 18:02:47.605123-04	7.8002691	2026-03-12 17:52:57.721461-04	api
-a632510d-a7a3-4fd6-b591-35db4d04fa84	HKD	USD	2026-03-12 18:02:52.605123-04	7.7976402	2026-03-12 17:52:57.721461-04	api
-91964a8b-652b-4b86-bc2c-b2fc4fbf4542	HKD	USD	2026-03-12 18:02:57.605123-04	7.7992384	2026-03-12 17:52:57.721461-04	api
-cf1e5f51-dcfc-49da-bd0f-c50a2831b897	CAD	USD	2026-03-12 17:52:57.605123-04	1.3600008	2026-03-12 17:52:57.721461-04	api
-55dddc82-b315-430a-9798-218386590361	CAD	USD	2026-03-12 17:53:02.605123-04	1.3602040	2026-03-12 17:52:57.721461-04	api
-4e6de6be-33d5-4362-b22a-c31684906d3b	CAD	USD	2026-03-12 17:53:07.605123-04	1.3600176	2026-03-12 17:52:57.721461-04	api
-0a1c68b1-ffda-48ba-a5aa-2944f2db6701	CAD	USD	2026-03-12 17:53:12.605123-04	1.3594121	2026-03-12 17:52:57.721461-04	api
-fb45aac4-1517-4a2e-9ad2-811dc1693aff	CAD	USD	2026-03-12 17:53:17.605123-04	1.3591031	2026-03-12 17:52:57.721461-04	api
-56d2bab0-b8a3-481f-af9d-2b237bff3d62	CAD	USD	2026-03-12 17:53:22.605123-04	1.3584294	2026-03-12 17:52:57.721461-04	api
-6840a8ff-8bcb-4c3f-8df2-dd0e1e52e9bc	CAD	USD	2026-03-12 17:53:27.605123-04	1.3584702	2026-03-12 17:52:57.721461-04	api
-0d43a7ac-360d-41a2-956a-03a09fd1d524	CAD	USD	2026-03-12 17:53:32.605123-04	1.3593809	2026-03-12 17:52:57.721461-04	api
-2dd8cce2-4aad-4084-8e03-5b18970da28f	CAD	USD	2026-03-12 17:53:37.605123-04	1.3590463	2026-03-12 17:52:57.721461-04	api
-73fab84a-a718-4d84-96c0-98497c6b4981	CAD	USD	2026-03-12 17:53:42.605123-04	1.3586248	2026-03-12 17:52:57.721461-04	api
-6a31b464-c009-4d1f-8128-6f2874e6615d	CAD	USD	2026-03-12 17:53:47.605123-04	1.3589576	2026-03-12 17:52:57.721461-04	api
-9d373afd-3275-4bbd-9d37-99ec0aad9946	CAD	USD	2026-03-12 17:53:52.605123-04	1.3592001	2026-03-12 17:52:57.721461-04	api
-14e5de29-c0c8-4864-92cf-34d32b696568	CAD	USD	2026-03-12 17:53:57.605123-04	1.3592717	2026-03-12 17:52:57.721461-04	api
-af22d2a6-446b-443e-8a50-b2da299d8b41	CAD	USD	2026-03-12 17:54:02.605123-04	1.3586395	2026-03-12 17:52:57.721461-04	api
-77eadd04-0e82-49c5-b7e0-4d547faa8870	CAD	USD	2026-03-12 17:54:07.605123-04	1.3586196	2026-03-12 17:52:57.721461-04	api
-926a9de8-c5ff-428e-b245-cb95ccb148c7	CAD	USD	2026-03-12 17:54:12.605123-04	1.3590920	2026-03-12 17:52:57.721461-04	api
-807e7f80-b669-4b27-8917-0f4e53afd528	CAD	USD	2026-03-12 17:54:17.605123-04	1.3581789	2026-03-12 17:52:57.721461-04	api
-cca11536-3e5e-40ca-9d62-b773bf70cc79	CAD	USD	2026-03-12 17:54:22.605123-04	1.3578682	2026-03-12 17:52:57.721461-04	api
-10e31f86-f69f-467d-8738-b0f6dcd93a72	CAD	USD	2026-03-12 17:54:27.605123-04	1.3565780	2026-03-12 17:52:57.721461-04	api
-ecf6a69b-1f75-425f-9271-b3b38fae9e78	CAD	USD	2026-03-12 17:54:32.605123-04	1.3557036	2026-03-12 17:52:57.721461-04	api
-702bcad2-7fd6-4e38-92bd-31a279a98051	CAD	USD	2026-03-12 17:54:37.605123-04	1.3544557	2026-03-12 17:52:57.721461-04	api
-8ee4a808-12a2-4600-8ae8-1a138e8a8f88	CAD	USD	2026-03-12 17:54:42.605123-04	1.3542965	2026-03-12 17:52:57.721461-04	api
-99b77420-3183-4433-b558-8baa0e432752	CAD	USD	2026-03-12 17:54:47.605123-04	1.3534386	2026-03-12 17:52:57.721461-04	api
-69de8186-3399-40aa-a59c-c410bf42f3be	CAD	USD	2026-03-12 17:54:52.605123-04	1.3536221	2026-03-12 17:52:57.721461-04	api
-a6a0b2a8-2f42-43fa-a9d2-dc7b724e80ea	CAD	USD	2026-03-12 17:54:57.605123-04	1.3537282	2026-03-12 17:52:57.721461-04	api
-5fd0d062-bf57-47a1-a0df-380ab179a695	CAD	USD	2026-03-12 17:55:02.605123-04	1.3536017	2026-03-12 17:52:57.721461-04	api
-14329bcb-6265-4edd-9d12-7c866a7972db	CAD	USD	2026-03-12 17:55:07.605123-04	1.3518994	2026-03-12 17:52:57.721461-04	api
-8caa1376-186c-4611-aa29-37b6e16e4e72	CAD	USD	2026-03-12 17:55:12.605123-04	1.3515354	2026-03-12 17:52:57.721461-04	api
-e04ab971-88cb-4b9f-9caa-1135226122a0	CAD	USD	2026-03-12 17:55:17.605123-04	1.3515026	2026-03-12 17:52:57.721461-04	api
-78427a8b-492c-4af2-b9d4-89fbb34cb9c3	CAD	USD	2026-03-12 17:55:22.605123-04	1.3515792	2026-03-12 17:52:57.721461-04	api
-77b87683-deb8-4566-9691-d2bcf61380f1	CAD	USD	2026-03-12 17:55:27.605123-04	1.3505455	2026-03-12 17:52:57.721461-04	api
-c0711159-fd80-4084-a6c4-6fc817f22348	CAD	USD	2026-03-12 17:55:32.605123-04	1.3502229	2026-03-12 17:52:57.721461-04	api
-2e5b57bd-7323-42b0-b4bc-91c5614603a5	CAD	USD	2026-03-12 17:55:37.605123-04	1.3495625	2026-03-12 17:52:57.721461-04	api
-e76d6fc6-6e51-4943-a623-816ac6eb2fb1	CAD	USD	2026-03-12 17:55:42.605123-04	1.3490168	2026-03-12 17:52:57.721461-04	api
-12d76db1-ba34-4c74-b2f6-849969d13673	CAD	USD	2026-03-12 17:55:47.605123-04	1.3497326	2026-03-12 17:52:57.721461-04	api
-d1ae11b4-c5b6-4ffb-b9e0-6256f3539258	CAD	USD	2026-03-12 17:55:52.605123-04	1.3491877	2026-03-12 17:52:57.721461-04	api
-6c8fda07-6f99-412e-bc13-4b083f722a3e	CAD	USD	2026-03-12 17:55:57.605123-04	1.3491658	2026-03-12 17:52:57.721461-04	api
-4903c91c-7e06-4e56-b890-848bd1c9f3a7	CAD	USD	2026-03-12 17:56:02.605123-04	1.3497625	2026-03-12 17:52:57.721461-04	api
-ae9422ae-a6d6-4afe-ad60-9fc5f8e53629	CAD	USD	2026-03-12 17:56:07.605123-04	1.3493687	2026-03-12 17:52:57.721461-04	api
-5323c768-dc21-44d3-800a-970085146bd7	CAD	USD	2026-03-12 17:56:12.605123-04	1.3492933	2026-03-12 17:52:57.721461-04	api
-730eb9fb-48bf-4d8e-a1bc-b035c5d5ca95	CAD	USD	2026-03-12 17:56:17.605123-04	1.3493679	2026-03-12 17:52:57.721461-04	api
-47e70598-3126-4d99-b791-dffe58bae955	CAD	USD	2026-03-12 17:56:22.605123-04	1.3494109	2026-03-12 17:52:57.721461-04	api
-cf4c4cf1-a56b-4875-8c87-8e22d424dd09	CAD	USD	2026-03-12 17:56:27.605123-04	1.3485846	2026-03-12 17:52:57.721461-04	api
-d27e8e1a-1d79-4038-8096-9e9f8ee4c2cd	CAD	USD	2026-03-12 17:56:32.605123-04	1.3486359	2026-03-12 17:52:57.721461-04	api
-4ffe7c09-fd7b-409f-b2b4-dfaf929d8abf	CAD	USD	2026-03-12 17:56:37.605123-04	1.3495525	2026-03-12 17:52:57.721461-04	api
-0be42044-1ed3-45fc-814a-f6d7bf3ad2c7	CAD	USD	2026-03-12 17:56:42.605123-04	1.3485090	2026-03-12 17:52:57.721461-04	api
-8a09e1de-67cf-4b39-ad96-06eb1a82a324	CAD	USD	2026-03-12 17:56:47.605123-04	1.3490885	2026-03-12 17:52:57.721461-04	api
-d9b98e72-b674-4531-ac46-3cb73b5f4928	CAD	USD	2026-03-12 17:56:52.605123-04	1.3491690	2026-03-12 17:52:57.721461-04	api
-f3f53543-367b-4a5e-acef-11c848226c49	CAD	USD	2026-03-12 17:56:57.605123-04	1.3487364	2026-03-12 17:52:57.721461-04	api
-0512b9df-99e6-4f75-a548-056623437539	CAD	USD	2026-03-12 17:57:02.605123-04	1.3500861	2026-03-12 17:52:57.721461-04	api
-7e370f90-cd98-4b2a-99f6-15b072fa2aac	CAD	USD	2026-03-12 17:57:07.605123-04	1.3506007	2026-03-12 17:52:57.721461-04	api
-4d707c66-6701-4fe7-a163-7cf853c7f1d1	CAD	USD	2026-03-12 17:57:12.605123-04	1.3497911	2026-03-12 17:52:57.721461-04	api
-8d60d37d-5f98-4744-b1d6-3b3f86d4d2e6	CAD	USD	2026-03-12 17:57:17.605123-04	1.3498414	2026-03-12 17:52:57.721461-04	api
-aa332550-57a9-467a-86cf-1a2adb1eea22	CAD	USD	2026-03-12 17:57:22.605123-04	1.3502307	2026-03-12 17:52:57.721461-04	api
-d6636887-df77-46c7-ab06-d9ccdac43f48	CAD	USD	2026-03-12 17:57:27.605123-04	1.3501032	2026-03-12 17:52:57.721461-04	api
-fe928e79-01f7-4d5f-947d-f6dc723f5584	CAD	USD	2026-03-12 17:57:32.605123-04	1.3505643	2026-03-12 17:52:57.721461-04	api
-a85b355d-2d35-493e-a066-1feab0254918	CAD	USD	2026-03-12 17:57:37.605123-04	1.3505194	2026-03-12 17:52:57.721461-04	api
-18139074-a5b0-4c4e-bf02-ccc7d0652b86	CAD	USD	2026-03-12 17:57:42.605123-04	1.3509700	2026-03-12 17:52:57.721461-04	api
-805215b6-f4f6-47d2-9efc-e4afe8bd9c02	CAD	USD	2026-03-12 17:57:47.605123-04	1.3519421	2026-03-12 17:52:57.721461-04	api
-90328418-bf2b-4f30-abaf-84d2a07be9d7	CAD	USD	2026-03-12 17:57:52.605123-04	1.3514854	2026-03-12 17:52:57.721461-04	api
-1f01139c-df61-4b65-94a2-49f17863e9ea	CAD	USD	2026-03-12 17:57:57.605123-04	1.3516227	2026-03-12 17:52:57.721461-04	api
-12e19758-68b3-4a95-ad8e-2fc582344082	CAD	USD	2026-03-12 17:58:02.605123-04	1.3513096	2026-03-12 17:52:57.721461-04	api
-13943acc-0fdb-4d53-bfaf-55014f6ec5ec	CAD	USD	2026-03-12 17:58:07.605123-04	1.3513956	2026-03-12 17:52:57.721461-04	api
-0c61c1c5-428d-4b62-96bb-7a6325d3385f	CAD	USD	2026-03-12 17:58:12.605123-04	1.3505937	2026-03-12 17:52:57.721461-04	api
-dda29dab-ced8-4626-8dcb-7efd65901693	CAD	USD	2026-03-12 17:58:17.605123-04	1.3502025	2026-03-12 17:52:57.721461-04	api
-bd4ec012-3386-43e2-8a53-52e239b8a462	CAD	USD	2026-03-12 17:58:22.605123-04	1.3500701	2026-03-12 17:52:57.721461-04	api
-dd2c189b-eb33-462e-90b9-74d9900caea5	CAD	USD	2026-03-12 17:58:27.605123-04	1.3506769	2026-03-12 17:52:57.721461-04	api
-7eb311d6-b68b-4ab1-bffe-ff8872d15087	CAD	USD	2026-03-12 17:58:32.605123-04	1.3514505	2026-03-12 17:52:57.721461-04	api
-2fdd0dd9-d2e3-49f6-a97f-42be70de3617	CAD	USD	2026-03-12 17:58:37.605123-04	1.3505565	2026-03-12 17:52:57.721461-04	api
-36f77650-7728-4412-a747-4c14be0966c7	CAD	USD	2026-03-12 17:58:42.605123-04	1.3500200	2026-03-12 17:52:57.721461-04	api
-e8149ffb-a52c-41ae-8b90-a652cce14e5b	CAD	USD	2026-03-12 17:58:47.605123-04	1.3504567	2026-03-12 17:52:57.721461-04	api
-5b8dba51-1b02-48e8-95d3-49e2bad4f8f9	CAD	USD	2026-03-12 17:58:52.605123-04	1.3491121	2026-03-12 17:52:57.721461-04	api
-9ecc33e8-e66b-4e44-9763-03a28ab8363a	CAD	USD	2026-03-12 17:58:57.605123-04	1.3487997	2026-03-12 17:52:57.721461-04	api
-f8748acb-e45c-491c-8041-982e0591a187	CAD	USD	2026-03-12 17:59:02.605123-04	1.3487341	2026-03-12 17:52:57.721461-04	api
-f7d86959-0a23-4861-8d27-52fe003b575c	CAD	USD	2026-03-12 17:59:07.605123-04	1.3495820	2026-03-12 17:52:57.721461-04	api
-3f6b4580-783d-48c9-8b82-6b935af2fdcd	CAD	USD	2026-03-12 17:59:12.605123-04	1.3500473	2026-03-12 17:52:57.721461-04	api
-a4b8e84b-b6d3-4374-8128-794f6461d381	CAD	USD	2026-03-12 17:59:17.605123-04	1.3498264	2026-03-12 17:52:57.721461-04	api
-1aa51c0f-7d92-491b-90c4-12190259b3bf	CAD	USD	2026-03-12 17:59:22.605123-04	1.3495777	2026-03-12 17:52:57.721461-04	api
-093d5397-beb0-4af8-9f38-2d700e88180c	CAD	USD	2026-03-12 17:59:27.605123-04	1.3494089	2026-03-12 17:52:57.721461-04	api
-a6868994-a20d-4ec0-a19b-5582fbbbb35f	CAD	USD	2026-03-12 17:59:32.605123-04	1.3504372	2026-03-12 17:52:57.721461-04	api
-b29bb5e4-d6dd-4fec-8883-663a005dd598	CAD	USD	2026-03-12 17:59:37.605123-04	1.3501482	2026-03-12 17:52:57.721461-04	api
-5c9d1ca1-c834-4012-8310-67d2a49d84c9	CAD	USD	2026-03-12 17:59:42.605123-04	1.3499432	2026-03-12 17:52:57.721461-04	api
-2a4c0d2d-c8df-489e-90a1-a4c8952ae478	CAD	USD	2026-03-12 17:59:47.605123-04	1.3501812	2026-03-12 17:52:57.721461-04	api
-b198eb0b-7a64-46de-9838-e34771acebfc	CAD	USD	2026-03-12 17:59:52.605123-04	1.3500997	2026-03-12 17:52:57.721461-04	api
-26083a2c-560a-4843-a38e-bfaa46e62758	CAD	USD	2026-03-12 17:59:57.605123-04	1.3499665	2026-03-12 17:52:57.721461-04	api
-e6148792-11de-4a77-bd70-a00b460783ea	CAD	USD	2026-03-12 18:00:02.605123-04	1.3492148	2026-03-12 17:52:57.721461-04	api
-dc89f825-5b58-4942-8ac0-d503eeeccbed	CAD	USD	2026-03-12 18:00:07.605123-04	1.3492070	2026-03-12 17:52:57.721461-04	api
-3ec1e935-21c8-4240-b1a7-c716104bc2a5	CAD	USD	2026-03-12 18:00:12.605123-04	1.3489078	2026-03-12 17:52:57.721461-04	api
-b1dbee3d-dbac-4bcd-98c2-fc7c10687f2f	CAD	USD	2026-03-12 18:00:17.605123-04	1.3496945	2026-03-12 17:52:57.721461-04	api
-f3675a97-9951-4f1d-9e70-33267a66fa33	CAD	USD	2026-03-12 18:00:22.605123-04	1.3501353	2026-03-12 17:52:57.721461-04	api
-d4211745-bb12-44cc-a8a6-d39015c564f7	CAD	USD	2026-03-12 18:00:27.605123-04	1.3501190	2026-03-12 17:52:57.721461-04	api
-f4ebcecd-f9f2-431e-bdc9-d2557971276e	CAD	USD	2026-03-12 18:00:32.605123-04	1.3505703	2026-03-12 17:52:57.721461-04	api
-1dcdbc0b-ff5d-4783-b1a5-437d5e3bc693	CAD	USD	2026-03-12 18:00:37.605123-04	1.3503408	2026-03-12 17:52:57.721461-04	api
-6fdeb280-7872-4de2-9c43-002b99b0d2ca	CAD	USD	2026-03-12 18:00:42.605123-04	1.3510514	2026-03-12 17:52:57.721461-04	api
-eb538aeb-6521-429c-93eb-6b1155845ad3	CAD	USD	2026-03-12 18:00:47.605123-04	1.3510477	2026-03-12 17:52:57.721461-04	api
-c48d3dde-572f-498f-9d4b-a607e3db5739	CAD	USD	2026-03-12 18:00:52.605123-04	1.3514419	2026-03-12 17:52:57.721461-04	api
-d9521a6e-d490-4ef3-8043-a673d3b0075d	CAD	USD	2026-03-12 18:00:57.605123-04	1.3505699	2026-03-12 17:52:57.721461-04	api
-d14219f9-f572-4988-88e6-33e2d2f8bdc0	CAD	USD	2026-03-12 18:01:02.605123-04	1.3508040	2026-03-12 17:52:57.721461-04	api
-80309932-1ef1-4ced-b627-4a57a74c2d72	CAD	USD	2026-03-12 18:01:07.605123-04	1.3496643	2026-03-12 17:52:57.721461-04	api
-0c84e869-2a1d-4f6a-a6fe-418964f4240c	CAD	USD	2026-03-12 18:01:12.605123-04	1.3482915	2026-03-12 17:52:57.721461-04	api
-971a34e7-0090-4083-808e-dbbde37bf55a	CAD	USD	2026-03-12 18:01:17.605123-04	1.3480862	2026-03-12 17:52:57.721461-04	api
-91c0137f-3c18-4efa-a9e4-270d63cb11c1	CAD	USD	2026-03-12 18:01:22.605123-04	1.3474798	2026-03-12 17:52:57.721461-04	api
-7813afbf-414d-4dec-8737-48115757e9fa	CAD	USD	2026-03-12 18:01:27.605123-04	1.3475903	2026-03-12 17:52:57.721461-04	api
-8382c8eb-56bd-48c1-ac63-55b9f079f4b9	CAD	USD	2026-03-12 18:01:32.605123-04	1.3491036	2026-03-12 17:52:57.721461-04	api
-6f001bac-322f-4c10-80d9-89999ad737a4	CAD	USD	2026-03-12 18:01:37.605123-04	1.3485427	2026-03-12 17:52:57.721461-04	api
-2e34b62e-61d1-4ae6-bcfc-41a2660f449c	CAD	USD	2026-03-12 18:01:42.605123-04	1.3481221	2026-03-12 17:52:57.721461-04	api
-836bbc4f-81c3-49ac-94a4-255672953e00	CAD	USD	2026-03-12 18:01:47.605123-04	1.3482605	2026-03-12 17:52:57.721461-04	api
-0bb3252d-89a7-4b33-905a-6b8a57b71c6c	CAD	USD	2026-03-12 18:01:52.605123-04	1.3485929	2026-03-12 17:52:57.721461-04	api
-f7ef289e-4c3e-4622-8bbd-54fc72edf685	CAD	USD	2026-03-12 18:01:57.605123-04	1.3484740	2026-03-12 17:52:57.721461-04	api
-350d08aa-3ad6-4aff-935d-85db0fca2153	CAD	USD	2026-03-12 18:02:02.605123-04	1.3483352	2026-03-12 17:52:57.721461-04	api
-0626405a-2a52-4be1-a34e-83a8422209f7	CAD	USD	2026-03-12 18:02:07.605123-04	1.3488088	2026-03-12 17:52:57.721461-04	api
-c010ec20-c473-40a5-b435-0ce175e2cf93	CAD	USD	2026-03-12 18:02:12.605123-04	1.3491595	2026-03-12 17:52:57.721461-04	api
-135a889f-5823-4a1f-bdee-e12314e55f81	CAD	USD	2026-03-12 18:02:17.605123-04	1.3484624	2026-03-12 17:52:57.721461-04	api
-b9630604-695e-46ca-b380-69509783a504	CAD	USD	2026-03-12 18:02:22.605123-04	1.3484090	2026-03-12 17:52:57.721461-04	api
-96f8324a-0e56-4f83-bd59-48c661514494	CAD	USD	2026-03-12 18:02:27.605123-04	1.3484328	2026-03-12 17:52:57.721461-04	api
-b7d671b0-876e-47c9-8947-e84db57cebeb	CAD	USD	2026-03-12 18:02:32.605123-04	1.3477220	2026-03-12 17:52:57.721461-04	api
-03de69b2-3d3e-4a94-9049-1b00f7bad15a	CAD	USD	2026-03-12 18:02:37.605123-04	1.3478971	2026-03-12 17:52:57.721461-04	api
-3b38aa7d-7cf9-45cc-8fa9-9750e0b9782e	CAD	USD	2026-03-12 18:02:42.605123-04	1.3473190	2026-03-12 17:52:57.721461-04	api
-8a9dca20-2b11-4b88-89e6-34063c222e4e	CAD	USD	2026-03-12 18:02:47.605123-04	1.3479740	2026-03-12 17:52:57.721461-04	api
-bf266aeb-f15e-4ac5-814a-04bc86a49076	CAD	USD	2026-03-12 18:02:52.605123-04	1.3481039	2026-03-12 17:52:57.721461-04	api
-c1b61eea-f499-4af1-9734-4b341b0e11e0	CAD	USD	2026-03-12 18:02:57.605123-04	1.3481641	2026-03-12 17:52:57.721461-04	api
-a4d7b7d3-e790-4127-ac8d-b151bfa3a539	CHF	USD	2026-03-12 17:52:57.605123-04	0.8892268	2026-03-12 17:52:57.721461-04	api
-dcc9a6ac-2494-4356-84a8-3d3fec1508df	CHF	USD	2026-03-12 17:53:02.605123-04	0.8886327	2026-03-12 17:52:57.721461-04	api
-eb76ed34-90f6-41df-a659-90aab122303e	CHF	USD	2026-03-12 17:53:07.605123-04	0.8880282	2026-03-12 17:52:57.721461-04	api
-30b48c44-f7ef-47af-b482-c96a993d37fa	CHF	USD	2026-03-12 17:53:12.605123-04	0.8878721	2026-03-12 17:52:57.721461-04	api
-499729a7-fd99-43a8-850b-5629e7934426	CHF	USD	2026-03-12 17:53:17.605123-04	0.8868460	2026-03-12 17:52:57.721461-04	api
-6520b135-f919-46f7-8ecb-e908d325cc93	CHF	USD	2026-03-12 17:53:22.605123-04	0.8867622	2026-03-12 17:52:57.721461-04	api
-6a113843-8c23-4c93-b32a-3fe31fa5acda	CHF	USD	2026-03-12 17:53:27.605123-04	0.8863379	2026-03-12 17:52:57.721461-04	api
-f939d34f-4e9b-46bb-944c-4330738508ba	CHF	USD	2026-03-12 17:53:32.605123-04	0.8867340	2026-03-12 17:52:57.721461-04	api
-e52e20ba-e47e-4f9b-b7d4-eb1b52e7bbaa	CHF	USD	2026-03-12 17:53:37.605123-04	0.8871584	2026-03-12 17:52:57.721461-04	api
-c8451c30-a208-4294-a606-3c8fb6e1293d	CHF	USD	2026-03-12 17:53:42.605123-04	0.8877762	2026-03-12 17:52:57.721461-04	api
-d29ca42b-1f87-4c8b-bc62-69717e730880	CHF	USD	2026-03-12 17:53:47.605123-04	0.8881169	2026-03-12 17:52:57.721461-04	api
-510b61c0-0af6-40cd-a10d-170bcf8f13c6	CHF	USD	2026-03-12 17:53:52.605123-04	0.8880934	2026-03-12 17:52:57.721461-04	api
-b2f8eeeb-1871-4dc2-a5c4-10f8e8a5f919	CHF	USD	2026-03-12 17:53:57.605123-04	0.8884752	2026-03-12 17:52:57.721461-04	api
-8780d9c8-68e8-4146-81f8-a28b4b2b9950	CHF	USD	2026-03-12 17:54:02.605123-04	0.8891443	2026-03-12 17:52:57.721461-04	api
-e6b1b5ad-3420-42b0-9d2f-b053ef26c9af	CHF	USD	2026-03-12 17:54:07.605123-04	0.8888537	2026-03-12 17:52:57.721461-04	api
-3f2d9184-841c-4e5d-8a31-a9f3f0a40d27	CHF	USD	2026-03-12 17:54:12.605123-04	0.8891250	2026-03-12 17:52:57.721461-04	api
-b2e6becf-0c10-4799-b765-0b973de8ea7f	CHF	USD	2026-03-12 17:54:17.605123-04	0.8891061	2026-03-12 17:52:57.721461-04	api
-2373775d-dcb1-47ff-b998-febd01fce226	CHF	USD	2026-03-12 17:54:22.605123-04	0.8897465	2026-03-12 17:52:57.721461-04	api
-c23b99da-b437-4d5c-a9b5-5edf0e572448	CHF	USD	2026-03-12 17:54:27.605123-04	0.8893742	2026-03-12 17:52:57.721461-04	api
-c0d567f2-d3ce-466d-8185-c95f50039364	CHF	USD	2026-03-12 17:54:32.605123-04	0.8892401	2026-03-12 17:52:57.721461-04	api
-1efcc0a3-bc2e-4336-8f66-7a647753d490	CHF	USD	2026-03-12 17:54:37.605123-04	0.8894013	2026-03-12 17:52:57.721461-04	api
-5f11442d-95b7-4377-a9dd-bf00bc0c0deb	CHF	USD	2026-03-12 17:54:42.605123-04	0.8895161	2026-03-12 17:52:57.721461-04	api
-a534e9a7-daa1-4221-aa69-9feb80563e0a	CHF	USD	2026-03-12 17:54:47.605123-04	0.8887872	2026-03-12 17:52:57.721461-04	api
-5cf92964-1a3b-4596-846b-1d65a753faf6	CHF	USD	2026-03-12 17:54:52.605123-04	0.8889473	2026-03-12 17:52:57.721461-04	api
-ae789fbf-3c4a-4ab5-b9e7-5c2c2048c335	CHF	USD	2026-03-12 17:54:57.605123-04	0.8888946	2026-03-12 17:52:57.721461-04	api
-1f999fc9-c141-42c4-9c36-58bb049c4ebf	CHF	USD	2026-03-12 17:55:02.605123-04	0.8887880	2026-03-12 17:52:57.721461-04	api
-08d6f231-13ba-4757-a5a7-202d234f667a	CHF	USD	2026-03-12 17:55:07.605123-04	0.8887190	2026-03-12 17:52:57.721461-04	api
-713fa595-a6d7-4979-899a-61ed6166dc56	CHF	USD	2026-03-12 17:55:12.605123-04	0.8888163	2026-03-12 17:52:57.721461-04	api
-64c95a12-8dbe-471a-89f0-d258c8e403db	CHF	USD	2026-03-12 17:55:17.605123-04	0.8880095	2026-03-12 17:52:57.721461-04	api
-69e09f38-8110-4a53-9dad-546bef2fd540	CHF	USD	2026-03-12 17:55:22.605123-04	0.8886991	2026-03-12 17:52:57.721461-04	api
-eb8dfcd4-f138-4010-95e3-fd64f50adfa5	CHF	USD	2026-03-12 17:55:27.605123-04	0.8883164	2026-03-12 17:52:57.721461-04	api
-de9ee410-90ae-46f2-85eb-83f1786462d0	CHF	USD	2026-03-12 17:55:32.605123-04	0.8873214	2026-03-12 17:52:57.721461-04	api
-e7a14f7d-af74-43d7-af50-e76cdec88c98	CHF	USD	2026-03-12 17:55:37.605123-04	0.8872850	2026-03-12 17:52:57.721461-04	api
-dff348c3-c5c2-47cf-98ba-6358f4324853	CHF	USD	2026-03-12 17:55:42.605123-04	0.8879319	2026-03-12 17:52:57.721461-04	api
-0eff6ebf-ba11-4be4-ad26-a0bd449cebef	CHF	USD	2026-03-12 17:55:47.605123-04	0.8877016	2026-03-12 17:52:57.721461-04	api
-859a5bf7-35d1-47d2-b554-72dd7b45f35e	CHF	USD	2026-03-12 17:55:52.605123-04	0.8883905	2026-03-12 17:52:57.721461-04	api
-10d89c15-fefa-4a01-a95c-42b9cee40c29	CHF	USD	2026-03-12 17:55:57.605123-04	0.8890823	2026-03-12 17:52:57.721461-04	api
-e75546c3-f26b-44ed-9902-47f40d8d2ecf	CHF	USD	2026-03-12 17:56:02.605123-04	0.8886989	2026-03-12 17:52:57.721461-04	api
-e49e6388-8864-4239-a4c6-6364fccc8f00	CHF	USD	2026-03-12 17:56:07.605123-04	0.8876042	2026-03-12 17:52:57.721461-04	api
-41cb6c0d-d80e-4ded-98df-f567d1a03a4c	CHF	USD	2026-03-12 17:56:12.605123-04	0.8870562	2026-03-12 17:52:57.721461-04	api
-3a6f357e-71f2-43b4-9b09-ead27241aa80	CHF	USD	2026-03-12 17:56:17.605123-04	0.8875830	2026-03-12 17:52:57.721461-04	api
-9376d9bb-4cc5-42bc-8642-d1b83d1e8ed0	CHF	USD	2026-03-12 17:56:22.605123-04	0.8872206	2026-03-12 17:52:57.721461-04	api
-f0ce3274-2557-4dc9-8812-14c710c941a2	CHF	USD	2026-03-12 17:56:27.605123-04	0.8865507	2026-03-12 17:52:57.721461-04	api
-f46757f6-bc5f-48ee-8a84-956b8b2322d2	CHF	USD	2026-03-12 17:56:32.605123-04	0.8859579	2026-03-12 17:52:57.721461-04	api
-f4000c93-b207-416a-a862-51c29b1e6735	CHF	USD	2026-03-12 17:56:37.605123-04	0.8859580	2026-03-12 17:52:57.721461-04	api
-27ad2852-0d20-4cc2-9a77-3f20c51070f1	CHF	USD	2026-03-12 17:56:42.605123-04	0.8859464	2026-03-12 17:52:57.721461-04	api
-680c623d-666f-414a-a7ad-bc9f7beb963c	CHF	USD	2026-03-12 17:56:47.605123-04	0.8863328	2026-03-12 17:52:57.721461-04	api
-0a0fd69b-d0d4-4605-a1dc-d35f70461c0c	CHF	USD	2026-03-12 17:56:52.605123-04	0.8867712	2026-03-12 17:52:57.721461-04	api
-9bce633f-30d9-4a2a-8a35-6b9691f4c22a	CHF	USD	2026-03-12 17:56:57.605123-04	0.8863580	2026-03-12 17:52:57.721461-04	api
-677f5761-b544-4c91-81a6-9d7b9822a415	CHF	USD	2026-03-12 17:57:02.605123-04	0.8862885	2026-03-12 17:52:57.721461-04	api
-2c6bceb7-fb57-4181-837a-58dd78465cad	CHF	USD	2026-03-12 17:57:07.605123-04	0.8857861	2026-03-12 17:52:57.721461-04	api
-6f496712-198d-45e9-a631-2c19f42ad9ac	CHF	USD	2026-03-12 17:57:12.605123-04	0.8858180	2026-03-12 17:52:57.721461-04	api
-8d035991-2e6c-4e00-a65c-64f2d254a825	CHF	USD	2026-03-12 17:57:17.605123-04	0.8853085	2026-03-12 17:52:57.721461-04	api
-0e4a3627-43da-44eb-9c83-2f687cd27632	CHF	USD	2026-03-12 17:57:22.605123-04	0.8847774	2026-03-12 17:52:57.721461-04	api
-3ac76e1d-a12c-437b-b3b8-67a7368536c4	CHF	USD	2026-03-12 17:57:27.605123-04	0.8857173	2026-03-12 17:52:57.721461-04	api
-f3f0422e-bb5c-4902-b35b-421c32688c86	CHF	USD	2026-03-12 17:57:32.605123-04	0.8857316	2026-03-12 17:52:57.721461-04	api
-b5895352-382a-433d-a733-06667d30e9a8	CHF	USD	2026-03-12 17:57:37.605123-04	0.8860165	2026-03-12 17:52:57.721461-04	api
-0e4eeb52-4d22-46c6-8f73-2cb0ae4371d0	CHF	USD	2026-03-12 17:57:42.605123-04	0.8871416	2026-03-12 17:52:57.721461-04	api
-d2f10c08-db40-49f3-8a9b-86a22af97a80	CHF	USD	2026-03-12 17:57:47.605123-04	0.8874902	2026-03-12 17:52:57.721461-04	api
-8fbe8d9f-8ba5-46a5-b136-02c6aa149c3b	CHF	USD	2026-03-12 17:57:52.605123-04	0.8874396	2026-03-12 17:52:57.721461-04	api
-b75d5e3f-6536-4fd2-87ea-72f59efed343	CHF	USD	2026-03-12 17:57:57.605123-04	0.8874638	2026-03-12 17:52:57.721461-04	api
-cad2b7a9-f020-473e-af89-2ad35fc802ab	CHF	USD	2026-03-12 17:58:02.605123-04	0.8871335	2026-03-12 17:52:57.721461-04	api
-9b340a0f-d9b9-471f-b926-57846c139258	CHF	USD	2026-03-12 17:58:07.605123-04	0.8876191	2026-03-12 17:52:57.721461-04	api
-4046f562-a6c2-4171-9462-1589920a99d0	CHF	USD	2026-03-12 17:58:12.605123-04	0.8874725	2026-03-12 17:52:57.721461-04	api
-b300abd3-0896-4b9c-8e0e-fdccf90eefdf	CHF	USD	2026-03-12 17:58:17.605123-04	0.8882550	2026-03-12 17:52:57.721461-04	api
-811eea1e-80b8-4fba-a31c-4ccf57ce6b71	CHF	USD	2026-03-12 17:58:22.605123-04	0.8881019	2026-03-12 17:52:57.721461-04	api
-a0a190b9-124d-4ee8-aa84-48437e6ffe33	CHF	USD	2026-03-12 17:58:27.605123-04	0.8879449	2026-03-12 17:52:57.721461-04	api
-bf7f78ae-435d-4af4-95f1-55c5ddff2cf1	CHF	USD	2026-03-12 17:58:32.605123-04	0.8877588	2026-03-12 17:52:57.721461-04	api
-767fb130-6408-42ee-b5e6-725eddda2185	CHF	USD	2026-03-12 17:58:37.605123-04	0.8880365	2026-03-12 17:52:57.721461-04	api
-d7d02b8d-050e-43cc-8b46-247c63fa6982	CHF	USD	2026-03-12 17:58:42.605123-04	0.8881195	2026-03-12 17:52:57.721461-04	api
-45294537-c8af-45cb-a1f0-1f67fcc7c648	CHF	USD	2026-03-12 17:58:47.605123-04	0.8887287	2026-03-12 17:52:57.721461-04	api
-c9b4c79b-0093-4a9f-8ed8-0d77556b345f	CHF	USD	2026-03-12 17:58:52.605123-04	0.8884829	2026-03-12 17:52:57.721461-04	api
-7d169b5b-6ba6-48f3-86dd-fc78a1803a36	CHF	USD	2026-03-12 17:58:57.605123-04	0.8886118	2026-03-12 17:52:57.721461-04	api
-c9822b46-8c4a-4c7e-9fe4-62ab1677e440	CHF	USD	2026-03-12 17:59:02.605123-04	0.8894733	2026-03-12 17:52:57.721461-04	api
-8423d18d-87ce-4cf7-b739-475a4994ece1	CHF	USD	2026-03-12 17:59:07.605123-04	0.8893664	2026-03-12 17:52:57.721461-04	api
-079e13e2-55a8-44ae-8047-6f0970cbc133	CHF	USD	2026-03-12 17:59:12.605123-04	0.8896033	2026-03-12 17:52:57.721461-04	api
-ec978311-549b-4a1c-974c-3bf4e7741903	CHF	USD	2026-03-12 17:59:17.605123-04	0.8903027	2026-03-12 17:52:57.721461-04	api
-c0bee961-3250-4d69-a924-4c62992cae81	CHF	USD	2026-03-12 17:59:22.605123-04	0.8905491	2026-03-12 17:52:57.721461-04	api
-c0d80005-1680-453f-88a6-cba671c72476	CHF	USD	2026-03-12 17:59:27.605123-04	0.8902666	2026-03-12 17:52:57.721461-04	api
-5c0355ea-3423-4c03-b56b-912c2e2a763b	CHF	USD	2026-03-12 17:59:32.605123-04	0.8893491	2026-03-12 17:52:57.721461-04	api
-3d4ffa1f-c388-48e6-b0b3-779485ccdd3e	CHF	USD	2026-03-12 17:59:37.605123-04	0.8904139	2026-03-12 17:52:57.721461-04	api
-4640ea68-18d3-4b73-925c-9c9e7363512b	CHF	USD	2026-03-12 17:59:42.605123-04	0.8906055	2026-03-12 17:52:57.721461-04	api
-db2324e9-b00a-4e56-8a4d-3b266908151c	CHF	USD	2026-03-12 17:59:47.605123-04	0.8911670	2026-03-12 17:52:57.721461-04	api
-b16f9846-b0dd-4f31-8466-216dac2a9b9e	CHF	USD	2026-03-12 17:59:52.605123-04	0.8909548	2026-03-12 17:52:57.721461-04	api
-01c3b3ce-6111-4589-8488-3d29b698882f	CHF	USD	2026-03-12 17:59:57.605123-04	0.8917653	2026-03-12 17:52:57.721461-04	api
-eb2835f6-2720-44cb-9575-7eed7c1e15f3	CHF	USD	2026-03-12 18:00:02.605123-04	0.8919969	2026-03-12 17:52:57.721461-04	api
-fce3a1e9-b3cd-4642-82c8-c516131fe31b	CHF	USD	2026-03-12 18:00:07.605123-04	0.8920191	2026-03-12 17:52:57.721461-04	api
-a3bc44f6-1de5-4413-8c56-4b6566e1183b	CHF	USD	2026-03-12 18:00:12.605123-04	0.8916170	2026-03-12 17:52:57.721461-04	api
-9df1bfee-9dec-411b-83ef-9bc441db5f19	CHF	USD	2026-03-12 18:00:17.605123-04	0.8917812	2026-03-12 17:52:57.721461-04	api
-9d56ba32-4d2b-438a-a55e-c82f97ce6c40	CHF	USD	2026-03-12 18:00:22.605123-04	0.8915643	2026-03-12 17:52:57.721461-04	api
-389937df-81e3-4bcb-8e5e-e7154112374e	CHF	USD	2026-03-12 18:00:27.605123-04	0.8914650	2026-03-12 17:52:57.721461-04	api
-f5004903-aee7-44e2-beed-7990391ee098	CHF	USD	2026-03-12 18:00:32.605123-04	0.8907420	2026-03-12 17:52:57.721461-04	api
-5bffa2eb-c2c1-4933-8a7b-66c960b704c6	CHF	USD	2026-03-12 18:00:37.605123-04	0.8905236	2026-03-12 17:52:57.721461-04	api
-bf7beaf6-f2a3-461b-9fb4-a0ffc96ab669	CHF	USD	2026-03-12 18:00:42.605123-04	0.8905948	2026-03-12 17:52:57.721461-04	api
-fcf7c40e-7986-41e2-a92d-57f37604e389	CHF	USD	2026-03-12 18:00:47.605123-04	0.8900380	2026-03-12 17:52:57.721461-04	api
-e9887a6a-4614-486c-96ca-b643adba70a0	CHF	USD	2026-03-12 18:00:52.605123-04	0.8900709	2026-03-12 17:52:57.721461-04	api
-938d96c2-8635-42ba-b2ea-e08f96470146	CHF	USD	2026-03-12 18:00:57.605123-04	0.8903661	2026-03-12 17:52:57.721461-04	api
-13c4db23-7b9d-4249-92f3-80149a8105eb	CHF	USD	2026-03-12 18:01:02.605123-04	0.8902295	2026-03-12 17:52:57.721461-04	api
-ed3eda6a-2af9-40d4-b6a8-d90edda00d49	CHF	USD	2026-03-12 18:01:07.605123-04	0.8899533	2026-03-12 17:52:57.721461-04	api
-6c60b707-151e-4f02-9e74-f03011e08ba9	CHF	USD	2026-03-12 18:01:12.605123-04	0.8896774	2026-03-12 17:52:57.721461-04	api
-97058aa7-dae3-4663-809f-f89d9bb998d5	CHF	USD	2026-03-12 18:01:17.605123-04	0.8900961	2026-03-12 17:52:57.721461-04	api
-7a015658-a9f7-4f2b-9e4f-3c2e1cc2fa16	CHF	USD	2026-03-12 18:01:22.605123-04	0.8894135	2026-03-12 17:52:57.721461-04	api
-cb8b6f2f-6553-4611-8ec2-5f5baa07df1b	CHF	USD	2026-03-12 18:01:27.605123-04	0.8892799	2026-03-12 17:52:57.721461-04	api
-a8e352e0-d5fc-4c58-b657-81f698d165ba	CHF	USD	2026-03-12 18:01:32.605123-04	0.8890934	2026-03-12 17:52:57.721461-04	api
-f48f23d7-df65-410d-b6b0-53b2a3a18b83	CHF	USD	2026-03-12 18:01:37.605123-04	0.8891574	2026-03-12 17:52:57.721461-04	api
-c2917fcd-0e91-4f48-adbf-58e2826fe7ab	CHF	USD	2026-03-12 18:01:42.605123-04	0.8891265	2026-03-12 17:52:57.721461-04	api
-118ab493-178b-472f-8941-dbd2ece4cb12	CHF	USD	2026-03-12 18:01:47.605123-04	0.8886343	2026-03-12 17:52:57.721461-04	api
-7c431737-0e50-4051-b9e3-efa6932728f0	CHF	USD	2026-03-12 18:01:52.605123-04	0.8895412	2026-03-12 17:52:57.721461-04	api
-feb0d74b-9ef7-4981-b77c-256d524a6aa3	CHF	USD	2026-03-12 18:01:57.605123-04	0.8896202	2026-03-12 17:52:57.721461-04	api
-265b2467-8cc4-48a0-9717-87e6edbe9c6b	CHF	USD	2026-03-12 18:02:02.605123-04	0.8890234	2026-03-12 17:52:57.721461-04	api
-6ec2a930-e5bc-4d31-974d-52f3a24c40b3	CHF	USD	2026-03-12 18:02:07.605123-04	0.8886273	2026-03-12 17:52:57.721461-04	api
-1a84d350-39d9-4271-af5b-16e1a0b491e7	CHF	USD	2026-03-12 18:02:12.605123-04	0.8886706	2026-03-12 17:52:57.721461-04	api
-d60cef3c-8255-42b0-bec7-17bcf1836282	CHF	USD	2026-03-12 18:02:17.605123-04	0.8889430	2026-03-12 17:52:57.721461-04	api
-7fe7f958-e2a8-4a7e-978a-5501336fa15c	CHF	USD	2026-03-12 18:02:22.605123-04	0.8883467	2026-03-12 17:52:57.721461-04	api
-b5cb76ac-76f4-4298-95d4-ad0a924aae05	CHF	USD	2026-03-12 18:02:27.605123-04	0.8886627	2026-03-12 17:52:57.721461-04	api
-a4ead462-aa19-47c5-bdc8-69439dcbaded	CHF	USD	2026-03-12 18:02:32.605123-04	0.8880527	2026-03-12 17:52:57.721461-04	api
-933da7fd-f094-4808-a7fa-15522d6e1044	CHF	USD	2026-03-12 18:02:37.605123-04	0.8877000	2026-03-12 17:52:57.721461-04	api
-0f37e4a5-8d52-446e-8842-5bd147a0210a	CHF	USD	2026-03-12 18:02:42.605123-04	0.8880788	2026-03-12 17:52:57.721461-04	api
-73aaea22-4707-44e2-8706-6a8f8a1f0f8c	CHF	USD	2026-03-12 18:02:47.605123-04	0.8888344	2026-03-12 17:52:57.721461-04	api
-fcbc4c5b-7857-482d-847f-353c7b475092	CHF	USD	2026-03-12 18:02:52.605123-04	0.8887968	2026-03-12 17:52:57.721461-04	api
-3a2963d4-f470-44ed-9f90-388901afe3e9	CHF	USD	2026-03-12 18:02:57.605123-04	0.8886592	2026-03-12 17:52:57.721461-04	api
-dce31929-2873-45f9-93fe-0eaefcaa813d	SEK	USD	2026-03-12 17:52:57.605123-04	10.3958261	2026-03-12 17:52:57.721461-04	api
-678a6368-5a2e-49df-89ad-0c5207a0c8c1	SEK	USD	2026-03-12 17:53:02.605123-04	10.3970885	2026-03-12 17:52:57.721461-04	api
-56646338-24d3-4767-9c94-f4ba391e05f5	SEK	USD	2026-03-12 17:53:07.605123-04	10.3884815	2026-03-12 17:52:57.721461-04	api
-0c0caa12-edba-4e44-8e61-ef571aa8b9ec	SEK	USD	2026-03-12 17:53:12.605123-04	10.3918900	2026-03-12 17:52:57.721461-04	api
-ad99e1ca-a542-444a-81b1-c240e3a07bef	SEK	USD	2026-03-12 17:53:17.605123-04	10.3978330	2026-03-12 17:52:57.721461-04	api
-6e6b6b62-d76d-46ab-8451-47939b0ed534	SEK	USD	2026-03-12 17:53:22.605123-04	10.3954802	2026-03-12 17:52:57.721461-04	api
-58f42f47-7e53-4e10-88fd-f815cd079311	SEK	USD	2026-03-12 17:53:27.605123-04	10.3977180	2026-03-12 17:52:57.721461-04	api
-3c5d8ccc-804f-49ff-929e-f35ab87b43a0	SEK	USD	2026-03-12 17:53:32.605123-04	10.3990226	2026-03-12 17:52:57.721461-04	api
-1ac9c4d1-e79f-4b1e-a778-bd638aefad2f	SEK	USD	2026-03-12 17:53:37.605123-04	10.3969724	2026-03-12 17:52:57.721461-04	api
-5de2e406-d3f4-404f-8cf2-22c631d4f39e	SEK	USD	2026-03-12 17:53:42.605123-04	10.3924901	2026-03-12 17:52:57.721461-04	api
-289e0e25-8d34-498f-ac68-c773b17beeec	SEK	USD	2026-03-12 17:53:47.605123-04	10.3819339	2026-03-12 17:52:57.721461-04	api
-20a53398-d907-4f41-b3c1-e8d760fdb86a	SEK	USD	2026-03-12 17:53:52.605123-04	10.3892579	2026-03-12 17:52:57.721461-04	api
-8e30fffc-e798-4585-98b5-b03be5c7aa2e	SEK	USD	2026-03-12 17:53:57.605123-04	10.3890105	2026-03-12 17:52:57.721461-04	api
-3c0b48b9-d2cd-4f4a-b6a9-2e5f197f7ade	SEK	USD	2026-03-12 17:54:02.605123-04	10.4021210	2026-03-12 17:52:57.721461-04	api
-59112122-286a-4c29-82a3-c1d267cc6811	SEK	USD	2026-03-12 17:54:07.605123-04	10.4064191	2026-03-12 17:52:57.721461-04	api
-e28d201c-630f-4943-baa8-941183fd1ed8	SEK	USD	2026-03-12 17:54:12.605123-04	10.4078645	2026-03-12 17:52:57.721461-04	api
-1e83a8fe-9b22-45b9-aed0-b62649bc51b7	SEK	USD	2026-03-12 17:54:17.605123-04	10.4044439	2026-03-12 17:52:57.721461-04	api
-956a3651-d6f4-4095-8a64-f40eeb2323cc	SEK	USD	2026-03-12 17:54:22.605123-04	10.4116903	2026-03-12 17:52:57.721461-04	api
-d2ec1ea4-bbdc-462c-855e-e44f6ca22d21	SEK	USD	2026-03-12 17:54:27.605123-04	10.4090550	2026-03-12 17:52:57.721461-04	api
-c8e05685-1f1b-4733-8e65-3d47bd440426	SEK	USD	2026-03-12 17:54:32.605123-04	10.4172291	2026-03-12 17:52:57.721461-04	api
-0601e572-5392-47ae-b7d4-36051a49376f	SEK	USD	2026-03-12 17:54:37.605123-04	10.4151544	2026-03-12 17:52:57.721461-04	api
-f4511bc6-663d-4b4b-b51b-6656190c624c	SEK	USD	2026-03-12 17:54:42.605123-04	10.4161228	2026-03-12 17:52:57.721461-04	api
-c05d5c85-84a3-4642-85ef-975771d650c0	SEK	USD	2026-03-12 17:54:47.605123-04	10.4081956	2026-03-12 17:52:57.721461-04	api
-f720e174-8048-499f-b7d0-9a3e4b8c493e	SEK	USD	2026-03-12 17:54:52.605123-04	10.4203972	2026-03-12 17:52:57.721461-04	api
-52776c1d-29a4-46a3-b96b-51b904b5e0f0	SEK	USD	2026-03-12 17:54:57.605123-04	10.4199073	2026-03-12 17:52:57.721461-04	api
-7bbc9156-bec0-4e36-a770-565e866861da	SEK	USD	2026-03-12 17:55:02.605123-04	10.4179011	2026-03-12 17:52:57.721461-04	api
-5ce726c7-ea27-43fc-b46f-313634efdaca	SEK	USD	2026-03-12 17:55:07.605123-04	10.4221256	2026-03-12 17:52:57.721461-04	api
-34f3bcd2-dd7b-4b7f-8527-a6297f58c94f	SEK	USD	2026-03-12 17:55:12.605123-04	10.4174816	2026-03-12 17:52:57.721461-04	api
-ef5db514-ffcd-4292-ba6a-14307bd39750	SEK	USD	2026-03-12 17:55:17.605123-04	10.4214807	2026-03-12 17:52:57.721461-04	api
-2b862e96-062e-4bd0-aa8d-d22406797f20	SEK	USD	2026-03-12 17:55:22.605123-04	10.4153794	2026-03-12 17:52:57.721461-04	api
-7a43c4b2-3f90-468b-a85b-a3b4f06fd22f	SEK	USD	2026-03-12 17:55:27.605123-04	10.4182193	2026-03-12 17:52:57.721461-04	api
-01c3d910-7dbc-4bb4-9570-42db51263aa2	SEK	USD	2026-03-12 17:55:32.605123-04	10.4127817	2026-03-12 17:52:57.721461-04	api
-facfae82-82c9-4e7d-ad5f-ee1d55f9c0dd	SEK	USD	2026-03-12 17:55:37.605123-04	10.4032216	2026-03-12 17:52:57.721461-04	api
-6fc50caa-36d7-4474-91cc-413155ec4043	SEK	USD	2026-03-12 17:55:42.605123-04	10.4001335	2026-03-12 17:52:57.721461-04	api
-a71d8ff0-a36c-45a9-b7a7-e99aa2bc42c1	SEK	USD	2026-03-12 17:55:47.605123-04	10.3925239	2026-03-12 17:52:57.721461-04	api
-997f2f31-fe1e-433c-9494-8c6747b0787f	SEK	USD	2026-03-12 17:55:52.605123-04	10.3953992	2026-03-12 17:52:57.721461-04	api
-a118e736-7a81-486c-ab62-6572dd5fb459	SEK	USD	2026-03-12 17:55:57.605123-04	10.3955119	2026-03-12 17:52:57.721461-04	api
-db9ee4dd-6093-4430-a394-9d10ca4b5a7b	SEK	USD	2026-03-12 17:56:02.605123-04	10.3981602	2026-03-12 17:52:57.721461-04	api
-880b0010-d201-42cd-a290-45921f9dbabe	SEK	USD	2026-03-12 17:56:07.605123-04	10.3986349	2026-03-12 17:52:57.721461-04	api
-da644d20-f9e6-4afe-833f-e47871344133	SEK	USD	2026-03-12 17:56:12.605123-04	10.3967952	2026-03-12 17:52:57.721461-04	api
-633e7b16-0fae-4e8b-941e-3558195e4021	SEK	USD	2026-03-12 17:56:17.605123-04	10.3969415	2026-03-12 17:52:57.721461-04	api
-e46b14be-3685-4342-9524-708099af3f39	SEK	USD	2026-03-12 17:56:22.605123-04	10.4024142	2026-03-12 17:52:57.721461-04	api
-b906404f-336e-4e32-8c76-439713b79783	SEK	USD	2026-03-12 17:56:27.605123-04	10.4014618	2026-03-12 17:52:57.721461-04	api
-76fdda28-c107-4391-ad79-3f1a96df0fd5	SEK	USD	2026-03-12 17:56:32.605123-04	10.3974993	2026-03-12 17:52:57.721461-04	api
-7cfecc2a-9f35-441e-a019-873c7e98eb1a	SEK	USD	2026-03-12 17:56:37.605123-04	10.3924583	2026-03-12 17:52:57.721461-04	api
-9f08bcd8-aabe-431e-a034-dcd2a20f4c18	SEK	USD	2026-03-12 17:56:42.605123-04	10.3913062	2026-03-12 17:52:57.721461-04	api
-d950c6a8-6438-44ac-a75a-dc61d5d34308	SEK	USD	2026-03-12 17:56:47.605123-04	10.3874115	2026-03-12 17:52:57.721461-04	api
-3655928c-bfa2-42eb-bf9e-06321caf49ba	SEK	USD	2026-03-12 17:56:52.605123-04	10.3971836	2026-03-12 17:52:57.721461-04	api
-f1d2cc18-13f4-4f55-a195-b2fa4e87f912	SEK	USD	2026-03-12 17:56:57.605123-04	10.3910585	2026-03-12 17:52:57.721461-04	api
-feab5a99-d109-444b-b527-6ad9c27cd3ef	SEK	USD	2026-03-12 17:57:02.605123-04	10.3854405	2026-03-12 17:52:57.721461-04	api
-b3bd0346-bdb4-4b1c-9dfe-c576b096c7e6	SEK	USD	2026-03-12 17:57:07.605123-04	10.3838523	2026-03-12 17:52:57.721461-04	api
-dcc57c76-04ce-4ca3-bd96-37bae2c561b5	SEK	USD	2026-03-12 17:57:12.605123-04	10.3872276	2026-03-12 17:52:57.721461-04	api
-7ca8aaa6-ec1e-4b95-9666-272061fb51e2	SEK	USD	2026-03-12 17:57:17.605123-04	10.3858353	2026-03-12 17:52:57.721461-04	api
-1828c309-c88c-438e-8c1c-791261813d90	SEK	USD	2026-03-12 17:57:22.605123-04	10.3808622	2026-03-12 17:52:57.721461-04	api
-9ea22072-b9c9-4bd9-9aaf-3db21778dfaf	SEK	USD	2026-03-12 17:57:27.605123-04	10.3766749	2026-03-12 17:52:57.721461-04	api
-701ee586-5f4e-4ed9-a8ba-4eb1992459f9	SEK	USD	2026-03-12 17:57:32.605123-04	10.3748550	2026-03-12 17:52:57.721461-04	api
-c5ed3dce-cc89-4395-b412-3cb3c3da4a82	SEK	USD	2026-03-12 17:57:37.605123-04	10.3799055	2026-03-12 17:52:57.721461-04	api
-706a81d2-161d-4031-a662-5ba899a025a3	SEK	USD	2026-03-12 17:57:42.605123-04	10.3748310	2026-03-12 17:52:57.721461-04	api
-b0d0d3a0-4fe5-4a46-945b-d4f3a80dcaf5	SEK	USD	2026-03-12 17:57:47.605123-04	10.3743573	2026-03-12 17:52:57.721461-04	api
-51b7fdf3-3c70-4ea4-9061-f31cb744429e	SEK	USD	2026-03-12 17:57:52.605123-04	10.3711778	2026-03-12 17:52:57.721461-04	api
-0d7403f5-6644-4021-836d-442045c90f58	SEK	USD	2026-03-12 17:57:57.605123-04	10.3728612	2026-03-12 17:52:57.721461-04	api
-03653c0f-359c-44bf-9ae7-fb6f90038d07	SEK	USD	2026-03-12 17:58:02.605123-04	10.3749212	2026-03-12 17:52:57.721461-04	api
-81127e16-54e5-4ecb-9ac3-87f2587de744	SEK	USD	2026-03-12 17:58:07.605123-04	10.3673230	2026-03-12 17:52:57.721461-04	api
-4b584295-2a53-4a2f-8fdc-274b80de0d25	SEK	USD	2026-03-12 17:58:12.605123-04	10.3797031	2026-03-12 17:52:57.721461-04	api
-ca999cb8-c467-4640-8296-74929d6294c6	SEK	USD	2026-03-12 17:58:17.605123-04	10.3806872	2026-03-12 17:52:57.721461-04	api
-5619d96f-8afa-4909-adf5-6bcf04d7ca99	SEK	USD	2026-03-12 17:58:22.605123-04	10.3780439	2026-03-12 17:52:57.721461-04	api
-d2817730-8e68-4998-9647-5af7c69272a3	SEK	USD	2026-03-12 17:58:27.605123-04	10.3734060	2026-03-12 17:52:57.721461-04	api
-ffd0a440-4c62-4d1f-984f-ebb58ee8486d	SEK	USD	2026-03-12 17:58:32.605123-04	10.3720601	2026-03-12 17:52:57.721461-04	api
-ecc25361-e8c8-4282-b673-dbc8943dbc8c	SEK	USD	2026-03-12 17:58:37.605123-04	10.3722251	2026-03-12 17:52:57.721461-04	api
-4a2af48b-804c-4715-85d3-b21bcd1dbb89	SEK	USD	2026-03-12 17:58:42.605123-04	10.3753121	2026-03-12 17:52:57.721461-04	api
-c3e0400e-0319-46b5-8961-ecaa67270ece	SEK	USD	2026-03-12 17:58:47.605123-04	10.3753413	2026-03-12 17:52:57.721461-04	api
-b1867d2f-3797-4ddf-a3a7-bccb47ef1a24	SEK	USD	2026-03-12 17:58:52.605123-04	10.3778521	2026-03-12 17:52:57.721461-04	api
-67f2ebfa-b54b-4f10-a229-7f2b551255a6	SEK	USD	2026-03-12 17:58:57.605123-04	10.3695016	2026-03-12 17:52:57.721461-04	api
-e9dcc590-ba26-48c3-9587-996fbd0f0e59	SEK	USD	2026-03-12 17:59:02.605123-04	10.3656014	2026-03-12 17:52:57.721461-04	api
-5f2b4d04-403b-4c34-89aa-cb7db1c275a0	SEK	USD	2026-03-12 17:59:07.605123-04	10.3603859	2026-03-12 17:52:57.721461-04	api
-445f64ed-f7b5-4c22-93a5-90e2c5283140	SEK	USD	2026-03-12 17:59:12.605123-04	10.3612385	2026-03-12 17:52:57.721461-04	api
-c85aa5a0-bf81-482c-a2e8-563caccc1fd5	SEK	USD	2026-03-12 17:59:17.605123-04	10.3636115	2026-03-12 17:52:57.721461-04	api
-7a498f3f-86d9-4e07-9dd8-2bdd1949a3b8	SEK	USD	2026-03-12 17:59:22.605123-04	10.3560173	2026-03-12 17:52:57.721461-04	api
-4fbe457c-bbd1-44df-8605-ff9caf179133	SEK	USD	2026-03-12 17:59:27.605123-04	10.3551478	2026-03-12 17:52:57.721461-04	api
-64b7111e-d8f0-447b-b153-140e2d563542	SEK	USD	2026-03-12 17:59:32.605123-04	10.3589046	2026-03-12 17:52:57.721461-04	api
-5aaef4e9-3fe5-41af-9524-f87d02b33362	SEK	USD	2026-03-12 17:59:37.605123-04	10.3636453	2026-03-12 17:52:57.721461-04	api
-4ef95dff-1134-4bc9-848f-7f7c7d40ff24	SEK	USD	2026-03-12 17:59:42.605123-04	10.3578672	2026-03-12 17:52:57.721461-04	api
-3bf15612-fa81-47a1-861d-e2f1df4d72ed	SEK	USD	2026-03-12 17:59:47.605123-04	10.3607829	2026-03-12 17:52:57.721461-04	api
-15a89519-3aa9-4b97-b7e6-96beca001a7e	SEK	USD	2026-03-12 17:59:52.605123-04	10.3625360	2026-03-12 17:52:57.721461-04	api
-45c7bb2f-0f64-484a-ab4e-28d6e12c7f04	SEK	USD	2026-03-12 17:59:57.605123-04	10.3602776	2026-03-12 17:52:57.721461-04	api
-3b1cb483-ddc9-463c-9c48-97c70a2b799d	SEK	USD	2026-03-12 18:00:02.605123-04	10.3704514	2026-03-12 17:52:57.721461-04	api
-0f3a3693-9ef6-4065-bdc8-2de02ddd6ce1	SEK	USD	2026-03-12 18:00:07.605123-04	10.3646522	2026-03-12 17:52:57.721461-04	api
-88dff899-233e-4c2f-8cd8-bbd8281c2da7	SEK	USD	2026-03-12 18:00:12.605123-04	10.3632148	2026-03-12 17:52:57.721461-04	api
-30bdea25-e6b1-48b8-bff0-e173b9311f12	SEK	USD	2026-03-12 18:00:17.605123-04	10.3655717	2026-03-12 17:52:57.721461-04	api
-e30f9cfe-e2bf-4f8e-aed8-2e13d4e5b01c	SEK	USD	2026-03-12 18:00:22.605123-04	10.3668318	2026-03-12 17:52:57.721461-04	api
-73667640-1b4e-470f-a7fe-d4b0ec13a1c4	SEK	USD	2026-03-12 18:00:27.605123-04	10.3659442	2026-03-12 17:52:57.721461-04	api
-2949c866-0c28-4604-88bd-9d541b1882d2	SEK	USD	2026-03-12 18:00:32.605123-04	10.3730830	2026-03-12 17:52:57.721461-04	api
-25a1321e-b31d-47d8-9e58-bc061d211b6e	SEK	USD	2026-03-12 18:00:37.605123-04	10.3805821	2026-03-12 17:52:57.721461-04	api
-d7504f7e-dbbe-4115-9519-ec638572780a	SEK	USD	2026-03-12 18:00:42.605123-04	10.3853202	2026-03-12 17:52:57.721461-04	api
-a9ed1457-96fc-45c1-8346-67af97905d84	SEK	USD	2026-03-12 18:00:47.605123-04	10.3905227	2026-03-12 17:52:57.721461-04	api
-5a336b50-7239-456a-a882-bed3b27875c5	SEK	USD	2026-03-12 18:00:52.605123-04	10.3902373	2026-03-12 17:52:57.721461-04	api
-2f2de2d4-8ed2-4c2e-91a5-1aa93c0a2f30	SEK	USD	2026-03-12 18:00:57.605123-04	10.3841878	2026-03-12 17:52:57.721461-04	api
-458d0f62-e07b-4a2f-be09-da4fc6556750	SEK	USD	2026-03-12 18:01:02.605123-04	10.3955532	2026-03-12 17:52:57.721461-04	api
-e14c8ff3-a679-45b8-9bbd-51c484c0c86c	SEK	USD	2026-03-12 18:01:07.605123-04	10.3905774	2026-03-12 17:52:57.721461-04	api
-d6143041-ac6d-46f6-8298-b083987ff7c7	SEK	USD	2026-03-12 18:01:12.605123-04	10.4021656	2026-03-12 17:52:57.721461-04	api
-71ddf9ea-f5b3-4453-86d9-eef182c5858b	SEK	USD	2026-03-12 18:01:17.605123-04	10.4015045	2026-03-12 17:52:57.721461-04	api
-8d699e61-40b0-42c1-a097-f773ac3c8e80	SEK	USD	2026-03-12 18:01:22.605123-04	10.4027102	2026-03-12 17:52:57.721461-04	api
-ea2fe3d9-72f2-4528-a14d-dc764e01860a	SEK	USD	2026-03-12 18:01:27.605123-04	10.4018304	2026-03-12 17:52:57.721461-04	api
-0b85959b-2d9c-4a4c-972f-a7ab8dbfb837	SEK	USD	2026-03-12 18:01:32.605123-04	10.4068147	2026-03-12 17:52:57.721461-04	api
-3a29cb33-d063-4985-9929-7943d98334a6	SEK	USD	2026-03-12 18:01:37.605123-04	10.4041713	2026-03-12 17:52:57.721461-04	api
-bb89e05b-ac13-4bd0-a9b2-9c0a1671b07a	SEK	USD	2026-03-12 18:01:42.605123-04	10.4137642	2026-03-12 17:52:57.721461-04	api
-b343e522-b666-4765-aa7f-c123c79e8f2a	SEK	USD	2026-03-12 18:01:47.605123-04	10.4165504	2026-03-12 17:52:57.721461-04	api
-e29067a9-03d3-442c-ac21-edacaf4b7368	SEK	USD	2026-03-12 18:01:52.605123-04	10.4174599	2026-03-12 17:52:57.721461-04	api
-49b7cad4-81a5-4f0d-8580-5b08c986aed6	SEK	USD	2026-03-12 18:01:57.605123-04	10.4144910	2026-03-12 17:52:57.721461-04	api
-f85fa215-9d93-451a-a642-9ceede9457c8	SEK	USD	2026-03-12 18:02:02.605123-04	10.4159520	2026-03-12 17:52:57.721461-04	api
-4890ac3f-6fe6-451e-bf3d-14c312952e6a	SEK	USD	2026-03-12 18:02:07.605123-04	10.4159351	2026-03-12 17:52:57.721461-04	api
-2ed9db3f-a84e-47d0-987f-b214b9235956	SEK	USD	2026-03-12 18:02:12.605123-04	10.4258349	2026-03-12 17:52:57.721461-04	api
-c56022ef-27e7-4816-b20b-4c2ee49e1534	SEK	USD	2026-03-12 18:02:17.605123-04	10.4307159	2026-03-12 17:52:57.721461-04	api
-3a18d634-c99f-4128-a68f-991af11c3e33	SEK	USD	2026-03-12 18:02:22.605123-04	10.4225832	2026-03-12 17:52:57.721461-04	api
-6685afb0-bb35-47ba-8ffc-60815389b97c	SEK	USD	2026-03-12 18:02:27.605123-04	10.4305548	2026-03-12 17:52:57.721461-04	api
-953974a1-de57-4b9b-bb3a-2cc1ece5339d	SEK	USD	2026-03-12 18:02:32.605123-04	10.4181854	2026-03-12 17:52:57.721461-04	api
-cd50c3ca-eb5d-4c46-b1fc-8dcce741f4d9	SEK	USD	2026-03-12 18:02:37.605123-04	10.4262148	2026-03-12 17:52:57.721461-04	api
-af37c9a2-0668-4d88-8bc2-b103b793117f	SEK	USD	2026-03-12 18:02:42.605123-04	10.4163877	2026-03-12 17:52:57.721461-04	api
-6da4b604-f3a2-4dba-a05e-56d9ff80e268	SEK	USD	2026-03-12 18:02:47.605123-04	10.4163917	2026-03-12 17:52:57.721461-04	api
-30e0ee30-c65d-4043-91a0-73d36c6f02a4	SEK	USD	2026-03-12 18:02:52.605123-04	10.4206234	2026-03-12 17:52:57.721461-04	api
-91bc6aa1-82c8-4d16-8c94-4aeb120abbbd	SEK	USD	2026-03-12 18:02:57.605123-04	10.4205831	2026-03-12 17:52:57.721461-04	api
-06d13da2-6c23-4681-8aaa-85a27eaa1f18	AUD	USD	2026-03-12 17:52:57.605123-04	1.5291562	2026-03-12 17:52:57.721461-04	api
-bf763ed3-70c1-4a9d-84e8-c0374a1f1d63	AUD	USD	2026-03-12 17:53:02.605123-04	1.5286019	2026-03-12 17:52:57.721461-04	api
-84185044-85e5-4032-8da5-b2f63270e869	AUD	USD	2026-03-12 17:53:07.605123-04	1.5280045	2026-03-12 17:52:57.721461-04	api
-e8e14f3e-550c-43af-adb1-9fb918bf14fe	AUD	USD	2026-03-12 17:53:12.605123-04	1.5282085	2026-03-12 17:52:57.721461-04	api
-259bbd28-a73d-477c-9e20-73dd0fc5f5db	AUD	USD	2026-03-12 17:53:17.605123-04	1.5280186	2026-03-12 17:52:57.721461-04	api
-8eecd0f5-0e93-495b-883c-a2e817ca8872	AUD	USD	2026-03-12 17:53:22.605123-04	1.5281152	2026-03-12 17:52:57.721461-04	api
-98b282ef-6a92-4260-8d6b-07c761efd3b9	AUD	USD	2026-03-12 17:53:27.605123-04	1.5287595	2026-03-12 17:52:57.721461-04	api
-1b9523a7-a3da-4fc3-9fd5-2c927985ba38	AUD	USD	2026-03-12 17:53:32.605123-04	1.5294154	2026-03-12 17:52:57.721461-04	api
-25c41634-7ea7-47c9-b9f1-b8f0568ff244	AUD	USD	2026-03-12 17:53:37.605123-04	1.5297788	2026-03-12 17:52:57.721461-04	api
-ff857e89-bfd5-41dd-aff0-c8968a20e1bc	AUD	USD	2026-03-12 17:53:42.605123-04	1.5294341	2026-03-12 17:52:57.721461-04	api
-919dfb17-f68d-4e3b-b332-2d808c908a86	AUD	USD	2026-03-12 17:53:47.605123-04	1.5288569	2026-03-12 17:52:57.721461-04	api
-6874e201-267b-488e-b859-20691207c505	AUD	USD	2026-03-12 17:53:52.605123-04	1.5282341	2026-03-12 17:52:57.721461-04	api
-b4517168-1e65-498a-b175-7e4cb97b1696	AUD	USD	2026-03-12 17:53:57.605123-04	1.5279714	2026-03-12 17:52:57.721461-04	api
-3b7a8023-638a-4092-8e3a-86c913f3425d	AUD	USD	2026-03-12 17:54:02.605123-04	1.5279322	2026-03-12 17:52:57.721461-04	api
-d4afe3b6-1d46-45b4-af87-1c03babf9d0e	AUD	USD	2026-03-12 17:54:07.605123-04	1.5271896	2026-03-12 17:52:57.721461-04	api
-ecda2f7d-4abe-461a-ae4d-ffc3cc10e60e	AUD	USD	2026-03-12 17:54:12.605123-04	1.5263235	2026-03-12 17:52:57.721461-04	api
-e07f9988-c635-49a1-8c5f-e5851188720a	AUD	USD	2026-03-12 17:54:17.605123-04	1.5265568	2026-03-12 17:52:57.721461-04	api
-eadffda3-dba3-4c48-b071-b30dec877c32	AUD	USD	2026-03-12 17:54:22.605123-04	1.5251441	2026-03-12 17:52:57.721461-04	api
-e191b30e-e8c1-4ac1-879e-395840883794	AUD	USD	2026-03-12 17:54:27.605123-04	1.5250091	2026-03-12 17:52:57.721461-04	api
-394299ed-ac8f-41ee-abd3-7e3128356a78	AUD	USD	2026-03-12 17:54:32.605123-04	1.5253339	2026-03-12 17:52:57.721461-04	api
-50d3e4cd-33ab-44cc-ad99-96456bd69d3e	AUD	USD	2026-03-12 17:54:37.605123-04	1.5245825	2026-03-12 17:52:57.721461-04	api
-fc06c578-9b54-4823-964e-d15296b138e9	AUD	USD	2026-03-12 17:54:42.605123-04	1.5237344	2026-03-12 17:52:57.721461-04	api
-3f70398b-51c6-42f1-b8d0-877c57ba318a	AUD	USD	2026-03-12 17:54:47.605123-04	1.5231550	2026-03-12 17:52:57.721461-04	api
-fb8a643e-d405-4415-9a8a-09aaf646b96b	AUD	USD	2026-03-12 17:54:52.605123-04	1.5236486	2026-03-12 17:52:57.721461-04	api
-c5bb5ee3-90ed-4c9e-8392-1aef5bfb9e44	AUD	USD	2026-03-12 17:54:57.605123-04	1.5235497	2026-03-12 17:52:57.721461-04	api
-8f641e83-0c18-4d23-acdf-af3ad9e963fd	AUD	USD	2026-03-12 17:55:02.605123-04	1.5221262	2026-03-12 17:52:57.721461-04	api
-7db577d6-c7d1-4e44-9590-8d1189ab8ef8	AUD	USD	2026-03-12 17:55:07.605123-04	1.5218040	2026-03-12 17:52:57.721461-04	api
-bc3e1245-f5a2-4882-8659-9bd0e8a56524	AUD	USD	2026-03-12 17:55:12.605123-04	1.5225757	2026-03-12 17:52:57.721461-04	api
-4e73e88e-8a1f-4a89-ac96-46b86514101e	AUD	USD	2026-03-12 17:55:17.605123-04	1.5233247	2026-03-12 17:52:57.721461-04	api
-eecff6a1-85f8-4a48-b3e5-fda9b49a00ae	AUD	USD	2026-03-12 17:55:22.605123-04	1.5238047	2026-03-12 17:52:57.721461-04	api
-22d455ff-9eb1-4737-b55c-224797039cec	AUD	USD	2026-03-12 17:55:27.605123-04	1.5236233	2026-03-12 17:52:57.721461-04	api
-e54200dd-8ee2-409c-b753-d1dbbb51e5a3	AUD	USD	2026-03-12 17:55:32.605123-04	1.5222185	2026-03-12 17:52:57.721461-04	api
-73aba700-bed4-4e3d-8612-4df85c5470a2	AUD	USD	2026-03-12 17:55:37.605123-04	1.5223476	2026-03-12 17:52:57.721461-04	api
-63088f31-5fc7-40db-b3b0-dc70204f5d91	AUD	USD	2026-03-12 17:55:42.605123-04	1.5222136	2026-03-12 17:52:57.721461-04	api
-36a86804-6f22-426c-bf85-830360483f57	AUD	USD	2026-03-12 17:55:47.605123-04	1.5222721	2026-03-12 17:52:57.721461-04	api
-29d9d105-604a-4b5a-9030-b43c1f36f99c	AUD	USD	2026-03-12 17:55:52.605123-04	1.5234464	2026-03-12 17:52:57.721461-04	api
-218bdaa9-16e8-4932-9589-4c9727b08792	AUD	USD	2026-03-12 17:55:57.605123-04	1.5235863	2026-03-12 17:52:57.721461-04	api
-12c5e367-70a6-48ec-9f45-1dbb9cce3cf4	AUD	USD	2026-03-12 17:56:02.605123-04	1.5237969	2026-03-12 17:52:57.721461-04	api
-027dc4ad-944a-494f-b3d9-ceaeeb039b4e	AUD	USD	2026-03-12 17:56:07.605123-04	1.5242580	2026-03-12 17:52:57.721461-04	api
-bfb97db7-567c-49d4-9c14-6d6e8998f06d	AUD	USD	2026-03-12 17:56:12.605123-04	1.5240624	2026-03-12 17:52:57.721461-04	api
-aa50509c-056f-4066-a96b-513e869e4277	AUD	USD	2026-03-12 17:56:17.605123-04	1.5235563	2026-03-12 17:52:57.721461-04	api
-ce31a9cc-7966-403a-b9c6-d6656ad48725	AUD	USD	2026-03-12 17:56:22.605123-04	1.5229946	2026-03-12 17:52:57.721461-04	api
-1dc0a25d-a2ae-49c2-ba60-5699ff8598b9	AUD	USD	2026-03-12 17:56:27.605123-04	1.5235788	2026-03-12 17:52:57.721461-04	api
-73b30d80-51da-48c1-8a0f-9a032fcda14f	AUD	USD	2026-03-12 17:56:32.605123-04	1.5239632	2026-03-12 17:52:57.721461-04	api
-5d51cda6-89ba-4826-a6c2-d261507d1324	AUD	USD	2026-03-12 17:56:37.605123-04	1.5235902	2026-03-12 17:52:57.721461-04	api
-be3cf2f4-800b-42d6-8b27-e7420d2ab2d1	AUD	USD	2026-03-12 17:56:42.605123-04	1.5244686	2026-03-12 17:52:57.721461-04	api
-7870e22b-9b8f-44c9-b8c6-36d2f513aabe	AUD	USD	2026-03-12 17:56:47.605123-04	1.5246091	2026-03-12 17:52:57.721461-04	api
-b43a7f5f-139e-4e65-b59e-19f04e10fb45	AUD	USD	2026-03-12 17:56:52.605123-04	1.5235878	2026-03-12 17:52:57.721461-04	api
-df0037a9-9f90-458d-a137-2e726be2f3c6	AUD	USD	2026-03-12 17:56:57.605123-04	1.5240494	2026-03-12 17:52:57.721461-04	api
-515a56c1-8661-42fd-8b81-cb839465ad52	AUD	USD	2026-03-12 17:57:02.605123-04	1.5239431	2026-03-12 17:52:57.721461-04	api
-a66056aa-80f3-4e10-abd1-991096ff7a87	AUD	USD	2026-03-12 17:57:07.605123-04	1.5229310	2026-03-12 17:52:57.721461-04	api
-b83aeb54-f384-46dc-b1fa-9c250004d960	AUD	USD	2026-03-12 17:57:12.605123-04	1.5233235	2026-03-12 17:52:57.721461-04	api
-aaf4e175-39c8-4142-be5f-8a4a3f31343b	AUD	USD	2026-03-12 17:57:17.605123-04	1.5230609	2026-03-12 17:52:57.721461-04	api
-b0de1150-7a26-4602-bdf8-fd5db751586d	AUD	USD	2026-03-12 17:57:22.605123-04	1.5227622	2026-03-12 17:52:57.721461-04	api
-407b7c4c-c70d-47fb-beba-2a858b53bc64	AUD	USD	2026-03-12 17:57:27.605123-04	1.5232114	2026-03-12 17:52:57.721461-04	api
-9b326b06-902b-45fc-be4d-35e0f2e2f7e6	AUD	USD	2026-03-12 17:57:32.605123-04	1.5215425	2026-03-12 17:52:57.721461-04	api
-422d8b3b-ba83-4cec-b3f5-a12dda09070f	AUD	USD	2026-03-12 17:57:37.605123-04	1.5205710	2026-03-12 17:52:57.721461-04	api
-d4ff4e15-8466-47fb-8a9d-3406fdbea7da	AUD	USD	2026-03-12 17:57:42.605123-04	1.5202483	2026-03-12 17:52:57.721461-04	api
-ea0f83c1-cac6-4a4c-8498-d098aad2c30e	AUD	USD	2026-03-12 17:57:47.605123-04	1.5204377	2026-03-12 17:52:57.721461-04	api
-05c2cede-bb4a-48a0-b5bd-05c6d2073cf6	AUD	USD	2026-03-12 17:57:52.605123-04	1.5199322	2026-03-12 17:52:57.721461-04	api
-5fce4ffc-4ef5-41e6-854a-4ca06bc1ac9c	AUD	USD	2026-03-12 17:57:57.605123-04	1.5191749	2026-03-12 17:52:57.721461-04	api
-b68d06b4-bb06-4512-82bd-feb39ab39dfd	AUD	USD	2026-03-12 17:58:02.605123-04	1.5183757	2026-03-12 17:52:57.721461-04	api
-09451aa7-9050-442a-86b1-c5f19f537a9f	AUD	USD	2026-03-12 17:58:07.605123-04	1.5182867	2026-03-12 17:52:57.721461-04	api
-34488e51-96ac-4b57-804a-f74c4d806e3c	AUD	USD	2026-03-12 17:58:12.605123-04	1.5187992	2026-03-12 17:52:57.721461-04	api
-c5e51acc-1066-4fc2-aa4a-ed861736b863	AUD	USD	2026-03-12 17:58:17.605123-04	1.5176985	2026-03-12 17:52:57.721461-04	api
-58c5bdb7-4f22-45a3-928a-9ae5a07e7ee7	AUD	USD	2026-03-12 17:58:22.605123-04	1.5161206	2026-03-12 17:52:57.721461-04	api
-6389ec3c-c524-4be3-b126-f7d412e9e998	AUD	USD	2026-03-12 17:58:27.605123-04	1.5158952	2026-03-12 17:52:57.721461-04	api
-cb38d654-45d8-4775-9e94-8298e1054147	AUD	USD	2026-03-12 17:58:32.605123-04	1.5156056	2026-03-12 17:52:57.721461-04	api
-01db1509-9d3c-43f6-9500-7ce5d8855dc9	AUD	USD	2026-03-12 17:58:37.605123-04	1.5149170	2026-03-12 17:52:57.721461-04	api
-0f532d6c-ca2a-4e0a-b0f4-c9315ed65b0d	AUD	USD	2026-03-12 17:58:42.605123-04	1.5153804	2026-03-12 17:52:57.721461-04	api
-32dede37-b57b-43ad-8417-dfb8b88fd65d	AUD	USD	2026-03-12 17:58:47.605123-04	1.5159902	2026-03-12 17:52:57.721461-04	api
-3280cc86-917f-4050-8a14-c27b6d6bc202	AUD	USD	2026-03-12 17:58:52.605123-04	1.5155626	2026-03-12 17:52:57.721461-04	api
-fdc19057-3195-4f9b-a76c-75990a2cd784	AUD	USD	2026-03-12 17:58:57.605123-04	1.5153016	2026-03-12 17:52:57.721461-04	api
-8b7f2391-a0ae-48b7-92c3-5ec72344e0fa	AUD	USD	2026-03-12 17:59:02.605123-04	1.5157336	2026-03-12 17:52:57.721461-04	api
-777c9c93-f13f-42bf-abe1-09b32b101226	AUD	USD	2026-03-12 17:59:07.605123-04	1.5154083	2026-03-12 17:52:57.721461-04	api
-2604b9a0-bf00-4e1e-840a-449ec4506ca0	AUD	USD	2026-03-12 17:59:12.605123-04	1.5143455	2026-03-12 17:52:57.721461-04	api
-ebfd5ce8-5d46-4a6c-a81d-78c738a12455	AUD	USD	2026-03-12 17:59:17.605123-04	1.5142944	2026-03-12 17:52:57.721461-04	api
-7ecd8dbb-c9aa-4591-8e30-c26122e3f3b2	AUD	USD	2026-03-12 17:59:22.605123-04	1.5136099	2026-03-12 17:52:57.721461-04	api
-8118aa5c-ddd3-4519-a1c5-9b770aad9e31	AUD	USD	2026-03-12 17:59:27.605123-04	1.5138561	2026-03-12 17:52:57.721461-04	api
-53529a85-02ec-4b8e-96a8-b4e17e4ae40e	AUD	USD	2026-03-12 17:59:32.605123-04	1.5134737	2026-03-12 17:52:57.721461-04	api
-565f5eb6-523d-4f1e-91e4-50af028d27c4	AUD	USD	2026-03-12 17:59:37.605123-04	1.5133306	2026-03-12 17:52:57.721461-04	api
-81c72051-7070-4461-90f0-17c40bcbed0b	AUD	USD	2026-03-12 17:59:42.605123-04	1.5137237	2026-03-12 17:52:57.721461-04	api
-01e7cdc9-d6d1-408c-88e9-155fa729d4f3	AUD	USD	2026-03-12 17:59:47.605123-04	1.5136292	2026-03-12 17:52:57.721461-04	api
-9ea0a548-c9bb-42fe-a344-fc381fe74d3e	AUD	USD	2026-03-12 17:59:52.605123-04	1.5131495	2026-03-12 17:52:57.721461-04	api
-68c1f729-d0ef-4cf7-be5b-3d5821c4ba54	AUD	USD	2026-03-12 17:59:57.605123-04	1.5123882	2026-03-12 17:52:57.721461-04	api
-28cc249d-c665-4297-9e6c-67bcaf268d6e	AUD	USD	2026-03-12 18:00:02.605123-04	1.5136902	2026-03-12 17:52:57.721461-04	api
-d03782ad-636b-4abb-b48a-7c14cc7b7301	AUD	USD	2026-03-12 18:00:07.605123-04	1.5145280	2026-03-12 17:52:57.721461-04	api
-66f2e29b-69ef-49a8-8c7e-ded85c3e2430	AUD	USD	2026-03-12 18:00:12.605123-04	1.5133897	2026-03-12 17:52:57.721461-04	api
-538f0f42-142b-4783-82bf-574b2088a917	AUD	USD	2026-03-12 18:00:17.605123-04	1.5125936	2026-03-12 17:52:57.721461-04	api
-c6ada552-9c00-49b3-abe9-6830af40240d	AUD	USD	2026-03-12 18:00:22.605123-04	1.5130353	2026-03-12 17:52:57.721461-04	api
-a485edd4-7efa-4727-bd5d-cc84fae22b01	AUD	USD	2026-03-12 18:00:27.605123-04	1.5125903	2026-03-12 17:52:57.721461-04	api
-ec0196ae-6d43-4829-aaed-0986834c0ab4	AUD	USD	2026-03-12 18:00:32.605123-04	1.5126018	2026-03-12 17:52:57.721461-04	api
-27a4da59-0897-4b94-84d8-9c2978a9c873	AUD	USD	2026-03-12 18:00:37.605123-04	1.5132175	2026-03-12 17:52:57.721461-04	api
-e89329c9-7eff-45c7-8378-a3d3b69e2139	AUD	USD	2026-03-12 18:00:42.605123-04	1.5133150	2026-03-12 17:52:57.721461-04	api
-ae343503-a55d-4f9a-b992-a607ced26275	AUD	USD	2026-03-12 18:00:47.605123-04	1.5132172	2026-03-12 17:52:57.721461-04	api
-3624af94-6cbb-4a67-b0d2-87096447295f	AUD	USD	2026-03-12 18:00:52.605123-04	1.5128589	2026-03-12 17:52:57.721461-04	api
-7aaf923e-708e-40ba-b192-2a21d4fd0de7	AUD	USD	2026-03-12 18:00:57.605123-04	1.5127935	2026-03-12 17:52:57.721461-04	api
-8b9ce780-9486-4b12-b737-37f6f32039ef	AUD	USD	2026-03-12 18:01:02.605123-04	1.5130861	2026-03-12 17:52:57.721461-04	api
-43ced383-ae61-4b5e-a532-ebfc14aeea8f	AUD	USD	2026-03-12 18:01:07.605123-04	1.5143991	2026-03-12 17:52:57.721461-04	api
-c5ca85e9-f961-4ef5-b48b-f2d6896135dd	AUD	USD	2026-03-12 18:01:12.605123-04	1.5152057	2026-03-12 17:52:57.721461-04	api
-e908071d-5a7d-4e5a-bd62-f223e117ca50	AUD	USD	2026-03-12 18:01:17.605123-04	1.5150546	2026-03-12 17:52:57.721461-04	api
-8dd3e458-ed78-43bb-9e85-abab9eaf633f	AUD	USD	2026-03-12 18:01:22.605123-04	1.5157491	2026-03-12 17:52:57.721461-04	api
-afa2fb70-5a15-448c-a6c1-42571030785d	AUD	USD	2026-03-12 18:01:27.605123-04	1.5158379	2026-03-12 17:52:57.721461-04	api
-a981adcb-8da4-464f-a975-d3ee729c10e8	AUD	USD	2026-03-12 18:01:32.605123-04	1.5147155	2026-03-12 17:52:57.721461-04	api
-58212a01-c271-483d-9254-98333a22d8bc	AUD	USD	2026-03-12 18:01:37.605123-04	1.5146347	2026-03-12 17:52:57.721461-04	api
-4f5d840c-7f88-47be-a319-a6df63ba6338	AUD	USD	2026-03-12 18:01:42.605123-04	1.5153882	2026-03-12 17:52:57.721461-04	api
-ac437c68-73aa-4523-a2a7-fdac58f6edd9	AUD	USD	2026-03-12 18:01:47.605123-04	1.5149364	2026-03-12 17:52:57.721461-04	api
-d2334413-310f-4d63-a516-9437fbc9e412	AUD	USD	2026-03-12 18:01:52.605123-04	1.5156456	2026-03-12 17:52:57.721461-04	api
-9e2da86c-bba8-4622-8f78-dd11fdabe93a	AUD	USD	2026-03-12 18:01:57.605123-04	1.5154132	2026-03-12 17:52:57.721461-04	api
-fc168769-5641-4f8e-9ac0-c4ea93bae2ff	AUD	USD	2026-03-12 18:02:02.605123-04	1.5154332	2026-03-12 17:52:57.721461-04	api
-0f61b243-62c6-400a-b561-b9437b239fa4	AUD	USD	2026-03-12 18:02:07.605123-04	1.5145310	2026-03-12 17:52:57.721461-04	api
-4204183d-00c2-423c-8431-2d441f89aa75	AUD	USD	2026-03-12 18:02:12.605123-04	1.5160995	2026-03-12 17:52:57.721461-04	api
-c162e32b-a82c-4219-b0bc-afdbbd109ab7	AUD	USD	2026-03-12 18:02:17.605123-04	1.5164432	2026-03-12 17:52:57.721461-04	api
-df2acbe3-59da-4c83-8cbe-94308986af77	AUD	USD	2026-03-12 18:02:22.605123-04	1.5172080	2026-03-12 17:52:57.721461-04	api
-cb5e2782-f54c-4a6f-849f-23d09abe31bf	AUD	USD	2026-03-12 18:02:27.605123-04	1.5168646	2026-03-12 17:52:57.721461-04	api
-55c5d095-d7df-4dc8-800a-b63bdf2f699b	AUD	USD	2026-03-12 18:02:32.605123-04	1.5157551	2026-03-12 17:52:57.721461-04	api
-09ea535e-6fe4-4308-8a21-9d5ccda2581a	AUD	USD	2026-03-12 18:02:37.605123-04	1.5166737	2026-03-12 17:52:57.721461-04	api
-ccd559da-bf8a-4bf4-a514-950958d8d177	AUD	USD	2026-03-12 18:02:42.605123-04	1.5161339	2026-03-12 17:52:57.721461-04	api
-a51b0240-99fa-4c79-aa2a-984505d53b5d	AUD	USD	2026-03-12 18:02:47.605123-04	1.5173868	2026-03-12 17:52:57.721461-04	api
-f93a55a1-cd5f-4ef6-b2e6-aeeab85eb4fd	AUD	USD	2026-03-12 18:02:52.605123-04	1.5172570	2026-03-12 17:52:57.721461-04	api
-000184d5-9565-4522-8257-f3b9bf23ee05	AUD	USD	2026-03-12 18:02:57.605123-04	1.5184899	2026-03-12 17:52:57.721461-04	api
-9c8ca160-7a09-4983-a715-f797a0dbbb7a	GBP	USD	2026-03-12 17:52:57.605123-04	0.7900135	2026-03-12 17:52:57.721461-04	api
-6483666a-11d2-42ae-aae0-51669d9b92e2	GBP	USD	2026-03-12 17:53:02.605123-04	0.7905508	2026-03-12 17:52:57.721461-04	api
-c87d671f-ad62-4983-a46b-b185b5694ee2	GBP	USD	2026-03-12 17:53:07.605123-04	0.7910350	2026-03-12 17:52:57.721461-04	api
-15b5fba4-7ab0-41a7-b2b4-c926684005bc	GBP	USD	2026-03-12 17:53:12.605123-04	0.7908332	2026-03-12 17:52:57.721461-04	api
-e2a3a79a-97d0-4570-b1f7-376a32c8a745	GBP	USD	2026-03-12 17:53:17.605123-04	0.7907154	2026-03-12 17:52:57.721461-04	api
-f5e11810-0784-4a0e-8c5e-5bd0a6c74a14	GBP	USD	2026-03-12 17:53:22.605123-04	0.7905069	2026-03-12 17:52:57.721461-04	api
-a98e8fa3-8afa-4b2d-846d-5d39874620f8	GBP	USD	2026-03-12 17:53:27.605123-04	0.7907322	2026-03-12 17:52:57.721461-04	api
-0961a9c5-99ae-42fe-ba17-8b34a3fc6bc6	GBP	USD	2026-03-12 17:53:32.605123-04	0.7907100	2026-03-12 17:52:57.721461-04	api
-14316af0-36f5-4fbc-968c-62869c1b5a74	GBP	USD	2026-03-12 17:53:37.605123-04	0.7910053	2026-03-12 17:52:57.721461-04	api
-6d846d2c-8dfb-4227-8900-5fd3df03a36a	GBP	USD	2026-03-12 17:53:42.605123-04	0.7902751	2026-03-12 17:52:57.721461-04	api
-24719897-cba9-4aae-9c1d-f712eb3ff165	GBP	USD	2026-03-12 17:53:47.605123-04	0.7908943	2026-03-12 17:52:57.721461-04	api
-69359ba2-a24d-4230-a642-b51ab76c0a6d	GBP	USD	2026-03-12 17:53:52.605123-04	0.7908562	2026-03-12 17:52:57.721461-04	api
-30c7ac5e-ba27-4e8a-a7f2-c87f40eadd28	GBP	USD	2026-03-12 17:53:57.605123-04	0.7911253	2026-03-12 17:52:57.721461-04	api
-beacaf78-6eb5-4c34-b54a-4615b636c071	GBP	USD	2026-03-12 17:54:02.605123-04	0.7910712	2026-03-12 17:52:57.721461-04	api
-db494853-7b2f-484a-9463-9cd63fc1e74a	GBP	USD	2026-03-12 17:54:07.605123-04	0.7909213	2026-03-12 17:52:57.721461-04	api
-48a9cb6f-a387-4a64-bf5d-6aa41b69d09a	GBP	USD	2026-03-12 17:54:12.605123-04	0.7911045	2026-03-12 17:52:57.721461-04	api
-59ed08ab-4b94-4200-b8d9-2025efb244c5	GBP	USD	2026-03-12 17:54:17.605123-04	0.7914307	2026-03-12 17:52:57.721461-04	api
-cfe7a9b8-97d9-45a0-8948-09953cbef962	GBP	USD	2026-03-12 17:54:22.605123-04	0.7913505	2026-03-12 17:52:57.721461-04	api
-83c8dd8e-b225-44b1-8ccc-bac1f4e4b536	GBP	USD	2026-03-12 17:54:27.605123-04	0.7912901	2026-03-12 17:52:57.721461-04	api
-1dcefde3-a87f-47fa-9ecf-2a29404fe150	GBP	USD	2026-03-12 17:54:32.605123-04	0.7915614	2026-03-12 17:52:57.721461-04	api
-dcceabbb-9c0f-4d4d-be60-1770e96e60df	GBP	USD	2026-03-12 17:54:37.605123-04	0.7912170	2026-03-12 17:52:57.721461-04	api
-151756f7-38e2-4f59-b165-3b02e46dd444	GBP	USD	2026-03-12 17:54:42.605123-04	0.7906182	2026-03-12 17:52:57.721461-04	api
-0eb20e0a-35f8-48fa-8f4b-a7e450b220ac	GBP	USD	2026-03-12 17:54:47.605123-04	0.7907743	2026-03-12 17:52:57.721461-04	api
-bf9f7881-e45e-4e10-ace5-8a1fd48680bb	GBP	USD	2026-03-12 17:54:52.605123-04	0.7905092	2026-03-12 17:52:57.721461-04	api
-5643b449-1cfc-4523-adc4-28ac67cc9895	GBP	USD	2026-03-12 17:54:57.605123-04	0.7897506	2026-03-12 17:52:57.721461-04	api
-d406bfd8-c39f-4d02-8bf7-36c527f1db48	GBP	USD	2026-03-12 17:55:02.605123-04	0.7894292	2026-03-12 17:52:57.721461-04	api
-2465c834-b0a5-4d92-96fa-58478e5e6029	GBP	USD	2026-03-12 17:55:07.605123-04	0.7892446	2026-03-12 17:52:57.721461-04	api
-c3a0c879-bd34-4f6c-bf5b-efdea1fb7082	GBP	USD	2026-03-12 17:55:12.605123-04	0.7887739	2026-03-12 17:52:57.721461-04	api
-7f8dc744-e003-4ba3-9f65-f8888dff5449	GBP	USD	2026-03-12 17:55:17.605123-04	0.7881855	2026-03-12 17:52:57.721461-04	api
-0435148a-9fe3-4f4e-8186-eb446bfbf421	GBP	USD	2026-03-12 17:55:22.605123-04	0.7882000	2026-03-12 17:52:57.721461-04	api
-b1f40c3b-ef91-4bf4-9858-cf746d26d5a7	GBP	USD	2026-03-12 17:55:27.605123-04	0.7885536	2026-03-12 17:52:57.721461-04	api
-cab075e0-4da4-434b-8283-591746af00c0	GBP	USD	2026-03-12 17:55:32.605123-04	0.7884617	2026-03-12 17:52:57.721461-04	api
-d5fe57e9-5eeb-4d10-8730-0ad2758ddbef	GBP	USD	2026-03-12 17:55:37.605123-04	0.7881686	2026-03-12 17:52:57.721461-04	api
-c443ff58-f85b-4fe3-9b3d-29fedcd5e149	GBP	USD	2026-03-12 17:55:42.605123-04	0.7883204	2026-03-12 17:52:57.721461-04	api
-e9c1e82c-d5a2-4dc2-bd1b-8dd9e9fac4da	GBP	USD	2026-03-12 17:55:47.605123-04	0.7886031	2026-03-12 17:52:57.721461-04	api
-70eae7b0-81f8-4716-901e-f5c4f78959a4	GBP	USD	2026-03-12 17:55:52.605123-04	0.7884848	2026-03-12 17:52:57.721461-04	api
-540ef7f5-079d-470f-a713-948bcaf6b3da	GBP	USD	2026-03-12 17:55:57.605123-04	0.7886996	2026-03-12 17:52:57.721461-04	api
-b7cc9a97-4873-4f61-9aba-ad0768ddf2f4	GBP	USD	2026-03-12 17:56:02.605123-04	0.7891110	2026-03-12 17:52:57.721461-04	api
-9d3df645-ce7a-4b4f-a189-4a89edd5ab0c	GBP	USD	2026-03-12 17:56:07.605123-04	0.7890293	2026-03-12 17:52:57.721461-04	api
-f10d0424-6a7c-4b79-af5f-0f08770fb530	GBP	USD	2026-03-12 17:56:12.605123-04	0.7887084	2026-03-12 17:52:57.721461-04	api
-7c399575-37c7-4474-869a-6c79b079d6ec	GBP	USD	2026-03-12 17:56:17.605123-04	0.7888455	2026-03-12 17:52:57.721461-04	api
-b6717d15-06de-4814-b8e6-bc24e9bf6726	GBP	USD	2026-03-12 17:56:22.605123-04	0.7889432	2026-03-12 17:52:57.721461-04	api
-8a6d2195-b94b-4dae-ba74-51ddf3059321	GBP	USD	2026-03-12 17:56:27.605123-04	0.7893768	2026-03-12 17:52:57.721461-04	api
-fa16f464-1a54-4099-a6d6-554ed0c7c043	GBP	USD	2026-03-12 17:56:32.605123-04	0.7888699	2026-03-12 17:52:57.721461-04	api
-b6eccf87-8e8e-4703-ad00-75968b1a5f2f	GBP	USD	2026-03-12 17:56:37.605123-04	0.7886090	2026-03-12 17:52:57.721461-04	api
-d95e1704-4174-4a10-bbb6-716fe3875491	GBP	USD	2026-03-12 17:56:42.605123-04	0.7882786	2026-03-12 17:52:57.721461-04	api
-236f2cb9-9c47-427e-a6c6-adcb4e5d2c77	GBP	USD	2026-03-12 17:56:47.605123-04	0.7875954	2026-03-12 17:52:57.721461-04	api
-afb7583a-2e40-4de6-97e8-7aed59dee754	GBP	USD	2026-03-12 17:56:52.605123-04	0.7876452	2026-03-12 17:52:57.721461-04	api
-5051280e-deb7-454a-bc13-aea2bc9871bf	GBP	USD	2026-03-12 17:56:57.605123-04	0.7878531	2026-03-12 17:52:57.721461-04	api
-ec19812a-54eb-4d5a-a0c1-4d5e33655fdc	GBP	USD	2026-03-12 17:57:02.605123-04	0.7875621	2026-03-12 17:52:57.721461-04	api
-7794e0d7-4ebd-4618-a272-22412e44e52f	GBP	USD	2026-03-12 17:57:07.605123-04	0.7881080	2026-03-12 17:52:57.721461-04	api
-feea074c-ffa2-451b-ba9d-19351f5ab26e	GBP	USD	2026-03-12 17:57:12.605123-04	0.7884319	2026-03-12 17:52:57.721461-04	api
-b9375457-6d03-431b-9f82-d8c09f2a6af9	GBP	USD	2026-03-12 17:57:17.605123-04	0.7886793	2026-03-12 17:52:57.721461-04	api
-0de6f937-b434-4d9d-a7f7-16d29622de90	GBP	USD	2026-03-12 17:57:22.605123-04	0.7888377	2026-03-12 17:52:57.721461-04	api
-bb3c19a5-e4b0-453f-bd55-c7f65f0b426c	GBP	USD	2026-03-12 17:57:27.605123-04	0.7892147	2026-03-12 17:52:57.721461-04	api
-02385ddf-3185-4f8e-8499-54d4e4df0cf8	GBP	USD	2026-03-12 17:57:32.605123-04	0.7886893	2026-03-12 17:52:57.721461-04	api
-f8bdbc2e-6275-4a2a-9958-6fdbb59db6cc	GBP	USD	2026-03-12 17:57:37.605123-04	0.7889314	2026-03-12 17:52:57.721461-04	api
-f7cd42cb-0210-44d4-bdb5-6575ea0f0f30	GBP	USD	2026-03-12 17:57:42.605123-04	0.7891692	2026-03-12 17:52:57.721461-04	api
-cf1e2c97-116a-4aba-b750-8bb4c0a21814	GBP	USD	2026-03-12 17:57:47.605123-04	0.7884720	2026-03-12 17:52:57.721461-04	api
-782f7bd7-fbc1-4e86-ad1f-11b86933e398	GBP	USD	2026-03-12 17:57:52.605123-04	0.7886088	2026-03-12 17:52:57.721461-04	api
-90d5bf3a-f204-48ef-af2b-5aa00c1c5402	GBP	USD	2026-03-12 17:57:57.605123-04	0.7885101	2026-03-12 17:52:57.721461-04	api
-5beba95d-5c18-4bb7-852d-e09c56d2b675	GBP	USD	2026-03-12 17:58:02.605123-04	0.7888183	2026-03-12 17:52:57.721461-04	api
-bc264992-5b5a-4dc8-ab61-e49343cee715	GBP	USD	2026-03-12 17:58:07.605123-04	0.7886451	2026-03-12 17:52:57.721461-04	api
-8285ba27-4b85-4dc2-8455-74007de890f9	GBP	USD	2026-03-12 17:58:12.605123-04	0.7886379	2026-03-12 17:52:57.721461-04	api
-0cbea838-314a-4a95-9019-e0449554be43	GBP	USD	2026-03-12 17:58:17.605123-04	0.7887732	2026-03-12 17:52:57.721461-04	api
-fb70d595-6e8c-4d3d-870e-ecc8c6163a5c	GBP	USD	2026-03-12 17:58:22.605123-04	0.7884276	2026-03-12 17:52:57.721461-04	api
-5b637f90-3a34-42d1-bbd1-9705df834d7a	GBP	USD	2026-03-12 17:58:27.605123-04	0.7886637	2026-03-12 17:52:57.721461-04	api
-9dfc5272-0d8d-48a8-ae9c-c90987a8ca26	GBP	USD	2026-03-12 17:58:32.605123-04	0.7886223	2026-03-12 17:52:57.721461-04	api
-ecaa4b19-f441-4f6d-b215-943e02d7fb38	GBP	USD	2026-03-12 17:58:37.605123-04	0.7888165	2026-03-12 17:52:57.721461-04	api
-9405583b-4e7b-4547-9b13-f555429670a5	GBP	USD	2026-03-12 17:58:42.605123-04	0.7886107	2026-03-12 17:52:57.721461-04	api
-d53978e2-7366-4172-ad24-88eecbd50561	GBP	USD	2026-03-12 17:58:47.605123-04	0.7890391	2026-03-12 17:52:57.721461-04	api
-bacaf501-48aa-45a9-80ab-00cf4093f0e6	GBP	USD	2026-03-12 17:58:52.605123-04	0.7892779	2026-03-12 17:52:57.721461-04	api
-6f6feead-b4c0-42c3-b0ef-1fa7f4bb010d	GBP	USD	2026-03-12 17:58:57.605123-04	0.7892076	2026-03-12 17:52:57.721461-04	api
-70045619-04b2-4281-aea4-d28695b13b0b	GBP	USD	2026-03-12 17:59:02.605123-04	0.7894571	2026-03-12 17:52:57.721461-04	api
-c67d10a0-84dc-4ac9-b57f-b3d15014aaa4	GBP	USD	2026-03-12 17:59:07.605123-04	0.7899545	2026-03-12 17:52:57.721461-04	api
-b861b46d-a67f-4bf9-840f-352e99311e8e	GBP	USD	2026-03-12 17:59:12.605123-04	0.7906623	2026-03-12 17:52:57.721461-04	api
-890b4174-5150-47d3-983b-22ab2996cdc4	GBP	USD	2026-03-12 17:59:17.605123-04	0.7900404	2026-03-12 17:52:57.721461-04	api
-a2f11721-67db-4edb-be44-a0a3e9199ed8	GBP	USD	2026-03-12 17:59:22.605123-04	0.7903894	2026-03-12 17:52:57.721461-04	api
-81edc732-c239-4997-856e-8cfefef58b25	GBP	USD	2026-03-12 17:59:27.605123-04	0.7905732	2026-03-12 17:52:57.721461-04	api
-b01d10ba-135e-4d91-be7f-81263c5404ac	GBP	USD	2026-03-12 17:59:32.605123-04	0.7905361	2026-03-12 17:52:57.721461-04	api
-749089fc-0ddc-4eae-9b79-7f9dfa2f2ff6	GBP	USD	2026-03-12 17:59:37.605123-04	0.7901383	2026-03-12 17:52:57.721461-04	api
-d6d98c15-2669-4d17-9664-ea1cb967b129	GBP	USD	2026-03-12 17:59:42.605123-04	0.7906351	2026-03-12 17:52:57.721461-04	api
-a285b851-9568-44c7-895e-e8846313f617	GBP	USD	2026-03-12 17:59:47.605123-04	0.7901365	2026-03-12 17:52:57.721461-04	api
-6feb2893-61e3-4af7-8b63-30c203a939bb	GBP	USD	2026-03-12 17:59:52.605123-04	0.7903605	2026-03-12 17:52:57.721461-04	api
-1cacb1ac-d0ee-4526-90c8-0b947e0c0af6	GBP	USD	2026-03-12 17:59:57.605123-04	0.7908751	2026-03-12 17:52:57.721461-04	api
-acaf9f4a-b0ea-469c-98db-f8d4e3990f32	GBP	USD	2026-03-12 18:00:02.605123-04	0.7902428	2026-03-12 17:52:57.721461-04	api
-f44b26d3-003e-4283-a14b-a2b95f8ffdb1	GBP	USD	2026-03-12 18:00:07.605123-04	0.7901233	2026-03-12 17:52:57.721461-04	api
-05958378-1261-42f3-ae5f-e06b3130c03c	GBP	USD	2026-03-12 18:00:12.605123-04	0.7896062	2026-03-12 17:52:57.721461-04	api
-fab7416a-8ad4-40ef-bf1d-8f39397f37fa	GBP	USD	2026-03-12 18:00:17.605123-04	0.7897026	2026-03-12 17:52:57.721461-04	api
-9666994e-c428-459a-ae10-5aee1016cccc	GBP	USD	2026-03-12 18:00:22.605123-04	0.7903008	2026-03-12 17:52:57.721461-04	api
-17b83af2-78fe-42e8-af36-03d97d2e0f33	GBP	USD	2026-03-12 18:00:27.605123-04	0.7911008	2026-03-12 17:52:57.721461-04	api
-fcd5556d-9aec-4174-8717-cc09f22d8220	GBP	USD	2026-03-12 18:00:32.605123-04	0.7903978	2026-03-12 17:52:57.721461-04	api
-4ed67bd3-5312-4211-bebb-2338cae1ced5	GBP	USD	2026-03-12 18:00:37.605123-04	0.7901706	2026-03-12 17:52:57.721461-04	api
-262f5b1a-34d5-4c4e-ba42-924a85fe4cb4	GBP	USD	2026-03-12 18:00:42.605123-04	0.7904486	2026-03-12 17:52:57.721461-04	api
-00fbe32e-963f-40cd-a1fb-bba07f78fa19	GBP	USD	2026-03-12 18:00:47.605123-04	0.7910730	2026-03-12 17:52:57.721461-04	api
-c9e5ad26-b0f2-4f3c-aa2c-7b51489b9e94	GBP	USD	2026-03-12 18:00:52.605123-04	0.7912397	2026-03-12 17:52:57.721461-04	api
-9a789bda-b40a-4ff8-8322-628d7dcb3805	GBP	USD	2026-03-12 18:00:57.605123-04	0.7909445	2026-03-12 17:52:57.721461-04	api
-58c4e303-f775-4bf6-9ad0-1db97db1f407	GBP	USD	2026-03-12 18:01:02.605123-04	0.7910620	2026-03-12 17:52:57.721461-04	api
-db5bac24-7c49-4259-80c1-8e887fa2a6d1	GBP	USD	2026-03-12 18:01:07.605123-04	0.7910555	2026-03-12 17:52:57.721461-04	api
-bbfdccf5-1a7c-4e62-a639-1a9532284f4d	GBP	USD	2026-03-12 18:01:12.605123-04	0.7909749	2026-03-12 17:52:57.721461-04	api
-fc84b397-bf60-4ed3-b47b-cfaab9c785b4	GBP	USD	2026-03-12 18:01:17.605123-04	0.7906845	2026-03-12 17:52:57.721461-04	api
-c9e5cdcb-d6b4-40d8-9f83-02255bb93935	GBP	USD	2026-03-12 18:01:22.605123-04	0.7908376	2026-03-12 17:52:57.721461-04	api
-f79ec3bf-77d3-4c01-b56b-e2f35a7fa270	GBP	USD	2026-03-12 18:01:27.605123-04	0.7909593	2026-03-12 17:52:57.721461-04	api
-4a6480eb-e73c-44f4-ae52-f24394a53661	GBP	USD	2026-03-12 18:01:32.605123-04	0.7909226	2026-03-12 17:52:57.721461-04	api
-a55b9855-1aa5-4ebb-becc-4a0ef3cc85ce	GBP	USD	2026-03-12 18:01:37.605123-04	0.7908349	2026-03-12 17:52:57.721461-04	api
-82d3a0b4-0212-4c19-bdff-3e56439ea75d	GBP	USD	2026-03-12 18:01:42.605123-04	0.7903270	2026-03-12 17:52:57.721461-04	api
-bd815dab-a186-4d8e-a4e4-c201171ef4cd	GBP	USD	2026-03-12 18:01:47.605123-04	0.7901349	2026-03-12 17:52:57.721461-04	api
-da9b4acc-305b-48be-8f3b-3a38b6695193	GBP	USD	2026-03-12 18:01:52.605123-04	0.7906117	2026-03-12 17:52:57.721461-04	api
-7bce3b6c-a1f6-421d-886e-f58d72a7d453	GBP	USD	2026-03-12 18:01:57.605123-04	0.7905363	2026-03-12 17:52:57.721461-04	api
-9ebe8e25-18a7-4eff-8594-6006a96409b6	GBP	USD	2026-03-12 18:02:02.605123-04	0.7899675	2026-03-12 17:52:57.721461-04	api
-6a5eb65d-c82f-43bf-a0ef-a5a4c6938954	GBP	USD	2026-03-12 18:02:07.605123-04	0.7904947	2026-03-12 17:52:57.721461-04	api
-bff66c18-f8d4-4420-8175-6cfac557779c	GBP	USD	2026-03-12 18:02:12.605123-04	0.7907043	2026-03-12 17:52:57.721461-04	api
-b4c2eb67-91f4-41a9-a11c-794c18c82321	GBP	USD	2026-03-12 18:02:17.605123-04	0.7915382	2026-03-12 17:52:57.721461-04	api
-34bdfcf7-6b9e-4887-832d-14fe646564c9	GBP	USD	2026-03-12 18:02:22.605123-04	0.7915630	2026-03-12 17:52:57.721461-04	api
-fc3a5d82-b9c7-4b03-b58c-6755afe2e875	GBP	USD	2026-03-12 18:02:27.605123-04	0.7913804	2026-03-12 17:52:57.721461-04	api
-a940ed38-204b-4a56-9273-33576cc4ddb5	GBP	USD	2026-03-12 18:02:32.605123-04	0.7908078	2026-03-12 17:52:57.721461-04	api
-dfa7922c-0c52-469d-9c0f-8202f128e802	GBP	USD	2026-03-12 18:02:37.605123-04	0.7913314	2026-03-12 17:52:57.721461-04	api
-afd84c30-18c0-476a-878f-c035067ca00f	GBP	USD	2026-03-12 18:02:42.605123-04	0.7923487	2026-03-12 17:52:57.721461-04	api
-43a3c2a7-21c6-4c37-bc44-a470d0d2e016	GBP	USD	2026-03-12 18:02:47.605123-04	0.7920235	2026-03-12 17:52:57.721461-04	api
-a0236485-5ca3-4a02-b072-bddb461c4496	GBP	USD	2026-03-12 18:02:52.605123-04	0.7917673	2026-03-12 17:52:57.721461-04	api
-5f840c22-d01d-4d5f-9ff0-4f169ca9d4db	GBP	USD	2026-03-12 18:02:57.605123-04	0.7920034	2026-03-12 17:52:57.721461-04	api
-5f03d486-8eb8-48f5-9210-0f3bd2e241ba	MXN	USD	2026-03-12 17:52:57.605123-04	17.0999416	2026-03-12 17:52:57.721461-04	api
-df3c4c71-588d-4960-9e70-572c778ad974	MXN	USD	2026-03-12 17:53:02.605123-04	17.1088885	2026-03-12 17:52:57.721461-04	api
-0e103d98-4661-472c-ae6c-65394be067d9	MXN	USD	2026-03-12 17:53:07.605123-04	17.1152335	2026-03-12 17:52:57.721461-04	api
-2008cb74-34e5-4e17-ba3e-154a69bc353e	MXN	USD	2026-03-12 17:53:12.605123-04	17.1214300	2026-03-12 17:52:57.721461-04	api
-3abb4603-16d6-4fb2-a408-06a3a2f6a88e	MXN	USD	2026-03-12 17:53:17.605123-04	17.1352935	2026-03-12 17:52:57.721461-04	api
-72544fe2-fa3e-4cda-8c0c-21fb23e7c53d	MXN	USD	2026-03-12 17:53:22.605123-04	17.1249678	2026-03-12 17:52:57.721461-04	api
-4a593d2a-67f3-4613-921a-5fbd22f3b0f0	MXN	USD	2026-03-12 17:53:27.605123-04	17.1196003	2026-03-12 17:52:57.721461-04	api
-4357869e-0f41-4724-9247-1f5e464387b4	MXN	USD	2026-03-12 17:53:32.605123-04	17.1082995	2026-03-12 17:52:57.721461-04	api
-ac175f29-7769-400d-b08a-a5fed7c3cd22	MXN	USD	2026-03-12 17:53:37.605123-04	17.1073777	2026-03-12 17:52:57.721461-04	api
-38680f5f-39a2-43c6-b56c-437d4f19270f	MXN	USD	2026-03-12 17:53:42.605123-04	17.1159230	2026-03-12 17:52:57.721461-04	api
-470dbaee-9e63-4faa-91e1-ce62ed40a5c2	MXN	USD	2026-03-12 17:53:47.605123-04	17.1157352	2026-03-12 17:52:57.721461-04	api
-145b71ac-d103-49ed-b504-030c2578f614	MXN	USD	2026-03-12 17:53:52.605123-04	17.1199794	2026-03-12 17:52:57.721461-04	api
-03ee1863-7676-4d4e-b816-728ea07124ce	MXN	USD	2026-03-12 17:53:57.605123-04	17.1036310	2026-03-12 17:52:57.721461-04	api
-fbf4d904-439f-4864-a8bd-e6810e3eeedd	MXN	USD	2026-03-12 17:54:02.605123-04	17.1048887	2026-03-12 17:52:57.721461-04	api
-552125f7-77f3-4588-a1e8-f81aa0050bca	MXN	USD	2026-03-12 17:54:07.605123-04	17.0971339	2026-03-12 17:52:57.721461-04	api
-fbf9ddf8-d06b-4d5c-88dd-4ad82eaade1c	MXN	USD	2026-03-12 17:54:12.605123-04	17.1123177	2026-03-12 17:52:57.721461-04	api
-ccd547ce-f53f-4633-80ef-bdc2a5c7762d	MXN	USD	2026-03-12 17:54:17.605123-04	17.1199074	2026-03-12 17:52:57.721461-04	api
-7709258a-e754-48e9-99a4-53385e907506	MXN	USD	2026-03-12 17:54:22.605123-04	17.1280357	2026-03-12 17:52:57.721461-04	api
-a0413151-9eed-40d5-be71-e76000e9e476	MXN	USD	2026-03-12 17:54:27.605123-04	17.1275402	2026-03-12 17:52:57.721461-04	api
-d0bb54f1-2716-41b8-a329-c1b873c84f83	MXN	USD	2026-03-12 17:54:32.605123-04	17.1327895	2026-03-12 17:52:57.721461-04	api
-6401d1a5-e623-4cd6-b983-baa76c4c1c59	MXN	USD	2026-03-12 17:54:37.605123-04	17.1384261	2026-03-12 17:52:57.721461-04	api
-deddea02-77e8-4b3c-a350-98e91bfe1f8a	MXN	USD	2026-03-12 17:54:42.605123-04	17.1354751	2026-03-12 17:52:57.721461-04	api
-f6c5b27b-b098-4688-a374-f01a9de7af78	MXN	USD	2026-03-12 17:54:47.605123-04	17.1312143	2026-03-12 17:52:57.721461-04	api
-160b007a-5f6a-4551-b955-9720f8a7274f	MXN	USD	2026-03-12 17:54:52.605123-04	17.1302312	2026-03-12 17:52:57.721461-04	api
-0fe7a7e9-243e-403f-818b-775dffe332e6	MXN	USD	2026-03-12 17:54:57.605123-04	17.1250462	2026-03-12 17:52:57.721461-04	api
-1eee51b5-4c44-4147-8bd3-a2e6abd20da2	MXN	USD	2026-03-12 17:55:02.605123-04	17.1199580	2026-03-12 17:52:57.721461-04	api
-3e4d9614-d8c5-4f18-9117-fc3421c6c855	MXN	USD	2026-03-12 17:55:07.605123-04	17.1175324	2026-03-12 17:52:57.721461-04	api
-dee513d3-2134-436c-85f6-bdc55b1586b8	MXN	USD	2026-03-12 17:55:12.605123-04	17.1112992	2026-03-12 17:52:57.721461-04	api
-4c9fb920-c177-4b6d-8cc3-5826af5e7060	MXN	USD	2026-03-12 17:55:17.605123-04	17.1178569	2026-03-12 17:52:57.721461-04	api
-c836b33f-9667-4503-9c96-b1ca4a7c0191	MXN	USD	2026-03-12 17:55:22.605123-04	17.1042016	2026-03-12 17:52:57.721461-04	api
-4e84d063-a16a-403f-aa50-8db663ed8863	MXN	USD	2026-03-12 17:55:27.605123-04	17.1112462	2026-03-12 17:52:57.721461-04	api
-52d4781b-57ea-49e1-9024-f8affe432c8d	MXN	USD	2026-03-12 17:55:32.605123-04	17.1058949	2026-03-12 17:52:57.721461-04	api
-d85326cf-5ba0-4ca5-9127-d2793fca9743	MXN	USD	2026-03-12 17:55:37.605123-04	17.1012262	2026-03-12 17:52:57.721461-04	api
-9a0dd081-5964-4586-8eb0-06115e6e988e	MXN	USD	2026-03-12 17:55:42.605123-04	17.0896795	2026-03-12 17:52:57.721461-04	api
-0c39f416-a742-4a8e-9145-ab12befc6568	MXN	USD	2026-03-12 17:55:47.605123-04	17.0884470	2026-03-12 17:52:57.721461-04	api
-936f0ef3-7186-40d3-b330-b7c178c03645	MXN	USD	2026-03-12 17:55:52.605123-04	17.0863311	2026-03-12 17:52:57.721461-04	api
-19847226-cc10-4b80-ab65-275adac27a1e	MXN	USD	2026-03-12 17:55:57.605123-04	17.0879668	2026-03-12 17:52:57.721461-04	api
-aac7da53-646f-44c0-90ba-53d3b3bb647a	MXN	USD	2026-03-12 17:56:02.605123-04	17.0834068	2026-03-12 17:52:57.721461-04	api
-9722f89d-b0e7-4b81-9fd6-bb8a6d23a307	MXN	USD	2026-03-12 17:56:07.605123-04	17.0842077	2026-03-12 17:52:57.721461-04	api
-4bfa8bf8-77ec-4264-90b7-99d388283956	MXN	USD	2026-03-12 17:56:12.605123-04	17.0997588	2026-03-12 17:52:57.721461-04	api
-f3e3c7a2-2b13-40d7-898a-a23e32598f75	MXN	USD	2026-03-12 17:56:17.605123-04	17.1032560	2026-03-12 17:52:57.721461-04	api
-f1fc0f88-abf3-46fd-9125-be3db79373b3	MXN	USD	2026-03-12 17:56:22.605123-04	17.0983507	2026-03-12 17:52:57.721461-04	api
-66e07625-eab6-46ff-af0a-8ed8e67261c4	MXN	USD	2026-03-12 17:56:27.605123-04	17.1065010	2026-03-12 17:52:57.721461-04	api
-2a8fc8ba-e86e-4333-9b8a-251785f3b7fc	MXN	USD	2026-03-12 17:56:32.605123-04	17.1053994	2026-03-12 17:52:57.721461-04	api
-3abbccd1-18d2-4415-bd4e-3407ec0a6266	MXN	USD	2026-03-12 17:56:37.605123-04	17.1104793	2026-03-12 17:52:57.721461-04	api
-7ff4b5ce-adca-4a65-9d8e-5701cdac30c3	MXN	USD	2026-03-12 17:56:42.605123-04	17.1157223	2026-03-12 17:52:57.721461-04	api
-9435120e-4e29-4a7e-b5aa-bd28b799b2c2	MXN	USD	2026-03-12 17:56:47.605123-04	17.1123760	2026-03-12 17:52:57.721461-04	api
-951eaa3e-3d5a-4552-a3da-0e542c8b368c	MXN	USD	2026-03-12 17:56:52.605123-04	17.0958680	2026-03-12 17:52:57.721461-04	api
-03b43f68-d3ac-4933-be73-de13b8cb7d57	MXN	USD	2026-03-12 17:56:57.605123-04	17.0928966	2026-03-12 17:52:57.721461-04	api
-a0edc462-4a86-42d3-b4e3-8ee54bed0073	MXN	USD	2026-03-12 17:57:02.605123-04	17.0976102	2026-03-12 17:52:57.721461-04	api
-239b7d78-9d3f-433c-9945-65271aa6b79e	MXN	USD	2026-03-12 17:57:07.605123-04	17.0943610	2026-03-12 17:52:57.721461-04	api
-3f00198b-2593-40dc-b95d-81abde0f515b	MXN	USD	2026-03-12 17:57:12.605123-04	17.0981134	2026-03-12 17:52:57.721461-04	api
-316c15c7-94ba-4129-8298-7aefea2c76a0	MXN	USD	2026-03-12 17:57:17.605123-04	17.1064896	2026-03-12 17:52:57.721461-04	api
-06243a69-4d7c-412d-8be7-8661670092da	MXN	USD	2026-03-12 17:57:22.605123-04	17.1018363	2026-03-12 17:52:57.721461-04	api
-046ca398-e922-42ac-8a73-3b978bff3277	MXN	USD	2026-03-12 17:57:27.605123-04	17.1123687	2026-03-12 17:52:57.721461-04	api
-f656b7e5-8853-4f8b-8725-4212847f82d6	MXN	USD	2026-03-12 17:57:32.605123-04	17.1262508	2026-03-12 17:52:57.721461-04	api
-7aff67ca-29c6-4bd5-9f95-367a79b72fae	MXN	USD	2026-03-12 17:57:37.605123-04	17.1354933	2026-03-12 17:52:57.721461-04	api
-fa9c4987-4d47-437d-85d6-3f7239c61a17	MXN	USD	2026-03-12 17:57:42.605123-04	17.1454816	2026-03-12 17:52:57.721461-04	api
-d4f4896b-c5f3-445b-ac4c-60a433879655	MXN	USD	2026-03-12 17:57:47.605123-04	17.1548867	2026-03-12 17:52:57.721461-04	api
-4371347f-ddb6-4c1b-930c-66be8b611fff	MXN	USD	2026-03-12 17:57:52.605123-04	17.1742358	2026-03-12 17:52:57.721461-04	api
-aa760e3e-20f8-4d30-9e3a-7de925d2ece2	MXN	USD	2026-03-12 17:57:57.605123-04	17.1758319	2026-03-12 17:52:57.721461-04	api
-41417bb1-312f-4811-9096-4cb0ebdbf833	MXN	USD	2026-03-12 17:58:02.605123-04	17.1758498	2026-03-12 17:52:57.721461-04	api
-d23a06ef-6bd2-4467-9dc4-646d0f3c849b	MXN	USD	2026-03-12 17:58:07.605123-04	17.1810300	2026-03-12 17:52:57.721461-04	api
-48afb072-eef3-4aa1-8266-f76c293e9c76	MXN	USD	2026-03-12 17:58:12.605123-04	17.1732299	2026-03-12 17:52:57.721461-04	api
-b3de6c70-55ba-4ca6-b8a5-58ec405ff133	MXN	USD	2026-03-12 17:58:17.605123-04	17.1598986	2026-03-12 17:52:57.721461-04	api
-7f239fff-3a48-4502-b474-86b118b062ea	MXN	USD	2026-03-12 17:58:22.605123-04	17.1523327	2026-03-12 17:52:57.721461-04	api
-ff3ad08c-3b5e-41e3-9d4c-ab08c425532d	MXN	USD	2026-03-12 17:58:27.605123-04	17.1555282	2026-03-12 17:52:57.721461-04	api
-f047f8cf-02a4-4779-8272-c44cc17cfbf0	MXN	USD	2026-03-12 17:58:32.605123-04	17.1595864	2026-03-12 17:52:57.721461-04	api
-b455d6a4-4ed7-4540-8fa1-02eed3f7cb55	MXN	USD	2026-03-12 17:58:37.605123-04	17.1464098	2026-03-12 17:52:57.721461-04	api
-1a9d5dd8-13af-4edc-9a0c-7be92156e242	MXN	USD	2026-03-12 17:58:42.605123-04	17.1302701	2026-03-12 17:52:57.721461-04	api
-18999f9c-0c53-48aa-98f6-5303ad522519	MXN	USD	2026-03-12 17:58:47.605123-04	17.1275625	2026-03-12 17:52:57.721461-04	api
-c049ed58-7e2c-41f5-802d-ca6dcb8a9e6b	MXN	USD	2026-03-12 17:58:52.605123-04	17.1259521	2026-03-12 17:52:57.721461-04	api
-2df9338b-5173-4d74-b09b-00e71705531e	MXN	USD	2026-03-12 17:58:57.605123-04	17.1255308	2026-03-12 17:52:57.721461-04	api
-5718278b-886e-4c2e-94c7-d7aef075f877	MXN	USD	2026-03-12 17:59:02.605123-04	17.1312805	2026-03-12 17:52:57.721461-04	api
-486b9e38-9bcf-4009-acae-3409ab70ec14	MXN	USD	2026-03-12 17:59:07.605123-04	17.1418095	2026-03-12 17:52:57.721461-04	api
-4e40588a-9c61-4b1a-9fb2-0155e860b56a	MXN	USD	2026-03-12 17:59:12.605123-04	17.1437886	2026-03-12 17:52:57.721461-04	api
-4e868993-dafb-4cef-a5a3-983645f2e728	MXN	USD	2026-03-12 17:59:17.605123-04	17.1490412	2026-03-12 17:52:57.721461-04	api
-478215ac-c365-42ff-86f3-b4fa54471467	MXN	USD	2026-03-12 17:59:22.605123-04	17.1396530	2026-03-12 17:52:57.721461-04	api
-cf802f9b-8fbb-4698-99d5-b49354be0081	MXN	USD	2026-03-12 17:59:27.605123-04	17.1295752	2026-03-12 17:52:57.721461-04	api
-41626ba1-2a33-4289-921d-dc7917d5daac	MXN	USD	2026-03-12 17:59:32.605123-04	17.1315986	2026-03-12 17:52:57.721461-04	api
-16e4b3f5-99c0-43e1-b29b-c91aeffd8bc5	MXN	USD	2026-03-12 17:59:37.605123-04	17.1372930	2026-03-12 17:52:57.721461-04	api
-8f16f627-70dc-41a4-b040-57859daf10c1	MXN	USD	2026-03-12 17:59:42.605123-04	17.1435170	2026-03-12 17:52:57.721461-04	api
-7fa3e972-8e8a-4e5e-abe0-c9774e367512	MXN	USD	2026-03-12 17:59:47.605123-04	17.1485986	2026-03-12 17:52:57.721461-04	api
-b88233db-6292-44f9-a2b2-ac5663fe57b1	MXN	USD	2026-03-12 17:59:52.605123-04	17.1553237	2026-03-12 17:52:57.721461-04	api
-4c83b11d-fcae-433a-a918-ac87bb85b04f	MXN	USD	2026-03-12 17:59:57.605123-04	17.1622715	2026-03-12 17:52:57.721461-04	api
-3bbf8c93-e012-4741-9fcf-002a3b1d6af2	MXN	USD	2026-03-12 18:00:02.605123-04	17.1472423	2026-03-12 17:52:57.721461-04	api
-1985eb18-9e32-4d29-a282-a71af7b1f10a	MXN	USD	2026-03-12 18:00:07.605123-04	17.1409490	2026-03-12 17:52:57.721461-04	api
-7d895d52-33a6-4ba8-8468-f78fee742612	MXN	USD	2026-03-12 18:00:12.605123-04	17.1448504	2026-03-12 17:52:57.721461-04	api
-48b54b92-8d2f-4a41-8dd5-4b368d218b4b	MXN	USD	2026-03-12 18:00:17.605123-04	17.1499661	2026-03-12 17:52:57.721461-04	api
-9d6864a6-1837-42dc-82d4-85a4c7329e56	MXN	USD	2026-03-12 18:00:22.605123-04	17.1370048	2026-03-12 17:52:57.721461-04	api
-b44bee99-60a9-4d71-bd35-b479e0529512	MXN	USD	2026-03-12 18:00:27.605123-04	17.1470592	2026-03-12 17:52:57.721461-04	api
-e3449f44-3088-4af6-98ee-88915aca89d9	MXN	USD	2026-03-12 18:00:32.605123-04	17.1432972	2026-03-12 17:52:57.721461-04	api
-b0606a8a-b291-4994-93a1-6531dad44758	MXN	USD	2026-03-12 18:00:37.605123-04	17.1413051	2026-03-12 17:52:57.721461-04	api
-3b179476-62c9-4f3f-8a41-3ce06fd0fdbe	MXN	USD	2026-03-12 18:00:42.605123-04	17.1436521	2026-03-12 17:52:57.721461-04	api
-b59648ab-2b98-4866-b7b3-a814884ab1f3	MXN	USD	2026-03-12 18:00:47.605123-04	17.1500790	2026-03-12 17:52:57.721461-04	api
-79ec79fa-7f82-428b-aca7-12dd44b617c7	MXN	USD	2026-03-12 18:00:52.605123-04	17.1377944	2026-03-12 17:52:57.721461-04	api
-c19b72b9-a57a-4f5a-b36a-8e5f3b202025	MXN	USD	2026-03-12 18:00:57.605123-04	17.1462789	2026-03-12 17:52:57.721461-04	api
-0e9fb2e3-800d-48a6-abaa-3f673d7110ca	MXN	USD	2026-03-12 18:01:02.605123-04	17.1469416	2026-03-12 17:52:57.721461-04	api
-27e1e234-2744-4fd7-9687-f57f0e3e3e05	MXN	USD	2026-03-12 18:01:07.605123-04	17.1403343	2026-03-12 17:52:57.721461-04	api
-d4a1488e-ccb9-4544-a412-cd2888d1a9f6	MXN	USD	2026-03-12 18:01:12.605123-04	17.1379753	2026-03-12 17:52:57.721461-04	api
-921e77ea-3a92-448b-8574-994ad14ef212	MXN	USD	2026-03-12 18:01:17.605123-04	17.1192552	2026-03-12 17:52:57.721461-04	api
-da455906-d79e-416f-8611-bc36f90a4b1d	MXN	USD	2026-03-12 18:01:22.605123-04	17.1137127	2026-03-12 17:52:57.721461-04	api
-0611a1cd-0fea-4a5b-8aaa-262b9026d644	MXN	USD	2026-03-12 18:01:27.605123-04	17.1152693	2026-03-12 17:52:57.721461-04	api
-bc0abc62-52cb-4d4d-bbfa-072247c30f3b	MXN	USD	2026-03-12 18:01:32.605123-04	17.1092026	2026-03-12 17:52:57.721461-04	api
-928d7a56-59f0-4da8-abf2-33d6aced20a4	MXN	USD	2026-03-12 18:01:37.605123-04	17.1063968	2026-03-12 17:52:57.721461-04	api
-e73d125e-12a5-49dc-bc03-69136a4c32b6	MXN	USD	2026-03-12 18:01:42.605123-04	17.1051416	2026-03-12 17:52:57.721461-04	api
-fd985f44-2b7c-4301-93b4-0412b1ac4f3b	MXN	USD	2026-03-12 18:01:47.605123-04	17.1055554	2026-03-12 17:52:57.721461-04	api
-84b51c6c-b785-48ef-a385-18f728d53d2e	MXN	USD	2026-03-12 18:01:52.605123-04	17.1142869	2026-03-12 17:52:57.721461-04	api
-97e96568-b2d6-490e-abee-1175bd098a36	MXN	USD	2026-03-12 18:01:57.605123-04	17.1140738	2026-03-12 17:52:57.721461-04	api
-37cabb09-cd4b-4445-b604-c3806563c2d4	MXN	USD	2026-03-12 18:02:02.605123-04	17.1118494	2026-03-12 17:52:57.721461-04	api
-c3356fed-3528-4c28-afd2-7036e1ca0978	MXN	USD	2026-03-12 18:02:07.605123-04	17.1164586	2026-03-12 17:52:57.721461-04	api
-20ee8b6d-60e3-48ca-94d6-b7354b7f65e7	MXN	USD	2026-03-12 18:02:12.605123-04	17.1342400	2026-03-12 17:52:57.721461-04	api
-b32b42f7-b2eb-4148-8521-6c5f6e9917a7	MXN	USD	2026-03-12 18:02:17.605123-04	17.1313039	2026-03-12 17:52:57.721461-04	api
-cb82fa54-ca28-496b-8c25-77671ff42d2d	MXN	USD	2026-03-12 18:02:22.605123-04	17.1356975	2026-03-12 17:52:57.721461-04	api
-2333e96a-29ae-4757-9784-43da1f69d6d1	MXN	USD	2026-03-12 18:02:27.605123-04	17.1221888	2026-03-12 17:52:57.721461-04	api
-0cabfaad-ad2e-4859-adfd-b39d04f5a9dc	MXN	USD	2026-03-12 18:02:32.605123-04	17.1337115	2026-03-12 17:52:57.721461-04	api
-edb6e370-22e4-4da0-a8eb-5d9adb1ff771	MXN	USD	2026-03-12 18:02:37.605123-04	17.1393613	2026-03-12 17:52:57.721461-04	api
-c0aa907e-8dfe-45f4-ac7d-48dbb79f1888	MXN	USD	2026-03-12 18:02:42.605123-04	17.1507868	2026-03-12 17:52:57.721461-04	api
-041b6de6-818c-4549-b768-54151adc8f93	MXN	USD	2026-03-12 18:02:47.605123-04	17.1502803	2026-03-12 17:52:57.721461-04	api
-9b18e955-2df7-470f-a755-97a70a651ec5	MXN	USD	2026-03-12 18:02:52.605123-04	17.1413404	2026-03-12 17:52:57.721461-04	api
-763b1000-02fd-4db7-bde1-5785c9a09d51	MXN	USD	2026-03-12 18:02:57.605123-04	17.1489365	2026-03-12 17:52:57.721461-04	api
 \.
 
 
@@ -3488,16 +512,6 @@ c0aa907e-8dfe-45f4-ac7d-48dbb79f1888	MXN	USD	2026-03-12 18:02:42.605123-04	17.15
 --
 
 COPY raw.transaction_event (tx_id, c_id, base_cncy, tx_timestamp, amount, ingestion_timestamp, quote_cncy, fee_amount) FROM stdin;
-2e7ff512-fe3e-4e8a-89d1-26069b73fe04	3f8c1dd4-1018-58a9-94d6-cb0f2c49c242	USD	2026-03-10 17:53:16.8-04	1953.6208	2026-03-12 17:52:57.789737-04	NaN	5.2850
-73988a20-37e0-4490-8470-a2e94d5e386c	0ea00bc3-0ff3-5b3d-bafa-05342efa13d0	EUR	2026-03-12 17:59:56.605123-04	5646.3900	2026-03-12 17:52:57.789737-04	USD	12.2487
-78ab119b-fe2f-4411-aade-17ab479166cb	33ca4a23-e4ae-5fd0-ba55-95bc3bee2e1d	USD	2026-03-12 17:59:56.605123-04	4621.7693	2026-03-12 17:52:57.789737-04	NaN	24.4092
-9524f7ca-af6e-455a-af9c-1fc6045d2a54	902167aa-1323-5205-87ce-d94a0e3cba04	HKD	2026-03-12 18:00:42.605123-04	4891.6216	2026-03-12 17:52:57.789737-04	NaN	14.8812
-8de8c403-2c6d-44e7-955b-d9d089c316b1	90579094-cbff-52b6-8163-4feefd85aadb	EUR	2026-03-12 17:57:00-04	4998.9602	2026-03-12 17:52:57.789737-04	NaN	35.1343
-7ff5c455-851d-416a-9601-771fffef40d2	28396d03-bff9-54a2-bb02-c9370889ddcd	JPY	2026-03-12 17:57:20.605123-04	38947.7826	2026-03-12 17:52:57.789737-04	NaN	192.1827
-110b31fd-400f-4272-8165-5754ca52d063	7a525a26-1723-5b82-a1b7-00f3554a516c	USD	2026-03-12 17:53:53.605123-04	1830.4223	2026-03-12 17:52:57.789737-04	NaN	15.5478
-86f9a285-4f64-467c-a093-1e0d8fdf6839	f2ea3ad5-4115-5d5c-86de-1fd36e164e37	USD	2026-03-12 17:53:48.605123-04	1612.1254	2026-03-12 17:52:57.789737-04	NaN	11.7724
-b48000b7-8c90-47f3-bd5d-decb8560c804	e09aa437-45a3-51ee-b775-f305b423ba5e	MXN	2026-03-12 17:54:58.605123-04	1122.6786	2026-03-12 17:52:57.789737-04	NaN	4.2789
-394d994d-891b-40e1-851f-c2cfdf62298c	28396d03-bff9-54a2-bb02-c9370889ddcd	JPY	2026-03-12 17:57:17.605123-04	6242.7452	2026-03-12 17:52:57.789737-04	NaN	53.0030
 \.
 
 
@@ -3515,6 +529,30 @@ ALTER TABLE ONLY analytics.d_company
 
 ALTER TABLE ONLY analytics.d_currency
     ADD CONSTRAINT d_currency_pkey PRIMARY KEY (cncy_code);
+
+
+--
+-- Name: d_expense_category d_expense_category_name_unique; Type: CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.d_expense_category
+    ADD CONSTRAINT d_expense_category_name_unique UNIQUE (category_name);
+
+
+--
+-- Name: d_expense_category d_expense_category_pkey; Type: CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.d_expense_category
+    ADD CONSTRAINT d_expense_category_pkey PRIMARY KEY (category_id);
+
+
+--
+-- Name: d_industry d_industry_pkey; Type: CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.d_industry
+    ADD CONSTRAINT d_industry_pkey PRIMARY KEY (industry_id);
 
 
 --
@@ -3542,6 +580,14 @@ ALTER TABLE ONLY analytics.f_conversion
 
 
 --
+-- Name: f_expense f_expense_pkey; Type: CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_expense
+    ADD CONSTRAINT f_expense_pkey PRIMARY KEY (expense_id);
+
+
+--
 -- Name: f_fx_rate f_fx_rate_pkey; Type: CONSTRAINT; Schema: analytics; Owner: alex_analytics
 --
 
@@ -3550,11 +596,27 @@ ALTER TABLE ONLY analytics.f_fx_rate
 
 
 --
+-- Name: f_industry f_industry_pkey; Type: CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_industry
+    ADD CONSTRAINT f_industry_pkey PRIMARY KEY (industry_id, time_id);
+
+
+--
 -- Name: f_transaction f_transaction_pkey; Type: CONSTRAINT; Schema: analytics; Owner: alex_analytics
 --
 
 ALTER TABLE ONLY analytics.f_transaction
     ADD CONSTRAINT f_transaction_pkey PRIMARY KEY (tx_id);
+
+
+--
+-- Name: expense_event expense_event_pkey; Type: CONSTRAINT; Schema: raw; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY raw.expense_event
+    ADD CONSTRAINT expense_event_pkey PRIMARY KEY (expense_id);
 
 
 --
@@ -3582,10 +644,45 @@ ALTER TABLE ONLY raw.transaction_event
 
 
 --
+-- Name: idx_d_company_industry_id; Type: INDEX; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE INDEX idx_d_company_industry_id ON analytics.d_company USING btree (industry_id);
+
+
+--
 -- Name: idx_f_conversion_tx_id; Type: INDEX; Schema: analytics; Owner: alex_analytics
 --
 
 CREATE INDEX idx_f_conversion_tx_id ON analytics.f_conversion USING btree (tx_id);
+
+
+--
+-- Name: idx_f_expense_c_id; Type: INDEX; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE INDEX idx_f_expense_c_id ON analytics.f_expense USING btree (c_id);
+
+
+--
+-- Name: idx_f_expense_category_id; Type: INDEX; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE INDEX idx_f_expense_category_id ON analytics.f_expense USING btree (category_id);
+
+
+--
+-- Name: idx_f_expense_time_id; Type: INDEX; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE INDEX idx_f_expense_time_id ON analytics.f_expense USING btree (time_id);
+
+
+--
+-- Name: idx_f_industry_time_id; Type: INDEX; Schema: analytics; Owner: alex_analytics
+--
+
+CREATE INDEX idx_f_industry_time_id ON analytics.f_industry USING btree (time_id);
 
 
 --
@@ -3603,6 +700,20 @@ CREATE INDEX idx_f_transaction_time_id ON analytics.f_transaction USING btree (t
 
 
 --
+-- Name: idx_expense_event_c_id_timestamp; Type: INDEX; Schema: raw; Owner: alex_analytics
+--
+
+CREATE INDEX idx_expense_event_c_id_timestamp ON raw.expense_event USING btree (c_id, expense_timestamp);
+
+
+--
+-- Name: idx_expense_event_ts_brin; Type: INDEX; Schema: raw; Owner: alex_analytics
+--
+
+CREATE INDEX idx_expense_event_ts_brin ON raw.expense_event USING brin (expense_timestamp);
+
+
+--
 -- Name: idx_fx_rate_ts_brin; Type: INDEX; Schema: raw; Owner: alex_analytics
 --
 
@@ -3617,17 +728,73 @@ CREATE INDEX idx_tx_event_cncy_timestamp ON raw.transaction_event USING btree (b
 
 
 --
--- Name: f_conversion trg_apply_conversion; Type: TRIGGER; Schema: analytics; Owner: alex_analytics
---
-
-CREATE TRIGGER trg_apply_conversion AFTER INSERT OR UPDATE ON analytics.f_conversion FOR EACH ROW EXECUTE FUNCTION analytics.apply_conversion();
-
-
---
 -- Name: f_conversion trg_validate_conversion_currency; Type: TRIGGER; Schema: analytics; Owner: alex_analytics
 --
 
 CREATE TRIGGER trg_validate_conversion_currency BEFORE INSERT OR UPDATE ON analytics.f_conversion FOR EACH ROW EXECUTE FUNCTION analytics.validate_conversion_currency();
+
+
+--
+-- Name: expense_event trg_expense_event_prevent_modification; Type: TRIGGER; Schema: raw; Owner: alex_analytics
+--
+
+CREATE TRIGGER trg_expense_event_prevent_modification BEFORE DELETE OR UPDATE ON raw.expense_event FOR EACH ROW EXECUTE FUNCTION raw.prevent_modification();
+
+
+--
+-- Name: d_company d_company_default_cncy_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.d_company
+    ADD CONSTRAINT d_company_default_cncy_fkey FOREIGN KEY (default_cncy) REFERENCES analytics.d_currency(cncy_code);
+
+
+--
+-- Name: d_company d_company_industry_id_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.d_company
+    ADD CONSTRAINT d_company_industry_id_fkey FOREIGN KEY (industry_id) REFERENCES analytics.d_industry(industry_id);
+
+
+--
+-- Name: d_industry d_industry_display_cncy_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.d_industry
+    ADD CONSTRAINT d_industry_display_cncy_fkey FOREIGN KEY (display_cncy) REFERENCES analytics.d_currency(cncy_code);
+
+
+--
+-- Name: f_expense f_expense_c_id_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_expense
+    ADD CONSTRAINT f_expense_c_id_fkey FOREIGN KEY (c_id) REFERENCES analytics.d_company(c_id);
+
+
+--
+-- Name: f_expense f_expense_category_id_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_expense
+    ADD CONSTRAINT f_expense_category_id_fkey FOREIGN KEY (category_id) REFERENCES analytics.d_expense_category(category_id);
+
+
+--
+-- Name: f_expense f_expense_cncy_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_expense
+    ADD CONSTRAINT f_expense_cncy_fkey FOREIGN KEY (cncy) REFERENCES analytics.d_currency(cncy_code);
+
+
+--
+-- Name: f_expense f_expense_time_id_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_expense
+    ADD CONSTRAINT f_expense_time_id_fkey FOREIGN KEY (time_id) REFERENCES analytics.d_time(time_id);
 
 
 --
@@ -3644,6 +811,22 @@ ALTER TABLE ONLY analytics.f_fx_rate
 
 ALTER TABLE ONLY analytics.f_fx_rate
     ADD CONSTRAINT f_fx_rate_quote_cncy_fkey FOREIGN KEY (quote_cncy) REFERENCES analytics.d_currency(cncy_code);
+
+
+--
+-- Name: f_industry f_industry_industry_id_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_industry
+    ADD CONSTRAINT f_industry_industry_id_fkey FOREIGN KEY (industry_id) REFERENCES analytics.d_industry(industry_id);
+
+
+--
+-- Name: f_industry f_industry_time_id_fkey; Type: FK CONSTRAINT; Schema: analytics; Owner: alex_analytics
+--
+
+ALTER TABLE ONLY analytics.f_industry
+    ADD CONSTRAINT f_industry_time_id_fkey FOREIGN KEY (time_id) REFERENCES analytics.d_time(time_id);
 
 
 --
@@ -3674,5 +857,5 @@ ALTER TABLE ONLY analytics.f_conversion
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JCoQYV2RCeGag7glMQHyn2fX67HNYLxf2i9PbmecnbSpABbqNZi7mMtjWVnnpFf
+\unrestrict U4RxpTABvr4zTZCaazfAw90Ss6qlleUjpeCASgb62RH0FCldvc8UwJLUhSHUANE
 
