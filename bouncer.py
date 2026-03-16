@@ -7,12 +7,18 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
 
 SUPERSET_URL = "http://127.0.0.1:8088"
-DASHBOARD_ID = "1e555cc9-9a7b-4a58-91d8-563eb178a77e"
+ALLOWED_DASHBOARDS = [
+    "1e555cc9-9a7b-4a58-91d8-563eb178a77e",
+    "01e36df8-8bde-4c68-974d-18f1e886f22f",
+]
 ADMIN_USER = "superset_admin"
 ADMIN_PASS = "1a14g2F1!"
 
 @app.get("/get-token")
 def get_token():
+    if dashboard_id not in ALLOWED_DASHBOARDS:
+        raise HTTPException(status_code=403, detail="Dashboard not authorized")
+
     try:
         # 1. Login
         login_url = f"{SUPERSET_URL}/api/v1/security/login"
