@@ -289,7 +289,6 @@
             // We use /api/get-token so it goes through Nginx (Port 443) 
             // instead of hitting Port 8000 directly.
             const response = await fetch(`/api/get-token?dashboard_id=${dashboardId}`);
-            );
 
             if (!response.ok) {
                 throw new Error(`Bouncer returned ${response.status}`);
