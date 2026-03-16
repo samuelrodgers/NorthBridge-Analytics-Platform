@@ -342,6 +342,9 @@ code, pre { font-family: var(--font-mono); }
 #kpi-strip-mount iframe {
     border: none !important;
 }
+#superset-mount iframe {
+    border: none !important;
+}
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0,1fr));
