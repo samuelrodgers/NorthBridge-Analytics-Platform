@@ -288,8 +288,7 @@
         try {
             // We use /api/get-token so it goes through Nginx (Port 443) 
             // instead of hitting Port 8000 directly.
-            const response = await fetch(
-                `https://samrodgers.site:8000/get-token?dashboard_id=${dashboardId}`
+            const response = await fetch(`/api/get-token?dashboard_id=${dashboardId}`);
             );
 
             if (!response.ok) {
@@ -297,6 +296,7 @@
             }
 
             const data = await response.json();
+            console.log("Bouncer response:", data);
             console.log("Token acquired successfully");
             return data.token;
         } catch (err) {
