@@ -284,11 +284,13 @@
         // Optional: add code here to refresh specific elements if needed
     }
 
-    async function fetchGuestTokenFromBouncer() {
+    async function fetchGuestTokenFromBouncer(dashboardId) {
         try {
             // We use /api/get-token so it goes through Nginx (Port 443) 
             // instead of hitting Port 8000 directly.
-            const response = await fetch('https://samrodgers.site/api/get-token');
+            const response = await fetch(
+                `https://samrodgers.site:8000/get-token?dashboard_id=${dashboardId}`
+            );
 
             if (!response.ok) {
                 throw new Error(`Bouncer returned ${response.status}`);
@@ -305,24 +307,19 @@
 
     const DASHBOARDS = {
         kpiStrip: '1e555cc9-9a7b-4a58-91d8-563eb178a77e',
-        main: '01e36df8-8bde-4c68-974d-18f1e886f22f', // Testing with the same UUID
+        main: '01e36df8-8bde-4c68-974d-18f1e886f22f',
     };
 
-    function embedDashboard(uuid, mountId) {
+    function embedDashboard(uuid, mountId, uiConfig = {}) {
         const mountPoint = document.getElementById(mountId);
         if (!uuid || !mountPoint) return;
 
         supersetEmbeddedSdk.embedDashboard({
             id: uuid,
             supersetDomain: 'https://superset.samrodgers.site',
-            mountPoint: mountPoint,
-            fetchGuestToken: () => fetchGuestTokenFromBouncer(),
-            dashboardUiConfig: { 
-                hideTitle: true, 
-                hideTab: true,
-                filters: { visible: false }, 
-                debug: true
-            },
+            mountPoint: document.getElementById(mountId),
+            fetchGuestToken: () => fetchGuestTokenFromBouncer(uuid),
+            dashboardUiConfig: { hideTitle: true, hideTab: true, ...uiConfig },
         });
     }
     
