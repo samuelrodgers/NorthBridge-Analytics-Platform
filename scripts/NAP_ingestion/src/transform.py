@@ -75,8 +75,11 @@ _sql_error_logger = logging.getLogger("sql_errors")
 _sql_error_logger.setLevel(logging.ERROR)
 _sql_error_logger.propagate = False  # Don't double-print to stdout
 
+_LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "out")
+os.makedirs(_LOG_DIR, exist_ok=True)
+
 _sql_error_handler = logging.handlers.RotatingFileHandler(
-    filename="sql_errors.log",
+    filename=os.path.join(_LOG_DIR, "sql_errors.log"),
     maxBytes=5 * 1024 * 1024,  # 5 MB per file
     backupCount=3,
     encoding="utf-8",
@@ -646,17 +649,41 @@ SQL_REFRESH_FINDUSTRY = """
                          PARTITION BY c.industry_id ORDER BY c.day
                      ) = 0
                     THEN NULL
-                ELSE ROUND(
-                    (
-                        c.total_revenue
-                        - LAG(c.total_revenue) OVER (
-                              PARTITION BY c.industry_id ORDER BY c.day
-                          )
-                    )
-                    / LAG(c.total_revenue) OVER (
-                          PARTITION BY c.industry_id ORDER BY c.day
-                      ) * 100,
-                    4
+                ELSE (
+                    -- Cap to numeric(7,4) range [-999.9999, 999.9999].
+                    -- Extreme values occur when synthetic runs land on the
+                    -- same calendar day with very different transaction counts.
+                    -- Out-of-range values are stored as NULL rather than
+                    -- overflowing the column.
+                    CASE
+                        WHEN ABS(
+                            ROUND(
+                                (
+                                    c.total_revenue
+                                    - LAG(c.total_revenue) OVER (
+                                          PARTITION BY c.industry_id ORDER BY c.day
+                                      )
+                                )
+                                / LAG(c.total_revenue) OVER (
+                                      PARTITION BY c.industry_id ORDER BY c.day
+                                  ) * 100,
+                                4
+                            )
+                        ) >= 1000
+                        THEN NULL
+                        ELSE ROUND(
+                            (
+                                c.total_revenue
+                                - LAG(c.total_revenue) OVER (
+                                      PARTITION BY c.industry_id ORDER BY c.day
+                                  )
+                            )
+                            / LAG(c.total_revenue) OVER (
+                                  PARTITION BY c.industry_id ORDER BY c.day
+                              ) * 100,
+                            4
+                        )
+                    END
                 )
             END AS revenue_growth_rate
         FROM combined c
