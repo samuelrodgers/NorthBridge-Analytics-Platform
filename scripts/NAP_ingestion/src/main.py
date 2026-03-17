@@ -36,7 +36,25 @@ def _timer():
     """Return current time in seconds for benchmarking."""
     return time.perf_counter()
 
-def _print_benchmark_summary(timings, n_transactions, clean_count, quarantine_count):
+
+def _print_benchmark_summary(
+    timings: dict,
+    n_transactions: int,
+    clean_count: int,
+    quarantine_count: int,
+    transform_counts: dict | None,
+):
+    """
+    Print a formatted timing and row-count summary after a benchmarked run.
+
+    Args:
+        timings:          dict of stage name → elapsed seconds
+        n_transactions:   number of transactions originally generated
+        clean_count:      rows that passed normalization
+        quarantine_count: rows quarantined during normalization
+        transform_counts: dict returned by transform.run_transform(), or None
+                          if the transform step was skipped (dry_run / clean).
+    """
     total = sum(timings.values())
     print("\n" + "=" * 60)
     print("BENCHMARK TIMING SUMMARY")
@@ -48,10 +66,24 @@ def _print_benchmark_summary(timings, n_transactions, clean_count, quarantine_co
         print(f"  {stage:<20} {secs:>10.3f}  {pct:>9.1f}%")
     print(f"  {'':20} {'----------':>10}")
     print(f"  {'TOTAL':<20} {total:>10.3f}")
-    print(f"\n  Rows generated:   {n_transactions:>10,}")
+
+    print(f"\n  --- Pipeline row counts ---")
+    print(f"  Rows generated:   {n_transactions:>10,}")
     print(f"  Rows clean:       {clean_count:>10,}")
     print(f"  Rows quarantined: {quarantine_count:>10,}")
+
+    if transform_counts:
+        print(f"\n  --- Analytics schema counts (this run) ---")
+        print(f"  f_fx_rate rows:   {transform_counts.get('fx_rates',      0):>10,}")
+        print(f"  d_time rows:      {transform_counts.get('d_time',         0):>10,}")
+        print(f"  f_transaction:    {transform_counts.get('transactions',   0):>10,}")
+        print(f"  f_conversion:     {transform_counts.get('conversions',    0):>10,}")
+        print(f"  raw.expense_event:{transform_counts.get('raw_expenses',   0):>10,}")
+        print(f"  f_expense:        {transform_counts.get('expenses',       0):>10,}")
+        print(f"  f_industry rows:  {transform_counts.get('industry_rows',  0):>10,}")
+
     print("=" * 60)
+
 
 def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
         noise_level="medium", benchmark=False, dry_run=False, clean=False):
@@ -64,9 +96,15 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
         window_minutes: length of the synthetic time window
         batch_size:     rows per DB insert batch
         noise_level:    "low", "medium", or "high"
-        benchmark:      if True, print timing summary at end
+        benchmark:      if True, print timing and row-count summary at end
+        dry_run:        if True, skip DB load and transform entirely
+        clean:          if True, skip noise injection and normalization
+
+    Returns:
+        dict with raw load counts and transform counts, or None on dry_run.
     """
     timings = {}
+    transform_counts = None
 
     start = datetime.now(timezone.utc)
     end   = start + timedelta(minutes=window_minutes)
@@ -111,19 +149,25 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
     if dry_run:
         logger.info("Dry run complete — skipping DB load and transform.")
         if benchmark:
-            _print_benchmark_summary(timings, n_transactions, len(cleaned_tx), len(quarantined))
+            _print_benchmark_summary(
+                timings, n_transactions, len(cleaned_tx), len(quarantined),
+                transform_counts=None,
+            )
         return None
 
     # ── Load raw ───────────────────────────────────────────────────────────────
+    # Expense generation happens inside transform.run_transform() so that it
+    # runs within the analytics batch transaction. load_all handles FX rates
+    # and transactions only; expense_df is omitted here.
     t0 = _timer()
     logger.info("Connecting to database...")
     conn = get_connection()
     try:
-        counts = load_all(conn, fx, cleaned_tx, batch_size=batch_size)
+        raw_counts = load_all(conn, fx, cleaned_tx, batch_size=batch_size)
         logger.info(
             f"✅ Load complete — "
-            f"fx_rate: {counts['fx_rates']:,} rows, "
-            f"transaction_event: {counts['transactions']:,} rows"
+            f"fx_rate: {raw_counts['fx_rates']:,} rows, "
+            f"transaction_event: {raw_counts['transactions']:,} rows"
         )
     finally:
         conn.close()
@@ -135,16 +179,21 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
     transform_conn = transform.get_connection()
     try:
         transform.run_seed(transform_conn)
-        transform.run_transform(transform_conn)
+        transform_counts = transform.run_transform(transform_conn)
     finally:
         transform_conn.close()
     timings["transform"] = _timer() - t0
 
-    # Benchmark summary
+    # ── Summary ────────────────────────────────────────────────────────────────
     if benchmark:
-        _print_benchmark_summary(timings, n_transactions, len(cleaned_tx), len(quarantined))
+        _print_benchmark_summary(
+            timings, n_transactions, len(cleaned_tx), len(quarantined),
+            transform_counts=transform_counts,
+        )
 
-    return counts
+    # Merge raw load counts and transform counts for the return value so
+    # callers (e.g. the dashboard API) have a single dict to work with.
+    return {**raw_counts, **(transform_counts or {})}
 
 
 if __name__ == "__main__":
@@ -158,7 +207,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--benchmark",
         action="store_true",
-        help="Print timing summary after run"
+        help="Print timing and row-count summary after run"
     )
     parser.add_argument(
         "--noise",
