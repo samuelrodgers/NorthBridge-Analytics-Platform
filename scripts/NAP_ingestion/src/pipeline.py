@@ -659,8 +659,11 @@ def validate_join(matched_df):
 # rate is always expressed as: 1 unit of base_cncy = rate USD
 # e.g. rate = 0.92 for EUR means 1 EUR = 0.92 USD
 #
-# The fee is NOT deducted here — that happens in the analytics DB
-# via the apply_conversion() trigger when f_conversion is inserted.
+# normalized_amount_usd is a validation column only — it is not written
+# to the DB. In the analytics schema, f_transaction.amount is set directly
+# on insert as (t.amount - COALESCE(t.fee_amount, 0)) in native currency.
+# The fee deduction happens in that SQL INSERT, not here and not via a
+# trigger. The apply_conversion trigger has been removed.
 
 def normalize_amounts(matched_df):
     """
@@ -669,6 +672,11 @@ def normalize_amounts(matched_df):
     For USD rows: pass amount through unchanged.
     For non-USD:  multiply amount by FX rate.
     Rows with NaN rate are flagged but kept — quarantine logic goes here later.
+
+    normalized_amount_usd is a validation column for inspecting the
+    conversion arithmetic in Python. It is not inserted into the DB.
+    f_transaction.amount in the analytics schema stores the native
+    recorded currency amount minus fee, set directly on INSERT.
     """
     df = matched_df.copy()
 
@@ -744,12 +752,15 @@ def validate_normalization(df):
 # STEP 3 — SPLIT INTO ANALYTICS TABLES
 # ============================================================
 # This mirrors what the SQL batch transform will INSERT into:
-#   f_transaction : one row per tx — tx_id, c_id, cncy, amount (post-conversion)
-#   f_conversion  : one row per non-USD tx — links tx to fx rate used
+#   f_transaction : one row per tx — tx_id, c_id, cncy, amount
+#   f_conversion  : one row per non-USD tx — additive audit record only
 #
-# Note: f_transaction.amount in the DB is set by the apply_conversion()
-# trigger AFTER f_conversion is inserted. Here in Python we compute it
-# directly so we can validate the math before writing SQL.
+# f_transaction.amount in the DB is set directly on INSERT as
+# (t.amount - COALESCE(t.fee_amount, 0)) in the native transaction
+# currency. The apply_conversion trigger has been removed — f_conversion
+# is a purely additive record and does not modify f_transaction.
+# The normalized_amount_usd computed in step 2 is used here for
+# Python-side validation only and is not written to the DB.
 
 def split_to_analytics(df):
     """
