@@ -103,9 +103,5 @@ iframe {
 /* Reduce chart holder padding from 16px to 6px */
 .dashboard-component-chart-holder {
     padding: 6px !important;
-}
-
-/* Fix chart tile height for Big Number charts */
-.chart-slice[data-test-viz-type="big_number_total"] {
-    height: 150px !important;
+    background-color: #161d27 !important;
 }
