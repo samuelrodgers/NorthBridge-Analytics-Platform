@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from config import CURRENCY_CODES
 from noise import apply_noise
 from pipeline import normalize_receipts, validate_normalization_report
-from synthetic_fx import generate_all_fx_series
+import fx_source
 from transactions import generate_transactions
 from loader import get_connection, load_all
 import transform
@@ -68,6 +68,7 @@ def _print_benchmark_summary(
     print(f"  {'TOTAL':<20} {total:>10.3f}")
 
     print(f"\n  --- Pipeline row counts ---")
+    print(f"\n  FX source:        {fx_source.get_source():>10}")
     print(f"  Rows generated:   {n_transactions:>10,}")
     print(f"  Rows clean:       {clean_count:>10,}")
     print(f"  Rows quarantined: {quarantine_count:>10,}")
@@ -114,8 +115,26 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
 
     # ── Generate ───────────────────────────────────────────────────────────────
     t0 = _timer()
+    logger.info(f"FX source: {fx_source.get_source()!r}")
     logger.info("Generating FX series...")
-    fx = generate_all_fx_series(start, end, CURRENCY_CODES)
+
+    # In live mode get_fx_rates() reads the latest ticks from raw.fx_rate,
+    # so a DB connection is needed at this point. In synthetic mode the
+    # connection argument is ignored and can be None.
+    _fx_conn = get_connection() if fx_source.get_source() == "live" else None
+    try:
+        fx = fx_source.get_fx_rates(start_ts=start, end_ts=end, conn=_fx_conn)
+    finally:
+        if _fx_conn is not None:
+            _fx_conn.close()
+
+    if len(fx) == 0:
+        logger.error(
+            "FX source returned no rows. "
+            "If source is 'live', confirm live_fx.py is running and has "
+            "inserted rows into raw.fx_rate before starting a pipeline run."
+        )
+        return None
 
     logger.info("Generating transactions...")
     tx = generate_transactions(start, end, n_transactions=n_transactions)
@@ -221,11 +240,23 @@ if __name__ == "__main__":
         help="Run Python pipeline only, skip DB load and transform"
     )
     parser.add_argument(
+        "--fx-source",
+        choices=["synthetic", "live"],
+        default=None,
+        help=(
+            "FX rate source: 'synthetic' (default) generates rates locally; "
+            "'live' reads from raw.fx_rate populated by live_fx.py"
+        )
+    )
+    parser.add_argument(
         "--clean",
         action="store_true",
         help="Skip noise and normalization, load clean data directly"
     )
     args = parser.parse_args()
+
+    if args.fx_source:
+        fx_source.set_source(args.fx_source)
 
     run(
         n_transactions=args.transactions,
