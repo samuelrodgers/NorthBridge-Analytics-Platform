@@ -79,7 +79,7 @@ MAX_BACKOFF = 60  # seconds — cap backoff at 1 minute
 
 # Output directory for metrics and checkpoint files.
 # os.path.join handles cross-platform separators correctly.
-_OUT_DIR = os.path.join("NAP_ingestion", "out")
+_OUT_DIR = "../out"
 
 METRICS_FILE    = os.path.join(_OUT_DIR, "live_fx_metrics.jsonl")
 CHECKPOINT_FILE = os.path.join(_OUT_DIR, "live_fx_checkpoint.txt")

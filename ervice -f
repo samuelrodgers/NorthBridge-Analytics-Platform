@@ -1,0 +1,6 @@
+● automation.service - Northbridge Automation Script
+     Loaded: loaded (]8;;file://ip-172-31-95-224/etc/systemd/system/automation.service/etc/systemd/system/automation.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: activating (auto-restart) (Result: exit-code) since Sat 2026-03-14 22:21:31 UTC; 4s ago
+    Process: 437948 ExecStart=/home/ubuntu/northbridge-analytics-platform/.venv/bin/python automation_script.py [0;1;31m(code=exited, status=2)[0m
+   Main PID: 437948 (code=exited, status=2)
+        CPU: 9ms
