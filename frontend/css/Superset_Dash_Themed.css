@@ -1,0 +1,111 @@
+/* ── Base dashboard background ── */
+.dashboard,
+.dashboard-content,
+.grid-container,
+.grid-content,
+.grid-row {
+    background-color: #161d27 !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* ── Remove all chart borders and shadows ── */
+.chart-slice {
+    background-color: #161d27 !important;
+    border: 0.5px solid #263040 !important;
+    box-shadow: none !important;
+    border-radius: 6px !important;
+}
+/* ── Chart header — hide title label to save vertical space ── */
+.chart-header,
+.editable-title,
+.header-title {
+    display: none !important;
+}
+
+/* ── Big Number chart text — match IBM Plex Mono feel ── */
+.big-number-title {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 10px !important;
+    font-weight: 500 !important;
+    color: #556270 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+}
+
+.big-number {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 24px !important;
+    font-weight: 500 !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── Ant Design tabs (if your dashboard uses tabs) ── */
+.ant-tabs,
+.ant-tabs-content-holder,
+.ant-tabs-content,
+.ant-tabs-tabpane {
+    background-color: #161d27 !important;
+    border: none !important;
+}
+
+.ant-tabs-tab {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important;
+    color: #556270 !important;
+}
+
+.ant-tabs-tab-active .ant-tabs-tab-btn {
+    color: #38bdf8 !important;
+}
+
+.ant-tabs-ink-bar {
+    background-color: #38bdf8 !important;
+}
+
+/* ── Hide navbar ── */
+.navbar {
+    display: none !important;
+}
+
+/* ── Remove row/grid padding so charts fill the iframe ── */
+.dragdroppable-row,
+.background--transparent {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* ── Scrollbar to match the shell ── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+.empty-droptarget-inner,
+.dragdroppable-empty {
+    display: none !important;
+}
+
+/* Remove iframe border — targets the SDK-injected iframe directly */
+iframe {
+    border: none !important;
+    border-width: 0px !important;
+}
+
+/* Reduce chart holder padding from 16px to 6px */
+.dashboard-component-chart-holder {
+    padding: 6px !important;
+}
+
+/* Fix chart tile height for Big Number charts */
+.chart-slice[data-test-viz-type="big_number_total"] {
+    height: 150px !important;
+}
