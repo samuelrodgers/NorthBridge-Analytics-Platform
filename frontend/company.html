@@ -3,12 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — DataPlatform</title>
+  <title>Company View — DataPlatform</title>
   <link rel="stylesheet" href="shared.css">
-  <style>
-    .lower-grid { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
-    @media (max-width: 1024px) { .lower-grid { grid-template-columns: 1fr; } }
-  </style>
 </head>
 <body>
 <div class="shell">
@@ -36,7 +32,7 @@
       </svg>
       Transaction volume
     </a>
-    <a class="sb-item" href="company.html">
+    <a class="sb-item active" href="company.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <rect x="2" y="8" width="3" height="7"/><rect x="7" y="5" width="3" height="10"/><rect x="12" y="2" width="3" height="13"/>
       </svg>
@@ -76,7 +72,7 @@
     <div class="sb-footer">
       <div class="sb-avatar">AA</div>
       <div class="sb-user-info">
-        <div class="sb-user-name">analytics</div>
+        <div class="sb-user-name">alex_analytics</div>
         <div class="sb-user-role">analyst</div>
       </div>
     </div>
@@ -90,7 +86,9 @@
       <div class="tb-breadcrumb">
         <span class="tb-breadcrumb-root">dataplatform</span>
         <span class="tb-breadcrumb-sep">/</span>
-        <span class="tb-breadcrumb-current">Dashboard</span>
+        <a class="tb-breadcrumb-root" href="index.html" style="text-decoration:none">dashboard</a>
+        <span class="tb-breadcrumb-sep">/</span>
+        <span class="tb-breadcrumb-current">Company View</span>
       </div>
       <span class="schema-tag analytics">analytics schema</span>
       <div class="ticker">
@@ -103,92 +101,34 @@
     <!-- Content -->
     <div class="content">
 
-      <!-- KPI strip -->
       <div>
         <div class="section-hdr">
-          <h2>Key metrics</h2>
-          <span class="section-sub">— embedded Superset · KPI strip dashboard</span>
+          <h2>Company drill-down</h2>
+          <span class="section-sub">— tx_detail · expense_detail · tx_industry_benchmark</span>
         </div>
-        <div id="kpi-strip-mount" style="margin-top:8px; width:100%; height:150px;"></div>
-      </div>
-
-      <!-- Main chart + quarantine log -->
-      <div class="lower-grid">
-
-        <div class="card">
+        <div class="query-ref" style="margin: 8px 0 10px">
+          <div class="query-ref-label">Cross-chart filter dashboard</div>
+          <div class="query-ref-name">f_transaction → d_company → d_industry · f_expense → d_expense_category</div>
+          <div class="query-ref-desc">
+            Per-company financial profile. Select a company from the filter bar to update all
+            charts simultaneously. Benchmarks company revenue against
+            <code style="font-family:var(--font-mono);font-size:10px">f_industry.avg_revenue_per_co</code>
+            for the matching industry and period.
+          </div>
+        </div>
+        <div class="card" style="margin-top:8px">
           <div class="card-hdr">
             <div>
-              <div class="card-title">Transaction volume</div>
-              <div class="card-sub">Time-series · revenue vs expenses · currency share</div>
+              <div class="card-title">Company drill-down</div>
+              <div class="card-sub">Revenue · expenses · margin · industry benchmark</div>
             </div>
-            <span class="schema-tag analytics">SDK</span>
+            <span class="schema-tag analytics">analytics schema</span>
           </div>
           <div class="card-body flush">
-            <div id="superset-mount" style="width:100%; height:600px;"></div>
+            <div id="company-mount" style="width:100%; height:800px;"></div>
           </div>
         </div>
-
-        <!-- Quarantine log -->
-        <div class="card">
-          <div class="card-hdr">
-            <div>
-              <div class="card-title">Quarantine log</div>
-              <div class="card-sub">Failed validation · OLAF process</div>
-            </div>
-            <span class="pill red">14 rows</span>
-            <a href="governance.html" class="btn">View all →</a>
-          </div>
-          <div class="card-body flush scrollable" style="max-height:300px">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Row ID</th>
-                  <th>Failure</th>
-                  <th>Flagged</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td class="mono">TXN-8801</td>
-                  <td><span class="pill red">null c_id</span></td>
-                  <td class="muted">today</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8799</td>
-                  <td><span class="pill amber">amt range</span></td>
-                  <td class="muted">today</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8754</td>
-                  <td><span class="pill red">dupe key</span></td>
-                  <td class="muted">today</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8612</td>
-                  <td><span class="pill red">FK violation</span></td>
-                  <td class="muted">yesterday</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8590</td>
-                  <td><span class="pill amber">cncy mismatch</span></td>
-                  <td class="muted">yesterday</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8499</td>
-                  <td><span class="pill gray">schema drift</span></td>
-                  <td class="muted">2d ago</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8401</td>
-                  <td><span class="pill amber">amt range</span></td>
-                  <td class="muted">2d ago</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div><!-- /.lower-grid -->
+      </div>
 
     </div><!-- /.content -->
   </div><!-- /.main -->
@@ -198,10 +138,8 @@
 <script src="shared.js"></script>
 <script>
   window.onload = function () {
-    resizeMount('kpi-strip-mount', '100%', '100%');
-    resizeMount('superset-mount',  '100%', '100%');
-    embedDashboard(DASHBOARDS.kpiStrip, 'kpi-strip-mount');
-    embedDashboard(DASHBOARDS.mainTx,   'superset-mount');
+    resizeMount('company-mount', '100%', '100%');
+    embedDashboard(DASHBOARDS.company, 'company-mount');
   };
 </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analytics — DataPlatform</title>
+  <title>Transaction Volume — DataPlatform</title>
   <link rel="stylesheet" href="shared.css">
 </head>
 <body>
@@ -25,30 +25,30 @@
       Dashboard
     </a>
 
-    <div class="sb-section">Analytics — OLAP</div>
-    <a class="sb-item" href="analytics.html">
+    <div class="sb-section">Analytics</div>
+    <a class="sb-item active" href="analytics.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <polyline points="1,11 5,7 9,9 15,3"/><polyline points="11,3 15,3 15,7"/>
       </svg>
       Transaction volume
     </a>
-    <a class="sb-item" href="analytics.html#revenue">
+    <a class="sb-item" href="company.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <rect x="2" y="8" width="3" height="7"/><rect x="7" y="5" width="3" height="10"/><rect x="12" y="2" width="3" height="13"/>
       </svg>
-      Revenue by company
+      Company view
+    </a>
+    <a class="sb-item" href="industry.html">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <path d="M1 15h14M2 15V7l5-5 5 5v8"/><line x1="6" y1="15" x2="6" y2="10"/><line x1="10" y1="15" x2="10" y2="10"/>
+      </svg>
+      Industry view
     </a>
     <a class="sb-item" href="fx.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 1.5"/>
       </svg>
       FX &amp; conversions
-    </a>
-    <a class="sb-item" href="fx.html#fees">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-        <circle cx="5" cy="8" r="4"/><circle cx="11" cy="8" r="4"/>
-      </svg>
-      Currency exposure
     </a>
 
     <div class="sb-section">Governance</div>
@@ -88,7 +88,7 @@
         <span class="tb-breadcrumb-sep">/</span>
         <a class="tb-breadcrumb-root" href="index.html" style="text-decoration:none">dashboard</a>
         <span class="tb-breadcrumb-sep">/</span>
-        <span class="tb-breadcrumb-current">Analytics</span>
+        <span class="tb-breadcrumb-current">Transaction Volume</span>
       </div>
       <span class="schema-tag analytics">analytics schema</span>
       <div class="ticker">
@@ -100,46 +100,6 @@
 
     <!-- Content -->
     <div class="content">
-
-      <!-- Preset view strip -->
-      <div class="view-strip">
-        <a class="view-chip" href="index.html">Overview</a>
-        <a class="view-chip active" href="analytics.html#quarter">This quarter</a>
-        <a class="view-chip active" href="analytics.html#industry">By industry</a>
-        <a class="view-chip" href="fx.html">Multi-currency</a>
-        <a class="view-chip" href="governance.html">Data quality</a>
-        <a class="view-chip" href="governance.html#pipeline">Pipeline</a>
-      </div>
-
-      <!-- ── Company Drill-Down ── -->
-    <div id="revenue">
-      <div class="section-hdr">
-        <h2>Company view</h2>
-        <span class="section-sub">— tx_detail · expense_detail · tx_industry_benchmark</span>
-      </div>
-      <div class="query-ref" style="margin: 8px 0 10px">
-        <div class="query-ref-label">Cross-chart filter dashboard</div>
-        <div class="query-ref-name">f_transaction → d_company → d_industry · f_expense → d_expense_category</div>
-        <div class="query-ref-desc">
-          Per-company financial profile. Select a company from the filter bar to update all
-          charts simultaneously. Benchmarks company revenue against
-          <code style="font-family:var(--font-mono);font-size:10px">f_industry.avg_revenue_per_co</code>
-          for the matching industry and period.
-        </div>
-      </div>
-      <div class="card" style="margin-top:8px">
-        <div class="card-hdr">
-          <div>
-            <div class="card-title">Company drill-down</div>
-            <div class="card-sub">Revenue · expenses · margin · industry benchmark</div>
-          </div>
-          <span class="schema-tag analytics">analytics schema</span>
-        </div>
-        <div class="card-body flush">
-          <div id="company-mount" style="width:100%; height:700px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
-        </div>
-      </div>
-    </div>
 
       <!-- ── Q2: Volume by fiscal quarter + currency ── -->
       <div id="quarter">
@@ -204,7 +164,6 @@
             </div>
           </div>
 
-          <!-- Quarter filter selector (wire to Superset preset or API param) -->
           <div class="card">
             <div class="card-hdr">
               <div class="card-title">Filter by quarter</div>
@@ -213,7 +172,6 @@
               <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">
                 Select a fiscal quarter to filter all charts on this page. Maps to <code style="font-family:var(--font-mono);font-size:11px;color:var(--text-code)">d_time.fisc_quarter</code>.
               </p>
-              <!-- Quarter picker — wire onclick to your Superset filter API or URL param -->
               <div style="display:flex;flex-direction:column;gap:6px" id="quarter-picker">
                 <button class="btn" onclick="setQuarter(1, this)" style="justify-content:flex-start">
                   <span style="font-family:var(--font-mono)">Q1</span>
@@ -235,7 +193,6 @@
                   All quarters
                 </button>
               </div>
-
               <div style="margin-top:16px">
                 <div class="stat-row">
                   <span class="stat-row-label">Active filter</span>
@@ -259,9 +216,9 @@
           <div class="query-ref-name">Q5 — f_transaction → d_time → d_company · cumulative window</div>
           <div class="query-ref-desc">
             Buckets revenue by minute, computes cumulative sum per company using a window function
-            (SUM OVER PARTITION BY c_id ORDER BY minute_bucket). This drives the live dashboard
-            refresh graph. Most sensitive to index availability on d_time — expect the largest
-            before/after delta in performance benchmarks here.
+            (SUM OVER PARTITION BY c_id ORDER BY minute_bucket). Most sensitive to index
+            availability on d_time — expect the largest before/after delta in performance
+            benchmarks here.
           </div>
         </div>
         <div class="card">
@@ -278,11 +235,6 @@
             </button>
           </div>
           <div class="card-body flush">
-            <!--
-              This is the performance-sensitive chart. Wire to Superset with auto-refresh
-              or directly to your FastAPI endpoint that runs Q5.
-              Recommended: set Superset chart refresh interval to match your ETL cadence.
-            -->
             <div class="embed-mount" style="min-height:220px">
               <div class="embed-mount-hint">
                 Superset time-series chart mounts here<br>
@@ -294,49 +246,11 @@
         </div>
       </div>
 
-      <!-- ── Industry View ── -->
-    <div id="industry">
-      <div class="section-hdr">
-        <h2>Industry view</h2>
-        <span class="section-sub">— industry_detail · f_industry pre-aggregated</span>
-      </div>
-      <div class="query-ref" style="margin: 8px 0 10px">
-        <div class="query-ref-label">Pre-aggregated snapshot table</div>
-        <div class="query-ref-name">f_industry → d_industry → d_time</div>
-        <div class="query-ref-desc">
-          Cross-industry benchmarks using the pre-computed
-          <code style="font-family:var(--font-mono);font-size:10px">f_industry</code>
-          aggregate table. Grain is one row per industry per day — queries are fast
-          regardless of underlying transaction volume. Revenue growth rate is stored
-          directly and requires no computation at query time.
-        </div>
-      </div>
-      <div class="card" style="margin-top:8px">
-        <div class="card-hdr">
-          <div>
-            <div class="card-title">Industry benchmarks</div>
-            <div class="card-sub">Revenue · net profit · growth rate · company count</div>
-          </div>
-          <span class="schema-tag analytics">analytics schema</span>
-        </div>
-        <div class="card-body flush">
-          <div id="industry-mount" style="width:100%; height:700px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
-        </div>
-      </div>
-    </div>
     </div><!-- /.content -->
   </div><!-- /.main -->
 </div><!-- /.shell -->
 
 <script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
-<script>
-  window.onload = function () {
-    resizeMount('company-mount',  '100%', '100%');
-    resizeMount('industry-mount', '100%', '100%');
-    embedDashboard(DASHBOARDS.company,  'company-mount');
-    embedDashboard(DASHBOARDS.industry, 'industry-mount');
-  };
-</script>
 </body>
 </html>

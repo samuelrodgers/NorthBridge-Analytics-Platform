@@ -25,30 +25,30 @@
       Dashboard
     </a>
 
-    <div class="sb-section">Analytics — OLAP</div>
+    <div class="sb-section">Analytics</div>
     <a class="sb-item" href="analytics.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <polyline points="1,11 5,7 9,9 15,3"/><polyline points="11,3 15,3 15,7"/>
       </svg>
       Transaction volume
     </a>
-    <a class="sb-item" href="analytics.html#revenue">
+    <a class="sb-item" href="company.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <rect x="2" y="8" width="3" height="7"/><rect x="7" y="5" width="3" height="10"/><rect x="12" y="2" width="3" height="13"/>
       </svg>
-      Revenue by company
+      Company view
+    </a>
+    <a class="sb-item" href="industry.html">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+        <path d="M1 15h14M2 15V7l5-5 5 5v8"/><line x1="6" y1="15" x2="6" y2="10"/><line x1="10" y1="15" x2="10" y2="10"/>
+      </svg>
+      Industry view
     </a>
     <a class="sb-item active" href="fx.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <circle cx="8" cy="8" r="6"/><path d="M8 4v4l3 1.5"/>
       </svg>
       FX &amp; conversions
-    </a>
-    <a class="sb-item" href="fx.html#fees">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-        <circle cx="5" cy="8" r="4"/><circle cx="11" cy="8" r="4"/>
-      </svg>
-      Currency exposure
     </a>
 
     <div class="sb-section">Governance</div>
@@ -101,43 +101,6 @@
     <!-- Content -->
     <div class="content">
 
-      <!-- Preset strip -->
-      <div class="view-strip">
-        <a class="view-chip" href="index.html">Overview</a>
-        <a class="view-chip" href="analytics.html#quarter">This quarter</a>
-        <a class="view-chip" href="analytics.html#industry">By industry</a>
-        <a class="view-chip active" href="fx.html">Multi-currency</a>
-        <a class="view-chip" href="governance.html">Data quality</a>
-        <a class="view-chip" href="governance.html#pipeline">Pipeline</a>
-      </div>
-
-      <!-- Currency exposure KPIs -->
-      <div>
-        <div class="section-hdr"><h2>Currency exposure</h2><span class="section-sub">— f_transaction.cncy · d_currency</span></div>
-        <div class="kpi-grid" style="margin-top:8px">
-          <div class="kpi-card">
-            <div class="kpi-label">Currencies in use</div>
-            <div class="kpi-value">7</div>
-            <div class="kpi-delta muted">d_currency joined to f_transaction</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Converted transactions</div>
-            <div class="kpi-value">4,210</div>
-            <div class="kpi-delta muted">have f_conversion row</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Overall conversion rate</div>
-            <div class="kpi-value">32.8%</div>
-            <div class="kpi-delta muted">converted / total (Q3)</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Avg fee burden</div>
-            <div class="kpi-value">1.24%</div>
-            <div class="kpi-delta muted">avg fee / base_amount (Q4)</div>
-          </div>
-        </div>
-      </div>
-
       <!-- ── Q3: Conversion rate by currency pair ── -->
       <div>
         <div class="section-hdr"><h2>Q3 · Conversion rate by currency pair</h2></div>
@@ -152,95 +115,21 @@
             ensures max one conversion per transaction.
           </div>
         </div>
-        <div class="col-2">
-          <div class="card">
-            <div class="card-hdr">
-              <div>
-                <div class="card-title">Conversion rate by currency pair</div>
-                <div class="card-sub">f_fx_rate.base_cncy → quote_cncy</div>
-              </div>
-              <button class="btn primary">
-                <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-                  <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
-                </svg>
-                Export CSV
-              </button>
+        <div class="card">
+          <div class="card-hdr">
+            <div>
+              <div class="card-title">Conversion rate by currency pair</div>
+              <div class="card-sub">f_fx_rate.base_cncy → quote_cncy</div>
             </div>
-            <div class="card-body flush">
-              <div id="fx-q3-mount" style="width:100%; height:400px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Base</th>
-                    <th>Quote</th>
-                    <th style="text-align:right">Total tx</th>
-                    <th style="text-align:right">Converted</th>
-                    <th style="text-align:right">Conv. rate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <!-- TODO: Replace with live data from Q3 -->
-                  <tr>
-                    <td class="mono">EUR</td><td class="mono">USD</td>
-                    <td class="mono" style="text-align:right">1,840</td>
-                    <td class="mono" style="text-align:right">1,804</td>
-                    <td class="mono" style="text-align:right">0.9804</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">GBP</td><td class="mono">USD</td>
-                    <td class="mono" style="text-align:right">922</td>
-                    <td class="mono" style="text-align:right">840</td>
-                    <td class="mono" style="text-align:right">0.9111</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">JPY</td><td class="mono">USD</td>
-                    <td class="mono" style="text-align:right">610</td>
-                    <td class="mono" style="text-align:right">448</td>
-                    <td class="mono" style="text-align:right">0.7344</td>
-                  </tr>
-                  <tr>
-                    <td colspan="5" style="text-align:center;padding:8px;color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px">— placeholder rows —</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <button class="btn primary">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
+                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
+              </svg>
+              Export CSV
+            </button>
           </div>
-
-          <!-- Currency summary sidebar -->
-          <div class="card">
-            <div class="card-hdr">
-              <div class="card-title">Currency split</div>
-              <div class="card-sub">f_transaction.cncy share of total volume</div>
-            </div>
-            <div class="card-body">
-              <!-- Replace with live data -->
-              <div class="stat-row">
-                <span class="stat-row-label">USD</span>
-                <span class="stat-row-value green">58.2%</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">EUR</span>
-                <span class="stat-row-value">18.7%</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">GBP</span>
-                <span class="stat-row-value">9.1%</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">JPY</span>
-                <span class="stat-row-value">6.4%</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Other (3)</span>
-                <span class="stat-row-value muted">7.6%</span>
-              </div>
-              <div style="margin-top:14px">
-                <div class="notice info">
-                  <span class="notice-icon">ℹ</span>
-                  <span>FX trigger <code style="font-family:var(--font-mono);font-size:10px">trg_validate_conversion_currency</code> enforces that <code>f_transaction.cncy</code> matches <code>f_fx_rate.base_cncy</code> before any conversion row is accepted.</span>
-                </div>
-              </div>
-            </div>
+          <div class="card-body flush">
+            <div id="fx-q3-mount" style="width:100%; height:450px;"></div>
           </div>
         </div>
       </div>
@@ -272,45 +161,7 @@
             </button>
           </div>
           <div class="card-body flush">
-            <div id="fx-q4-mount" style="width:100%; height:400px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Company</th>
-                  <th style="text-align:right">Conversions</th>
-                  <th style="text-align:right">Avg fee (USD)</th>
-                  <th style="text-align:right">Avg fee %</th>
-                  <th>Flag</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- TODO: Replace with live data from Q4 -->
-                <tr>
-                  <td class="mono">Globex Inc</td>
-                  <td class="mono" style="text-align:right">2,104</td>
-                  <td class="mono" style="text-align:right">$4.2200</td>
-                  <td class="mono" style="text-align:right">2.8400%</td>
-                  <td><span class="pill amber">elevated</span></td>
-                </tr>
-                <tr>
-                  <td class="mono">Acme Corp</td>
-                  <td class="mono" style="text-align:right">1,804</td>
-                  <td class="mono" style="text-align:right">$1.9800</td>
-                  <td class="mono" style="text-align:right">1.1200%</td>
-                  <td><span class="pill green">normal</span></td>
-                </tr>
-                <tr>
-                  <td class="mono">Initech LLC</td>
-                  <td class="mono" style="text-align:right">840</td>
-                  <td class="mono" style="text-align:right">$1.4100</td>
-                  <td class="mono" style="text-align:right">0.9100%</td>
-                  <td><span class="pill green">normal</span></td>
-                </tr>
-                <tr>
-                  <td colspan="5" style="text-align:center;padding:8px;color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px">— placeholder rows —</td>
-                </tr>
-              </tbody>
-            </table>
+            <div id="fx-q4-mount" style="width:100%; height:450px;"></div>
           </div>
         </div>
       </div>
