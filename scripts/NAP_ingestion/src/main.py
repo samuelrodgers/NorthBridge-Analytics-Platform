@@ -13,6 +13,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
+from bouncer import app
 from config import CURRENCY_CODES
 from noise import apply_noise
 from pipeline import normalize_receipts, validate_normalization_report
@@ -22,6 +23,9 @@ from loader import get_connection, load_all
 import transform
 import os
 from dotenv import load_dotenv
+from auth_routes import router as auth_router
+
+app.include_router(auth_router)
 
 load_dotenv()
 
