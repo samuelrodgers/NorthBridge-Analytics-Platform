@@ -174,7 +174,7 @@
               Or replace with a fetch() to a FastAPI endpoint that queries:
               SELECT * FROM quarantine.failed_rows ORDER BY flagged_at DESC
             -->
-            <div id="quarantine-mount" style="width:100%; height:500px;"></div>
+            <div id="quarantine-mount" style="width:100%; height:500px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
             <table class="data-table">
               <thead>
                 <tr>
@@ -262,7 +262,7 @@
               <span class="schema-tag both">both schemas</span>
             </div>
             <div class="card-body">
-              <div id="health-mount" style="width:100%; height:300px;"></div>
+              <div id="health-mount" style="width:100%; height:300px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
             </div>
           </div>
 
@@ -276,7 +276,7 @@
               <span class="schema-tag both">both schemas</span>
             </div>
             <div class="card-body">
-              <div id="fx-health-mount" style="width:100%; height:300px;"></div>
+              <div id="fx-health-mount" style="width:100%; height:300px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
             </div>
           </div>
 
@@ -292,7 +292,7 @@
             <span class="schema-tag raw">raw schema</span>
           </div>
           <div class="card-body flush">
-            <div id="pipeline-mount" style="width:100%; height:400px;"></div>
+            <div id="pipeline-mount" style="width:100%; height:400px; border-radius: var(--radius-lg); overflow:hidden; border: none;"></div>
           </div>
         </div><!-- /.pipeline -->
 
@@ -304,11 +304,13 @@
 <script src="shared.js"></script>
 <script>
   window.onload = function () {
-    resizeMount('health-mount',     '100%', '100%');
     resizeMount('quarantine-mount', '100%', '100%');
+    resizeMount('health-mount',     '100%', '100%');
+    resizeMount('fx-health-mount',  '100%', '100%');
     resizeMount('pipeline-mount',   '100%', '100%');
-    embedDashboard(DASHBOARDS.dataHealth,  'health-mount');
     embedDashboard(DASHBOARDS.quarantine,  'quarantine-mount');
+    embedDashboard(DASHBOARDS.dataHealth,  'health-mount');
+    embedDashboard(DASHBOARDS.dataHealth,  'fx-health-mount');
     embedDashboard(DASHBOARDS.pipeline,    'pipeline-mount');
   };
 </script>
