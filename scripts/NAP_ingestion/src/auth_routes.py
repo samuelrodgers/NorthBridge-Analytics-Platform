@@ -42,14 +42,14 @@ async def get_db(request: Request) -> asyncpg.Connection:
 @router.post("/register", status_code=201)
 async def register(body: RegisterRequest, db=Depends(get_db)):
     existing = await db.fetchrow(
-        "SELECT id FROM users WHERE email = $1", body.email
+        "SELECT id FROM auth.users WHERE email = $1", body.email
     )
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
 
     pw_hash = hash_password(body.password)
     await db.execute(
-        "INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3)",
+        "INSERT INTO auth.users (name, email, password_hash) VALUES ($1, $2, $3)",
         body.name, body.email, pw_hash
     )
     return {"message": "Account created. Please log in."}
@@ -60,7 +60,7 @@ async def register(body: RegisterRequest, db=Depends(get_db)):
 @router.post("/login")
 async def login(body: LoginRequest, response: Response, db=Depends(get_db)):
     user = await db.fetchrow(
-        "SELECT id, name, email, password_hash FROM users WHERE email = $1",
+        "SELECT id, name, email, password_hash FROM auth.users WHERE email = $1",
         body.email
     )
     if not user or not verify_password(body.password, user["password_hash"]):
@@ -100,7 +100,7 @@ async def me(access_token: str | None = Cookie(default=None), db=Depends(get_db)
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     user = await db.fetchrow(
-        "SELECT id, name, email FROM users WHERE id = $1",
+        "SELECT id, name, email FROM auth.users WHERE id = $1",
         int(payload["sub"])
     )
     if not user:
@@ -113,14 +113,14 @@ async def me(access_token: str | None = Cookie(default=None), db=Depends(get_db)
 # ------------------------------------------------------------------ #
 @router.post("/forgot-password")
 async def forgot_password(body: ForgotPasswordRequest, db=Depends(get_db)):
-    user = await db.fetchrow("SELECT id FROM users WHERE email = $1", body.email)
+    user = await db.fetchrow("SELECT id FROM auth.users WHERE email = $1", body.email)
 
     # Always return 200 — never reveal whether an email exists
     if user:
         token = secrets.token_urlsafe(32)
         expires = datetime.now(timezone.utc) + timedelta(hours=1)
         await db.execute(
-            """UPDATE users
+            """UPDATE auth.users
                SET reset_token = $1, reset_token_expires_at = $2
                WHERE id = $3""",
             token, expires, user["id"]
@@ -137,7 +137,7 @@ async def forgot_password(body: ForgotPasswordRequest, db=Depends(get_db)):
 @router.post("/reset-password")
 async def reset_password(body: ResetPasswordRequest, db=Depends(get_db)):
     user = await db.fetchrow(
-        """SELECT id, reset_token_expires_at FROM users
+        """SELECT id, reset_token_expires_at FROM auth.users
            WHERE reset_token = $1""",
         body.token
     )
@@ -149,7 +149,7 @@ async def reset_password(body: ResetPasswordRequest, db=Depends(get_db)):
 
     new_hash = hash_password(body.new_password)
     await db.execute(
-        """UPDATE users
+        """UPDATE auth.users
            SET password_hash = $1, reset_token = NULL, reset_token_expires_at = NULL
            WHERE id = $2""",
         new_hash, user["id"]
