@@ -36,7 +36,7 @@
                             <div class="text-center">
                                 <h1 class="h4 text-gray-900 mb-4">Create an Account!</h1>
                             </div>
-                            <form class="user">
+                            <form class="user" id="register-form">
                                 <div class="form-group row">
                                     <div class="col-sm-6 mb-3 mb-sm-0">
                                         <input type="text" class="form-control form-control-user" id="exampleFirstName"
@@ -97,6 +97,39 @@
     <!-- Custom scripts for all pages-->
     <script src="js/sb-admin-2.min.js"></script>
 
+<script type="module">
+  import { register, redirectIfAuthed } from "./auth.js";
+  redirectIfAuthed();
+  const form = document.getElementById("register-form");
+  const msg = document.createElement("div");
+  msg.className = "alert d-none mt-3";
+  form.appendChild(msg);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const first = document.getElementById("exampleFirstName").value;
+    const last = document.getElementById("exampleLastName").value;
+    const email = document.getElementById("exampleInputEmail").value;
+    const password = document.getElementById("exampleInputPassword").value;
+    const repeat = document.getElementById("exampleRepeatPassword").value;
+    if (password !== repeat) {
+      msg.className = "alert alert-danger mt-3";
+      msg.textContent = "Passwords do not match.";
+      msg.classList.remove("d-none");
+      return;
+    }
+    try {
+      await register(first + " " + last, email, password);
+      msg.className = "alert alert-success mt-3";
+      msg.textContent = "Account created! Redirecting to login...";
+      msg.classList.remove("d-none");
+      setTimeout(() => window.location.replace("/login.html"), 1500);
+    } catch (e) {
+      msg.className = "alert alert-danger mt-3";
+      msg.textContent = e.message;
+      msg.classList.remove("d-none");
+    }
+  });
+</script>
 </body>
 
 </html>

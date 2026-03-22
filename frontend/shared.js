@@ -53,7 +53,7 @@ const DASHBOARDS = {
 // ── Guest token fetch from Bouncer ──────────────────────────
 async function fetchGuestToken(dashboardId) {
   try {
-    const response = await fetch(`/api/get-token?dashboard_id=${dashboardId}`);
+    const response = await fetch(`/api/get-token?dashboard_id=${dashboardId}`, { credentials: "include" });
     if (!response.ok) throw new Error(`Bouncer returned ${response.status}`);
     const data = await response.json();
     return data.token;

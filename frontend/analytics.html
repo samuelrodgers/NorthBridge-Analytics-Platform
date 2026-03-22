@@ -252,5 +252,9 @@
 
 <script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
+<script type="module">
+  import { requireAuth } from "./auth.js";
+  window.__authReady = requireAuth();
+</script>
 </body>
 </html>

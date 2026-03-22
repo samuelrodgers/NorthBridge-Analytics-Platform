@@ -136,6 +136,10 @@
 
 <script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
+<script type="module">
+  import { requireAuth } from "./auth.js";
+  window.__authReady = requireAuth();
+</script>
 <script>
   window.onload = function () {
     resizeMount('company-mount', '100%', '100%');
