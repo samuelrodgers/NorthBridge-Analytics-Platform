@@ -111,90 +111,35 @@
         <a class="view-chip" href="governance.html#pipeline">Pipeline</a>
       </div>
 
-      <!-- ── Q1: Volume by company ── -->
-      <div id="revenue">
-        <div class="section-hdr">
-          <h2>Q1 · Transaction volume by company</h2>
-        </div>
-        <div class="query-ref" style="margin: 8px 0 10px">
-          <div class="query-ref-label">Performance query</div>
-          <div class="query-ref-name">Q1 — star join: f_transaction → d_company</div>
-          <div class="query-ref-desc">Aggregates post-conversion USD amount per company. Baseline query — no window functions, single join, high selectivity on c_id FK. Establishes the performance floor.</div>
-        </div>
-        <div class="card">
-          <div class="card-hdr">
-            <div>
-              <div class="card-title">Total volume by company</div>
-              <div class="card-sub">f_transaction JOIN d_company · grouped by c_id</div>
-            </div>
-            <button class="btn primary" title="Export this chart as CSV">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
-              </svg>
-              Export CSV
-            </button>
-          </div>
-          <div class="card-body flush">
-            <!--
-              Superset embed: chart pointed at Q1.
-              Alternatively, replace the table below with a live fetch:
-              fetch('/api/query/q1').then(r => r.json()).then(renderTable)
-            -->
-            <div class="embed-mount" style="min-height:180px" id="q1-mount">
-              <div class="embed-mount-hint">
-                Superset chart mounts here<br>
-                Query: <code>f_transaction JOIN d_company</code> · grouped by company
-              </div>
-            </div>
-
-            <!-- Placeholder table — replace with dynamic data -->
-            <table class="data-table" style="margin-top:1px">
-              <thead>
-                <tr>
-                  <th>Company</th>
-                  <th>Industry</th>
-                  <th>Country</th>
-                  <th style="text-align:right">Tx count</th>
-                  <th style="text-align:right">Total volume (USD)</th>
-                  <th style="text-align:right">Avg tx (USD)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- TODO: Replace with API-fetched rows -->
-                <tr>
-                  <td class="mono">Acme Corp</td>
-                  <td class="muted">Finance</td>
-                  <td class="muted">US</td>
-                  <td class="mono" style="text-align:right">3,204</td>
-                  <td class="mono" style="text-align:right">$1,240,800.00</td>
-                  <td class="mono" style="text-align:right">$387.25</td>
-                </tr>
-                <tr>
-                  <td class="mono">Globex Inc</td>
-                  <td class="muted">Manufacturing</td>
-                  <td class="muted">DE</td>
-                  <td class="mono" style="text-align:right">2,891</td>
-                  <td class="mono" style="text-align:right">$980,340.00</td>
-                  <td class="mono" style="text-align:right">$339.10</td>
-                </tr>
-                <tr>
-                  <td class="mono">Initech LLC</td>
-                  <td class="muted">Technology</td>
-                  <td class="muted">US</td>
-                  <td class="mono" style="text-align:right">2,104</td>
-                  <td class="mono" style="text-align:right">$820,600.00</td>
-                  <td class="mono" style="text-align:right">$390.02</td>
-                </tr>
-                <tr>
-                  <td colspan="6" style="text-align:center; padding:10px; color:var(--text-tertiary); font-family:var(--font-mono); font-size:11px">
-                    — replace rows with live data from /api/query/q1 —
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <!-- ── Company Drill-Down ── -->
+    <div id="revenue">
+      <div class="section-hdr">
+        <h2>Company view</h2>
+        <span class="section-sub">— tx_detail · expense_detail · tx_industry_benchmark</span>
+      </div>
+      <div class="query-ref" style="margin: 8px 0 10px">
+        <div class="query-ref-label">Cross-chart filter dashboard</div>
+        <div class="query-ref-name">f_transaction → d_company → d_industry · f_expense → d_expense_category</div>
+        <div class="query-ref-desc">
+          Per-company financial profile. Select a company from the filter bar to update all
+          charts simultaneously. Benchmarks company revenue against
+          <code style="font-family:var(--font-mono);font-size:10px">f_industry.avg_revenue_per_co</code>
+          for the matching industry and period.
         </div>
       </div>
+      <div class="card" style="margin-top:8px">
+        <div class="card-hdr">
+          <div>
+            <div class="card-title">Company drill-down</div>
+            <div class="card-sub">Revenue · expenses · margin · industry benchmark</div>
+          </div>
+          <span class="schema-tag analytics">analytics schema</span>
+        </div>
+        <div class="card-body flush">
+          <div id="company-mount" style="width:100%; height:700px;"></div>
+        </div>
+      </div>
+    </div>
 
       <!-- ── Q2: Volume by fiscal quarter + currency ── -->
       <div id="quarter">
@@ -349,74 +294,49 @@
         </div>
       </div>
 
-      <!-- ── Q1 industry breakdown ── -->
-      <div id="industry">
-        <div class="section-hdr"><h2>Industry breakdown</h2><span class="section-sub">— d_company.industry</span></div>
-        <div class="col-2-3">
-          <div class="card">
-            <div class="card-hdr">
-              <div class="card-title">Revenue share by industry</div>
-              <div class="card-sub">f_transaction → d_company · grouped by industry</div>
-            </div>
-            <div class="card-body flush">
-              <div class="embed-mount" style="min-height:160px">
-                <div class="embed-mount-hint">Superset pie/bar chart · <code>d_company.industry</code></div>
-              </div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-hdr">
-              <div class="card-title">By HQ country</div>
-              <div class="card-sub">d_company.hq_country</div>
-            </div>
-            <div class="card-body">
-              <!-- Placeholder stat rows — replace with API data -->
-              <div class="stat-row">
-                <span class="stat-row-label">United States</span>
-                <span class="stat-row-value green">$2.1M</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Germany</span>
-                <span class="stat-row-value">$980K</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">United Kingdom</span>
-                <span class="stat-row-value">$640K</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Japan</span>
-                <span class="stat-row-value">$420K</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Other</span>
-                <span class="stat-row-value muted">$680K</span>
-              </div>
-            </div>
-          </div>
+      <!-- ── Industry View ── -->
+    <div id="industry">
+      <div class="section-hdr">
+        <h2>Industry view</h2>
+        <span class="section-sub">— industry_detail · f_industry pre-aggregated</span>
+      </div>
+      <div class="query-ref" style="margin: 8px 0 10px">
+        <div class="query-ref-label">Pre-aggregated snapshot table</div>
+        <div class="query-ref-name">f_industry → d_industry → d_time</div>
+        <div class="query-ref-desc">
+          Cross-industry benchmarks using the pre-computed
+          <code style="font-family:var(--font-mono);font-size:10px">f_industry</code>
+          aggregate table. Grain is one row per industry per day — queries are fast
+          regardless of underlying transaction volume. Revenue growth rate is stored
+          directly and requires no computation at query time.
         </div>
       </div>
-
+      <div class="card" style="margin-top:8px">
+        <div class="card-hdr">
+          <div>
+            <div class="card-title">Industry benchmarks</div>
+            <div class="card-sub">Revenue · net profit · growth rate · company count</div>
+          </div>
+          <span class="schema-tag analytics">analytics schema</span>
+        </div>
+        <div class="card-body flush">
+          <div id="industry-mount" style="width:100%; height:700px;"></div>
+        </div>
+      </div>
+    </div>
     </div><!-- /.content -->
   </div><!-- /.main -->
 </div><!-- /.shell -->
 
+<script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
 <script>
-// Quarter filter state
-function setQuarter(q, btn) {
-  document.querySelectorAll('#quarter-picker .btn').forEach(b => b.classList.remove('primary'));
-  btn.classList.add('primary');
-  const label = document.getElementById('quarter-label');
-  const param  = document.getElementById('quarter-param');
-  if (q === null) {
-    label.textContent = 'All';
-    param.textContent = 'fisc_quarter = *';
-  } else {
-    label.textContent = 'Q' + q;
-    param.textContent = 'fisc_quarter = ' + q;
-    // TODO: pass q to Superset filter API or re-fetch with ?quarter=q
-  }
-}
+  window.onload = function () {
+    resizeMount('company-mount',  '100%', '100%');
+    resizeMount('industry-mount', '100%', '100%');
+    embedDashboard(DASHBOARDS.company,  'company-mount');
+    embedDashboard(DASHBOARDS.industry, 'industry-mount');
+  };
 </script>
 </body>
 </html>

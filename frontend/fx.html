@@ -167,9 +167,7 @@
               </button>
             </div>
             <div class="card-body flush">
-              <div class="embed-mount" style="min-height:120px">
-                <div class="embed-mount-hint">Superset chart · Q3 · <code>base_cncy / quote_cncy</code></div>
-              </div>
+              <div id="fx-q3-mount" style="width:100%; height:400px;"></div>
               <table class="data-table">
                 <thead>
                   <tr>
@@ -274,9 +272,7 @@
             </button>
           </div>
           <div class="card-body flush">
-            <div class="embed-mount" style="min-height:120px">
-              <div class="embed-mount-hint">Superset chart · Q4 · fee burden ranked by company</div>
-            </div>
+            <div id="fx-q4-mount" style="width:100%; height:400px;"></div>
             <table class="data-table">
               <thead>
                 <tr>
@@ -323,6 +319,15 @@
   </div><!-- /.main -->
 </div><!-- /.shell -->
 
+<script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
+<script>
+  window.onload = function () {
+    resizeMount('fx-q3-mount', '100%', '100%');
+    resizeMount('fx-q4-mount', '100%', '100%');
+    embedDashboard(DASHBOARDS.fxRates, 'fx-q3-mount');
+    embedDashboard(DASHBOARDS.fxFees,  'fx-q4-mount');
+  };
+</script>
 </body>
 </html>

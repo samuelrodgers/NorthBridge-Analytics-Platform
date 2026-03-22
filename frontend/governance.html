@@ -174,9 +174,7 @@
               Or replace with a fetch() to a FastAPI endpoint that queries:
               SELECT * FROM quarantine.failed_rows ORDER BY flagged_at DESC
             -->
-            <div class="embed-mount" style="min-height:100px" id="quarantine-mount">
-              <div class="embed-mount-hint">Superset table chart · quarantine schema view</div>
-            </div>
+            <div id="quarantine-mount" style="width:100%; height:500px;"></div>
             <table class="data-table">
               <thead>
                 <tr>
@@ -252,15 +250,9 @@
       </div>
 
       <!-- ── Pipeline status ── -->
-      <div id="pipeline">
-        <div class="section-hdr">
-          <h2>Pipeline status</h2>
-          <span class="section-sub">— raw schema vs analytics schema</span>
-        </div>
+      <div class="col-2" style="margin-top:8px">
 
-        <div class="col-2" style="margin-top:8px">
-
-          <!-- Row count comparison -->
+          <!-- Row count card — static until DB-06b dashboard is built -->
           <div class="card">
             <div class="card-hdr">
               <div>
@@ -270,50 +262,11 @@
               <span class="schema-tag both">both schemas</span>
             </div>
             <div class="card-body">
-              <!--
-                Wire to a FastAPI endpoint or Superset metric:
-                SELECT
-                  (SELECT COUNT(*) FROM raw.transaction_event) AS raw_count,
-                  (SELECT COUNT(*) FROM analytics.f_transaction) AS analytics_count
-              -->
-              <div class="stat-row">
-                <span class="stat-row-label">raw.transaction_event</span>
-                <span class="stat-row-value accent mono">12,861</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">analytics.f_transaction</span>
-                <span class="stat-row-value green mono">12,847</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Quarantined (rejected)</span>
-                <span class="stat-row-value" style="color:var(--red)" class="mono">14</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Completion rate</span>
-                <span class="stat-row-value green">99.89%</span>
-              </div>
-
-              <div style="margin-top:14px">
-                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;font-family:var(--font-mono)">
-                  <span>analytics completeness</span><span>99.89%</span>
-                </div>
-                <div class="progress-bar-track">
-                  <div class="progress-bar-fill green" style="width:99.89%"></div>
-                </div>
-              </div>
-
-              <div style="margin-top:10px">
-                <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-tertiary);margin-bottom:4px;font-family:var(--font-mono)">
-                  <span>quarantine rate</span><span>0.11%</span>
-                </div>
-                <div class="progress-bar-track">
-                  <div class="progress-bar-fill red" style="width:0.11%"></div>
-                </div>
-              </div>
+              <div id="health-mount" style="width:100%; height:300px;"></div>
             </div>
           </div>
 
-          <!-- FX rate pipeline -->
+          <!-- FX rate pipeline card — static until DB-06b dashboard is built -->
           <div class="card">
             <div class="card-hdr">
               <div>
@@ -323,37 +276,7 @@
               <span class="schema-tag both">both schemas</span>
             </div>
             <div class="card-body">
-              <div class="stat-row">
-                <span class="stat-row-label">raw.fx_rate rows</span>
-                <span class="stat-row-value accent mono">3,420</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">analytics.f_fx_rate rows</span>
-                <span class="stat-row-value green mono">3,420</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">FX rate source</span>
-                <span class="stat-row-value mono muted">api</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Unique currency pairs</span>
-                <span class="stat-row-value mono">12</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Oldest rate</span>
-                <span class="stat-row-value mono muted">2024-01-02</span>
-              </div>
-              <div class="stat-row">
-                <span class="stat-row-label">Latest rate</span>
-                <span class="stat-row-value green mono">2025-03-12</span>
-              </div>
-
-              <div style="margin-top:14px">
-                <div class="notice info">
-                  <span class="notice-icon">ℹ</span>
-                  <span>Uniqueness enforced by <code style="font-family:var(--font-mono);font-size:10px">idx_fx_rate_cncy_ts</code> constraint on (base_cncy, quote_cncy, fx_timestamp).</span>
-                </div>
-              </div>
+              <div id="fx-health-mount" style="width:100%; height:300px;"></div>
             </div>
           </div>
 
@@ -367,38 +290,27 @@
               <div class="card-sub">ingestion_timestamp over time · BRIN index on raw.fx_rate</div>
             </div>
             <span class="schema-tag raw">raw schema</span>
-            <button class="btn">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
-              </svg>
-              Export CSV
-            </button>
           </div>
           <div class="card-body flush">
-            <!--
-              Wire to Superset chart querying:
-              SELECT date_trunc('hour', ingestion_timestamp) AS hour,
-                     COUNT(*) AS rows_ingested
-              FROM raw.transaction_event
-              GROUP BY 1 ORDER BY 1
-              Note: BRIN index (idx_fx_rate_ts_brin) on raw.fx_rate makes time-range
-              scans very cheap at large scale.
-            -->
-            <div class="embed-mount" style="min-height:160px">
-              <div class="embed-mount-hint">
-                Superset time-series · <code>raw.transaction_event.ingestion_timestamp</code><br>
-                BRIN index on <code>raw.fx_rate.fx_timestamp</code> keeps range scans efficient
-              </div>
-            </div>
+            <div id="pipeline-mount" style="width:100%; height:400px;"></div>
           </div>
-        </div>
-
-      </div><!-- /#pipeline -->
+        </div><!-- /.pipeline -->
 
     </div><!-- /.content -->
   </div><!-- /.main -->
 </div><!-- /.shell -->
 
+<script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
+<script>
+  window.onload = function () {
+    resizeMount('health-mount',     '100%', '100%');
+    resizeMount('quarantine-mount', '100%', '100%');
+    resizeMount('pipeline-mount',   '100%', '100%');
+    embedDashboard(DASHBOARDS.dataHealth,  'health-mount');
+    embedDashboard(DASHBOARDS.quarantine,  'quarantine-mount');
+    embedDashboard(DASHBOARDS.pipeline,    'pipeline-mount');
+  };
+</script>
 </body>
 </html>
