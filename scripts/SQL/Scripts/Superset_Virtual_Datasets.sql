@@ -1,4 +1,4 @@
--- industry_benchmark
+-- tx_industry_benchmark
 /*
 the company vs industry avg comparison, name reflects it joins transactions to the industry aggregate for benchmarking
 */
