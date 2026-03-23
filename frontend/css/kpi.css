@@ -68,6 +68,12 @@
     display: none !important;
 }
 
+/* Hides vertical/horizontal resize dividers */
+.grid-column-guide, 
+.grid-row-guide {
+    display: none !important;
+}
+
 /* ── Remove row/grid padding so charts fill the iframe ── */
 .dragdroppable-row,
 .background--transparent {
