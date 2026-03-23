@@ -224,8 +224,9 @@
 <script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
 <script type="module">
-  import { requireAuth } from "./auth.js";
+  import { requireAuth, logout } from "./auth.js";
   await requireAuth();
+  document.getElementById("logout-btn").addEventListener("click", logout);
 </script>
 <script>
   window.onload = function () {
