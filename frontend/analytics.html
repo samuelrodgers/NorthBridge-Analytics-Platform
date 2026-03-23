@@ -255,7 +255,7 @@
 <script src="shared.js"></script>
 <script type="module">
   import { requireAuth } from "./auth.js";
-  window.__authReady = requireAuth();
+  await requireAuth();
 </script>
 </body>
 </html>
