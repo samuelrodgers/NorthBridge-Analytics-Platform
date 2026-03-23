@@ -74,11 +74,12 @@
     </a>
 
     <div class="sb-footer">
-      <div class="sb-avatar">AA</div>
+      <div class="sb-avatar" id="nav-user-avatar">AA</div>
       <div class="sb-user-info">
-        <div class="sb-user-name">analytics</div>
+        <div class="sb-user-name" id="nav-user-name">analytics</div>
         <div class="sb-user-role">analyst</div>
       </div>
+      <button id="logout-btn" title="Logout" style="margin-left:auto; background:none; border:none; cursor:pointer; color:inherit; font-size:1.1rem;">&#x2192;</button>
     </div>
   </nav>
 
@@ -197,8 +198,9 @@
 <script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
 <script type="module">
-  import { requireAuth } from "./auth.js";
-  window.__authReady = requireAuth();
+  import { requireAuth, logout } from "./auth.js";
+  const user = await requireAuth();
+  document.getElementById("logout-btn").addEventListener("click", logout);
 </script>
 <script>
   window.onload = function () {
