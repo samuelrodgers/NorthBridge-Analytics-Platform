@@ -334,8 +334,8 @@ def _coerce_types(df: pd.DataFrame) -> pd.DataFrame:
 # of failure records when a row violates multiple rules.
 
 def _is_null(val) -> bool:
-    """True if val is None or a float NaN."""
-    return val is None or (isinstance(val, float) and np.isnan(val))
+    """True if val is None, a float NaN, or pd.NaT."""
+    return val is None or val is pd.NaT or (isinstance(val, float) and np.isnan(val))
 
 _QUARANTINE_RULES: list[tuple[str, str, object]] = [
     (

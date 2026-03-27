@@ -13,7 +13,6 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
-from bouncer import app
 from config import CURRENCY_CODES
 from noise import apply_noise
 from pipeline import normalize_receipts, validate_normalization_report
@@ -23,9 +22,6 @@ from loader import get_connection, load_all
 import transform
 import os
 from dotenv import load_dotenv
-from auth_routes import router as auth_router
-
-app.include_router(auth_router)
 
 load_dotenv()
 
@@ -233,28 +229,12 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="NAP pipeline runner")
+    parser = argparse.ArgumentParser(description="NAP pipeline — production CRON entry point")
     parser.add_argument(
         "-n", "--transactions",
         type=int,
         default=10_000,
         help="Number of transactions to generate (default: 10000)"
-    )
-    parser.add_argument(
-        "--benchmark",
-        action="store_true",
-        help="Print timing and row-count summary after run"
-    )
-    parser.add_argument(
-        "--noise",
-        choices=["low", "medium", "high"],
-        default="medium",
-        help="Noise level to apply (default: medium)"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Run Python pipeline only, skip DB load and transform"
     )
     parser.add_argument(
         "--fx-source",
@@ -265,20 +245,9 @@ if __name__ == "__main__":
             "'live' reads from raw.fx_rate populated by live_fx.py"
         )
     )
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="Skip noise and normalization, load clean data directly"
-    )
     args = parser.parse_args()
 
     if args.fx_source:
         fx_source.set_source(args.fx_source)
 
-    run(
-        n_transactions=args.transactions,
-        benchmark=args.benchmark,
-        noise_level=args.noise,
-        dry_run=args.dry_run,
-        clean=args.clean,
-    )
+    run(n_transactions=args.transactions)

@@ -26,6 +26,33 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def _clean(v):
+    """Convert pandas NaN/NaT to None so psycopg2 maps them to SQL NULL."""
+    import math
+    if v is None:
+        return None
+    try:
+        import pandas as _pd
+        if v is _pd.NaT:
+            return None
+    except Exception:
+        pass
+    try:
+        if math.isnan(v):
+            return None
+    except TypeError:
+        pass
+    return v
+
+
+def _clean_rows(df, cols):
+    """Build a list of tuples from df[cols] with NaN/NaT replaced by None."""
+    return [
+        tuple(_clean(v) for v in row)
+        for row in df[cols].itertuples(index=False, name=None)
+    ]
+
+
 # ── Connection ────────────────────────────────────────────────────────────────
 
 def get_connection():
@@ -140,7 +167,7 @@ def load_transactions(conn, tx_df, batch_size=10_000, batch_id=None):
     if missing:
         raise ValueError(f"tx_df is missing required columns: {missing}")
 
-    rows_list = list(df[cols].itertuples(index=False, name=None))
+    rows_list = _clean_rows(df, cols)
     total = len(rows_list)
     inserted = 0
 
@@ -267,7 +294,7 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
         if c not in df.columns:
             df[c] = None
 
-    rows_list = list(df[cols].itertuples(index=False, name=None))
+    rows_list = _clean_rows(df, cols)
     total = len(rows_list)
     inserted = 0
 
