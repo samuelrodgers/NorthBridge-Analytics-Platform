@@ -5,10 +5,10 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
 SUPERSET_URL = "http://127.0.0.1:8088"
 ALLOWED_DASHBOARDS = [
-    "dec25efe-dd1e-460b-beb2-0998ee2e8db2",
-    "f2ad7011-606c-4a3f-a5a7-619dfeb7c7cd",
-    "3b63a5b1-fe36-4920-b3c8-bbd7b476fb07",
-    "64c2d24e-fe51-4102-8a21-94e95d3eb0f0"
+    "4f55a708-c316-406e-8480-1aa3d071631f",
+    "813326be-8203-4dce-9908-25e28d9f0e6e",
+    "0b663ea7-b0d8-4611-9ca4-a8761e17d875",
+    "75c09c9f-faf0-448b-9215-bda18bbf87f7"
 ]
 ADMIN_USER = "superset_admin"
 ADMIN_PASS = "1a14g2F1!"
