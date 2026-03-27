@@ -39,10 +39,10 @@
 // After creating each dashboard in Superset, copy its UUID from
 // the URL (superset/dashboard/YOUR-UUID-HERE/) and paste it below.
 const DASHBOARDS = {
-  kpiStrip:   '813326be-8203-4dce-9908-25e28d9f0e6e',
-  mainTx:     '4f55a708-c316-406e-8480-1aa3d071631f',
-  company:    '0b663ea7-b0d8-4611-9ca4-a8761e17d875',
-  industry:   '75c09c9f-faf0-448b-9215-bda18bbf87f7',   // TODO: paste UUID after creating dashboard
+  kpiStrip:   'f2ad7011-606c-4a3f-a5a7-619dfeb7c7cd',
+  mainTx:     'dec25efe-dd1e-460b-beb2-0998ee2e8db2',
+  company:    '3b63a5b1-fe36-4920-b3c8-bbd7b476fb07',
+  industry:   '64c2d24e-fe51-4102-8a21-94e95d3eb0f0', 
   quarantine: '',   // TODO: paste UUID after creating dashboard
   dataHealth: '',   // TODO: paste UUID after creating dashboard
   pipeline:   '',   // TODO: paste UUID after creating dashboard
