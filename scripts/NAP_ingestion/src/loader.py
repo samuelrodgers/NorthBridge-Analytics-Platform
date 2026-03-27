@@ -12,7 +12,8 @@
 #   load_fx_rates(conn, fx_df)
 #   load_transactions(conn, tx_df)
 #   load_expense_events(conn, expense_df)
-#   load_all(conn, fx_df, tx_df, expense_df=None)
+#   load_quarantine(conn, quarantine_df, batch_id=None)
+#   load_all(conn, fx_df, tx_df, expense_df=None, quarantine_df=None)
 
 import os
 import logging
@@ -209,33 +210,111 @@ def load_expense_events(conn, expense_df, batch_size=10_000):
     return total
 
 
-# ── Convenience: load all raw tables ─────────────────────────────────────────
+# ── Quarantine Loader ─────────────────────────────────────────────────────────
 
-def load_all(conn, fx_df, tx_df, expense_df=None, batch_size=10_000, batch_id=None):
+def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
     """
-    Load FX rates, transactions, and optionally expense events in one call.
+    Insert quarantine records into raw.quarantine_event.
 
-    Insertion order:
-        1. fx_rate          — must exist before transform joins on FX timestamps
-        2. transaction_event
-        3. expense_event    — optional; skipped if expense_df is None
+    Each row represents one rule violation from pipeline.py's
+    _split_quarantine(). A single transaction can produce multiple rows
+    if it violates more than one rule.
 
-    expense_df is optional so that callers which do not yet generate expense
-    data (e.g. --dry-run, --clean, or test harnesses) do not need to change
-    their call signature.
+    Expected columns in quarantine_df:
+        tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
+        tx_timestamp, failure_code, failure_reason
+
+    quarantine_id and ingestion_timestamp are DB-generated defaults.
 
     Args:
-        conn:        psycopg2 connection
-        fx_df:       pd.DataFrame — FX rate rows
-        tx_df:       pd.DataFrame — transaction rows
-        expense_df:  pd.DataFrame | None — expense rows (omit to skip)
-        batch_size:  rows per execute_values call
-        batch_id:    optional UUID string — forwarded to load_transactions()
+        conn:           psycopg2 connection
+        quarantine_df:  pd.DataFrame — output of _split_quarantine()
+        batch_size:     rows per execute_values call
+        batch_id:       optional UUID string identifying this pipeline run
+
+    Returns:
+        Total number of rows processed.
+    """
+    if quarantine_df is None or len(quarantine_df) == 0:
+        logger.info("quarantine_event: no rows to load")
+        return 0
+
+    df = quarantine_df.copy()
+    df["batch_id"] = batch_id
+
+    sql = """
+        INSERT INTO raw.quarantine_event
+            (tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
+             tx_timestamp, failure_code, failure_reason, batch_id)
+        VALUES %s
+        ON CONFLICT (quarantine_id) DO NOTHING
+    """
+
+    cols = [
+        "tx_id", "c_id", "base_cncy", "quote_cncy",
+        "amount", "fee_amount", "tx_timestamp",
+        "failure_code", "failure_reason", "batch_id",
+    ]
+
+    required = ["failure_code", "failure_reason"]
+    missing = [c for c in required if c not in quarantine_df.columns]
+    if missing:
+        raise ValueError(f"quarantine_df is missing required columns: {missing}")
+
+    # Ensure all expected columns exist — quarantined rows may have NULLs
+    # in transaction columns (that's the whole reason they were quarantined)
+    for c in cols:
+        if c not in df.columns:
+            df[c] = None
+
+    rows_list = list(df[cols].itertuples(index=False, name=None))
+    total = len(rows_list)
+    inserted = 0
+
+    with conn.cursor() as cur:
+        for i in range(0, total, batch_size):
+            batch = rows_list[i : i + batch_size]
+            execute_values(cur, sql, batch)
+            inserted += len(batch)
+            logger.info(f"quarantine_event: inserted batch {i}–{i + len(batch)} ({inserted}/{total})")
+
+    conn.commit()
+    logger.info(f"quarantine_event: load complete — {total} rows processed")
+    return total
+
+
+# ── Convenience: load all raw tables ─────────────────────────────────────────
+
+def load_all(conn, fx_df, tx_df, expense_df=None, quarantine_df=None,
+             batch_size=10_000, batch_id=None):
+    """
+    Load FX rates, transactions, and optionally expense/quarantine events.
+
+    Insertion order:
+        1. fx_rate           — must exist before transform joins on FX timestamps
+        2. transaction_event
+        3. expense_event     — optional; skipped if expense_df is None
+        4. quarantine_event  — optional; skipped if quarantine_df is None/empty
+
+    expense_df and quarantine_df are optional so that callers which do not
+    yet generate that data (e.g. --dry-run, --clean, or test harnesses)
+    do not need to change their call signature.
+
+    Args:
+        conn:           psycopg2 connection
+        fx_df:          pd.DataFrame — FX rate rows
+        tx_df:          pd.DataFrame — transaction rows
+        expense_df:     pd.DataFrame | None — expense rows (omit to skip)
+        quarantine_df:  pd.DataFrame | None — quarantine rows (omit to skip)
+        batch_size:     rows per execute_values call
+        batch_id:       optional UUID string — forwarded to load_transactions()
+                        and load_quarantine()
 
     Returns:
         dict with row counts:
-            {"fx_rates": n, "transactions": n, "expenses": n}
+            {"fx_rates": n, "transactions": n, "expenses": n, "quarantine": n}
         "expenses" is 0 when expense_df is None.
+        "quarantine" is 0 when quarantine_df is None or empty.
     """
     logger.info("Starting load_all...")
 
@@ -246,8 +325,12 @@ def load_all(conn, fx_df, tx_df, expense_df=None, batch_size=10_000, batch_id=No
     if expense_df is not None:
         exp_count = load_expense_events(conn, expense_df, batch_size=batch_size)
 
+    q_count = 0
+    if quarantine_df is not None:
+        q_count = load_quarantine(conn, quarantine_df, batch_size=batch_size, batch_id=batch_id)
+
     logger.info(
         f"load_all complete — "
-        f"fx: {fx_count}, tx: {tx_count}, expenses: {exp_count}"
+        f"fx: {fx_count}, tx: {tx_count}, expenses: {exp_count}, quarantine: {q_count}"
     )
-    return {"fx_rates": fx_count, "transactions": tx_count, "expenses": exp_count}
+    return {"fx_rates": fx_count, "transactions": tx_count, "expenses": exp_count, "quarantine": q_count}
