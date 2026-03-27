@@ -1,19 +1,224 @@
+import os
+import secrets
+import psycopg2
+import psycopg2.extras
 import requests
-from fastapi import FastAPI, HTTPException, Query
+import bcrypt as _bcrypt
+from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
+from fastapi import FastAPI, HTTPException, Query, Response, Cookie, Depends
 from fastapi.middleware.cors import CORSMiddleware
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
-SUPERSET_URL = "http://127.0.0.1:8088"
+from pydantic import BaseModel, EmailStr
+from dotenv import load_dotenv
+from jose import JWTError, jwt
+
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+SUPERSET_URL      = os.getenv("SUPERSET_URL", "http://127.0.0.1:8088")
+ADMIN_USER        = os.getenv("SUPERSET_ADMIN_USER", "superset_admin")
+ADMIN_PASS        = os.getenv("SUPERSET_ADMIN_PASS", "")
+DATABASE_URL      = os.getenv("DATABASE_URL", "")
+JWT_SECRET_KEY    = os.getenv("JWT_SECRET_KEY", "changeme")
+ALGORITHM         = "HS256"
+TOKEN_EXPIRE_MINS = 60 * 8
+
 ALLOWED_DASHBOARDS = [
     "4f55a708-c316-406e-8480-1aa3d071631f",
     "813326be-8203-4dce-9908-25e28d9f0e6e",
     "0b663ea7-b0d8-4611-9ca4-a8761e17d875",
     "75c09c9f-faf0-448b-9215-bda18bbf87f7"
 ]
-ADMIN_USER = "superset_admin"
-ADMIN_PASS = "1a14g2F1!"
-@app.get("/get-token")
-def get_token(dashboard_id: str = Query(..., description="UUID of the dashboard to embed")):
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://samrodgers.site", "https://superset.samrodgers.site"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ---------------------------------------------------------------------------
+# Password hashing
+# ---------------------------------------------------------------------------
+def hash_password(plain: str) -> str:
+    return _bcrypt.hashpw(plain.encode(), _bcrypt.gensalt()).decode()
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return _bcrypt.checkpw(plain.encode(), hashed.encode())
+
+# ---------------------------------------------------------------------------
+# JWT
+# ---------------------------------------------------------------------------
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINS)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=ALGORITHM)
+
+def decode_access_token(token: str):
+    try:
+        return jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+
+# ---------------------------------------------------------------------------
+# Database
+# ---------------------------------------------------------------------------
+@contextmanager
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+# ---------------------------------------------------------------------------
+# Auth cookie dependency
+# ---------------------------------------------------------------------------
+def require_auth_cookie(access_token: str = Cookie(default=None)):
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = decode_access_token(access_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return payload
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+class RegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+# ---------------------------------------------------------------------------
+# Auth routes
+# ---------------------------------------------------------------------------
+@app.post("/api/auth/register", status_code=201)
+def register(body: RegisterRequest):
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT id FROM auth.users WHERE email = %s", (body.email,))
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="Email already registered")
+        pw_hash = hash_password(body.password)
+        cur.execute(
+            "INSERT INTO auth.users (name, email, password_hash) VALUES (%s, %s, %s)",
+            (body.name, body.email, pw_hash)
+        )
+    return {"message": "Account created. Please log in."}
+
+@app.post("/api/auth/login")
+def login(body: LoginRequest, response: Response):
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT id, name, email, password_hash FROM auth.users WHERE email = %s",
+            (body.email,)
+        )
+        user = cur.fetchone()
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_access_token({"sub": str(user["id"]), "email": user["email"]})
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=60 * 60 * 8
+    )
+    return {"message": "Logged in", "name": user["name"], "email": user["email"]}
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token")
+    return {"message": "Logged out"}
+
+@app.get("/api/auth/me")
+def me(payload: dict = Depends(require_auth_cookie)):
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT id, name, email FROM auth.users WHERE id = %s",
+            (int(payload["sub"]),)
+        )
+        user = cur.fetchone()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return {"id": user["id"], "name": user["name"], "email": user["email"]}
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(body: ForgotPasswordRequest):
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT id FROM auth.users WHERE email = %s", (body.email,))
+        user = cur.fetchone()
+        if user:
+            token = secrets.token_urlsafe(32)
+            expires = datetime.now(timezone.utc) + timedelta(hours=1)
+            cur.execute(
+                """UPDATE auth.users
+                   SET reset_token = %s, reset_token_expires_at = %s
+                   WHERE id = %s""",
+                (token, expires, user["id"])
+            )
+            print(f"[DEV] Reset token for {body.email}: {token}", flush=True)
+    return {"message": "If that email exists, a reset link has been sent."}
+
+@app.post("/api/auth/reset-password")
+def reset_password(body: ResetPasswordRequest):
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT id, reset_token_expires_at FROM auth.users WHERE reset_token = %s",
+            (body.token,)
+        )
+        user = cur.fetchone()
+        if not user:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        if datetime.now(timezone.utc) > user["reset_token_expires_at"]:
+            raise HTTPException(status_code=400, detail="Reset token has expired")
+        new_hash = hash_password(body.new_password)
+        cur.execute(
+            """UPDATE auth.users
+               SET password_hash = %s, reset_token = NULL, reset_token_expires_at = NULL
+               WHERE id = %s""",
+            (new_hash, user["id"])
+        )
+    return {"message": "Password updated. Please log in."}
+
+# ---------------------------------------------------------------------------
+# Superset guest token (protected)
+# ---------------------------------------------------------------------------
+@app.get("/api/get-token")
+def get_token(
+    dashboard_id: str = Query(..., description="UUID of the dashboard to embed"),
+    payload: dict = Depends(require_auth_cookie)
+):
     if dashboard_id not in ALLOWED_DASHBOARDS:
         raise HTTPException(status_code=403, detail="Dashboard not authorized")
     try:
@@ -24,19 +229,21 @@ def get_token(dashboard_id: str = Query(..., description="UUID of the dashboard 
             return {"error": f"Login failed with status {auth_resp.status_code}"}
         access_token = auth_resp.json().get("access_token")
         headers = {"Authorization": f"Bearer {access_token}"}
-        payload = {
+        guest_payload = {
             "user": {"username": "guest", "first_name": "Guest", "last_name": "User"},
             "resources": [{"type": "dashboard", "id": dashboard_id}],
             "rls": []
         }
         r = requests.post(
             f"{SUPERSET_URL}/api/v1/security/guest_token/",
-            json=payload,
+            json=guest_payload,
             headers=headers
         )
         return r.json()
     except Exception as e:
         return {"error": "Bouncer Script Error", "details": str(e)}
+
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
