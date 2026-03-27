@@ -244,6 +244,109 @@ def get_token(
         return {"error": "Bouncer Script Error", "details": str(e)}
 
 # ---------------------------------------------------------------------------
+# Quarantine endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/quarantine/summary")
+def quarantine_summary(payload: dict = Depends(require_auth_cookie)):
+    """
+    Breakdown of quarantine violations by source and failure code.
+    Also includes a cross-layer contamination count (should always be 0).
+    Intended for badge counts and overview panels on page load.
+    """
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("""
+            SELECT source, failure_code, COUNT(*) AS count
+            FROM analytics.v_quarantine_log
+            GROUP BY source, failure_code
+            ORDER BY source, count DESC
+        """)
+        summary = [dict(r) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT COUNT(*) AS cross_layer_contamination
+            FROM analytics.v_quarantine_log p
+            JOIN analytics.v_quarantine_log s
+              ON p.tx_id = s.tx_id
+             AND p.failure_code = s.failure_code
+             AND p.source = 'python_layer'
+             AND s.source = 'sql_layer'
+        """)
+        contamination = cur.fetchone()["cross_layer_contamination"]
+
+    return {
+        "summary": summary,
+        "cross_layer_contamination": contamination,
+    }
+
+
+@app.get("/api/quarantine/rows")
+def quarantine_rows(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    failure_code: str = Query(default=None),
+    source: str = Query(default=None, pattern="^(python_layer|sql_layer)$"),
+    since: datetime = Query(default=None),
+    payload: dict = Depends(require_auth_cookie),
+):
+    """
+    Paginated quarantine rows from analytics.v_quarantine_log.
+
+    Optional filters:
+        failure_code — e.g. NULL_COMPANY_ID
+        source       — python_layer or sql_layer
+        since        — only rows with ingestion_timestamp >= this value
+    """
+    filters = []
+    params = []
+
+    if failure_code:
+        filters.append("failure_code = %s")
+        params.append(failure_code)
+    if source:
+        filters.append("source = %s")
+        params.append(source)
+    if since:
+        filters.append("ingestion_timestamp >= %s")
+        params.append(since)
+
+    where = ("WHERE " + " AND ".join(filters)) if filters else ""
+    offset = (page - 1) * page_size
+
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute(
+            f"SELECT COUNT(*) AS total FROM analytics.v_quarantine_log {where}",
+            params,
+        )
+        total = cur.fetchone()["total"]
+
+        cur.execute(
+            f"""
+            SELECT tx_id, c_id, base_cncy, tx_timestamp, amount, fee_amount,
+                   quote_cncy, ingestion_timestamp, failure_code, failure_reason,
+                   batch_id, source
+            FROM analytics.v_quarantine_log
+            {where}
+            ORDER BY ingestion_timestamp DESC
+            LIMIT %s OFFSET %s
+            """,
+            params + [page_size, offset],
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+
+    return {
+        "rows": rows,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
