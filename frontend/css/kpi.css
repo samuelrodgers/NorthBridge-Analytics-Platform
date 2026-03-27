@@ -68,10 +68,14 @@
     display: none !important;
 }
 
-/* Hides vertical/horizontal resize dividers */
-.grid-column-guide, 
-.grid-row-guide {
+/* ── Hide divider ── */
+.dashboard-component-divider {
     display: none !important;
+}
+
+/* ── Hide "empty row" text ── */
+.superset-wpdenk{
+  display: none
 }
 
 /* ── Remove row/grid padding so charts fill the iframe ── */
