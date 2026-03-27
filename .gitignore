@@ -1,2 +1,3 @@
 .venv/
 /scripts/NAP_ingestion/out/sql_errors.log
+scripts/NAP_ingestion/out/
