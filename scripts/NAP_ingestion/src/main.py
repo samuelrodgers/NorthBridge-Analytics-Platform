@@ -187,17 +187,23 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
 
     # ── Load raw ───────────────────────────────────────────────────────────────
     # Expense generation happens inside transform.run_transform() so that it
-    # runs within the analytics batch transaction. load_all handles FX rates
-    # and transactions only; expense_df is omitted here.
+    # runs within the analytics batch transaction. load_all handles FX rates,
+    # transactions, and quarantine rows; expense_df is omitted here.
     t0 = _timer()
     logger.info("Connecting to database...")
     conn = get_connection()
     try:
-        raw_counts = load_all(conn, fx, cleaned_tx, batch_size=batch_size, batch_id=batch_id)
+        raw_counts = load_all(
+            conn, fx, cleaned_tx,
+            quarantine_df=quarantined if not clean else None,
+            batch_size=batch_size,
+            batch_id=batch_id,
+        )
         logger.info(
             f"✅ Load complete — "
             f"fx_rate: {raw_counts['fx_rates']:,} rows, "
-            f"transaction_event: {raw_counts['transactions']:,} rows"
+            f"transaction_event: {raw_counts['transactions']:,} rows, "
+            f"quarantine_event: {raw_counts['quarantine']:,} rows"
         )
     finally:
         conn.close()
