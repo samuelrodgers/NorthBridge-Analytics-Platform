@@ -96,7 +96,7 @@ def load_fx_rates(conn, fx_df, batch_size=10_000):
 
 # ── Transaction Loader ────────────────────────────────────────────────────────
 
-def load_transactions(conn, tx_df, batch_size=10_000):
+def load_transactions(conn, tx_df, batch_size=10_000, batch_id=None):
     """
     Insert transaction rows into raw.transaction_event.
 
@@ -110,28 +110,36 @@ def load_transactions(conn, tx_df, batch_size=10_000):
         conn:       psycopg2 connection
         tx_df:      pd.DataFrame
         batch_size: rows per execute_values call
+        batch_id:   optional UUID string identifying this pipeline run;
+                    stamped on every row for Phase 1 ML grouping.
+                    If None, the DB column default (NULL) is used.
 
     Returns:
         Total number of rows processed.
     """
+    df = tx_df.copy()
+    df["batch_id"] = batch_id  # None -> NULL in DB; consistent across all rows
+
     sql = """
         INSERT INTO raw.transaction_event
             (tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
-             tx_timestamp)
+             tx_timestamp, batch_id)
         VALUES %s
         ON CONFLICT (tx_id) DO NOTHING
     """
 
     cols = [
         "tx_id", "c_id", "base_cncy", "quote_cncy",
-        "amount", "fee_amount", "tx_timestamp"
+        "amount", "fee_amount", "tx_timestamp", "batch_id"
     ]
 
-    missing = [c for c in cols if c not in tx_df.columns]
+    # Validate against original cols minus batch_id (we added that ourselves)
+    required = [c for c in cols if c != "batch_id"]
+    missing = [c for c in required if c not in tx_df.columns]
     if missing:
         raise ValueError(f"tx_df is missing required columns: {missing}")
 
-    rows_list = list(tx_df[cols].itertuples(index=False, name=None))
+    rows_list = list(df[cols].itertuples(index=False, name=None))
     total = len(rows_list)
     inserted = 0
 
@@ -203,7 +211,7 @@ def load_expense_events(conn, expense_df, batch_size=10_000):
 
 # ── Convenience: load all raw tables ─────────────────────────────────────────
 
-def load_all(conn, fx_df, tx_df, expense_df=None, batch_size=10_000):
+def load_all(conn, fx_df, tx_df, expense_df=None, batch_size=10_000, batch_id=None):
     """
     Load FX rates, transactions, and optionally expense events in one call.
 
@@ -222,6 +230,7 @@ def load_all(conn, fx_df, tx_df, expense_df=None, batch_size=10_000):
         tx_df:       pd.DataFrame — transaction rows
         expense_df:  pd.DataFrame | None — expense rows (omit to skip)
         batch_size:  rows per execute_values call
+        batch_id:    optional UUID string — forwarded to load_transactions()
 
     Returns:
         dict with row counts:
@@ -231,7 +240,7 @@ def load_all(conn, fx_df, tx_df, expense_df=None, batch_size=10_000):
     logger.info("Starting load_all...")
 
     fx_count  = load_fx_rates(conn, fx_df, batch_size=batch_size)
-    tx_count  = load_transactions(conn, tx_df, batch_size=batch_size)
+    tx_count  = load_transactions(conn, tx_df, batch_size=batch_size, batch_id=batch_id)
 
     exp_count = 0
     if expense_df is not None:

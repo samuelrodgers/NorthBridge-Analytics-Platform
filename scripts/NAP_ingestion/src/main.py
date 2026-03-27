@@ -115,6 +115,13 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
     end   = start + timedelta(minutes=window_minutes)
 
     logger.info(f"Window: {start.isoformat()} → {end.isoformat()}")
+
+    # Unique identifier for this pipeline run — stamped on every raw row
+    # so Phase 1 analysis can group failures and clean rows by ingestion batch.
+    import uuid as _uuid
+    batch_id = str(_uuid.uuid4())
+    logger.info(f"Batch ID: {batch_id}")
+
     logger.info(f"Generating {n_transactions:,} transactions over {window_minutes}min window...")
 
     # ── Generate ───────────────────────────────────────────────────────────────
@@ -186,7 +193,7 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
     logger.info("Connecting to database...")
     conn = get_connection()
     try:
-        raw_counts = load_all(conn, fx, cleaned_tx, batch_size=batch_size)
+        raw_counts = load_all(conn, fx, cleaned_tx, batch_size=batch_size, batch_id=batch_id)
         logger.info(
             f"✅ Load complete — "
             f"fx_rate: {raw_counts['fx_rates']:,} rows, "
