@@ -136,54 +136,21 @@
               <div class="card-title">Quarantine log</div>
               <div class="card-sub">Failed validation · OLAF process</div>
             </div>
-            <span class="pill red">14 rows</span>
+            <span class="pill red" id="quarantine-count">—</span>
             <a href="governance.html" class="btn">View all →</a>
           </div>
           <div class="card-body flush scrollable" style="max-height:300px">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Row ID</th>
+                  <th>tx_id</th>
                   <th>Failure</th>
-                  <th>Flagged</th>
+                  <th>Source</th>
+                  <th>Ingested</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr>
-                  <td class="mono">TXN-8801</td>
-                  <td><span class="pill red">null c_id</span></td>
-                  <td class="muted">today</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8799</td>
-                  <td><span class="pill amber">amt range</span></td>
-                  <td class="muted">today</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8754</td>
-                  <td><span class="pill red">dupe key</span></td>
-                  <td class="muted">today</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8612</td>
-                  <td><span class="pill red">FK violation</span></td>
-                  <td class="muted">yesterday</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8590</td>
-                  <td><span class="pill amber">cncy mismatch</span></td>
-                  <td class="muted">yesterday</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8499</td>
-                  <td><span class="pill gray">schema drift</span></td>
-                  <td class="muted">2d ago</td>
-                </tr>
-                <tr>
-                  <td class="mono">TXN-8401</td>
-                  <td><span class="pill amber">amt range</span></td>
-                  <td class="muted">2d ago</td>
-                </tr>
+              <tbody id="quarantine-tbody">
+                <tr><td colspan="4" class="muted" style="text-align:center;padding:16px">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -209,6 +176,64 @@
     embedDashboard(DASHBOARDS.kpiStrip, 'kpi-strip-mount');
     embedDashboard(DASHBOARDS.mainTx,   'superset-mount');
   };
+</script>
+<script>
+  // Pill colour by failure code
+  const PILL_COLOUR = {
+    NULL_COMPANY_ID:       'red',
+    INVALID_AMOUNT:        'red',
+    DUPLICATE_TX_ID:       'red',
+    NULL_TIMESTAMP:        'amber',
+    INVALID_BASE_CURRENCY: 'amber',
+    UNKNOWN_COMPANY:       'amber',
+  };
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function loadQuarantine() {
+    const tbody = document.getElementById('quarantine-tbody');
+    const countPill = document.getElementById('quarantine-count');
+    try {
+      const [rowsRes, summaryRes] = await Promise.all([
+        fetch('/api/quarantine/rows?page_size=10', { credentials: 'include' }),
+        fetch('/api/quarantine/summary',            { credentials: 'include' }),
+      ]);
+
+      if (!rowsRes.ok || !summaryRes.ok) throw new Error('API error');
+
+      const { rows, total } = await rowsRes.json();
+      const { summary }     = await summaryRes.json();
+
+      // Update badge count
+      const totalViolations = summary.reduce((sum, s) => sum + s.count, 0);
+      countPill.textContent = `${totalViolations} rows`;
+
+      // Render rows
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No quarantine rows.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => {
+        const colour = PILL_COLOUR[r.failure_code] || 'gray';
+        const txShort = r.tx_id ? r.tx_id.slice(0, 8) : '—';
+        return `<tr>
+          <td class="mono">${txShort}</td>
+          <td><span class="pill ${colour}">${r.failure_code}</span></td>
+          <td class="muted">${r.source === 'python_layer' ? 'python' : 'sql'}</td>
+          <td class="muted">${fmtDate(r.ingestion_timestamp)}</td>
+        </tr>`;
+      }).join('');
+
+    } catch (err) {
+      tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">Failed to load quarantine data.</td></tr>';
+      console.error('Quarantine fetch failed:', err);
+    }
+  }
+
+  loadQuarantine();
 </script>
 </body>
 </html>
