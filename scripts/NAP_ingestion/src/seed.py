@@ -1,19 +1,29 @@
 # seed.py
 # Local development entry point for the NAP pipeline.
 # Exposes all run() options as CLI flags for building and testing
-# different database states.
+# different database states, including historical date-range seeding.
 #
 # Usage:
-#   python seed.py                          # 10K rows, medium noise
-#   python seed.py -n 500 --noise high      # 500 rows, heavy noise
-#   python seed.py -n 1000 --clean          # 1K clean rows, no noise
-#   python seed.py -n 500 --dry-run         # normalize only, skip DB
-#   python seed.py -n 1000 --benchmark      # run with timing summary
-#   python seed.py --fx-source live         # use live FX rates from DB
+#   python seed.py                                    # 10K rows, medium noise, recent window
+#   python seed.py -n 500 --noise high                # 500 rows, heavy noise
+#   python seed.py -n 1000 --clean                    # 1K clean rows, no noise
+#   python seed.py -n 500 --dry-run                   # normalize only, skip DB
+#   python seed.py -n 1000 --benchmark                # run with timing summary
+#   python seed.py --fx-source live                   # use live FX rates from DB
+#
+#   # Historical seeding — spoof tx_timestamps over a past date range:
+#   python seed.py --years 2 -n 50000                 # 2-year range, 50K rows, 1 batch
+#   python seed.py --years 3 -n 20000 --batches 36    # 3 years, 36 monthly batches of 20K
+#   python seed.py --start-date 2022-01-01 --end-date 2024-12-31 --batches 12 -n 10000
+#
+# --batches splits the date range into equal slices and calls run() once per slice.
+# More batches → more realistic spread of ingestion_timestamps, but slower overall.
 #
 # Production CRON uses main.py directly — do not use this file on the server.
 
 import argparse
+from datetime import datetime, timedelta, timezone
+
 import fx_source
 from main import run
 
@@ -23,7 +33,7 @@ if __name__ == "__main__":
         "-n", "--transactions",
         type=int,
         default=10_000,
-        help="Number of transactions to generate (default: 10000)"
+        help="Number of transactions to generate per batch (default: 10000)"
     )
     parser.add_argument(
         "--noise",
@@ -44,7 +54,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--benchmark",
         action="store_true",
-        help="Print timing and row-count summary after run"
+        help="Print timing and row-count summary after each batch"
     )
     parser.add_argument(
         "--fx-source",
@@ -55,15 +65,92 @@ if __name__ == "__main__":
             "'live' reads from raw.fx_rate populated by live_fx.py"
         )
     )
+
+    # ── Historical date range ────────────────────────────────────────────────
+    date_group = parser.add_argument_group(
+        "historical seeding",
+        "Override the default recent-window with an explicit date range. "
+        "Use --years as a shortcut, or --start-date + --end-date for full control."
+    )
+    date_group.add_argument(
+        "--years",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Seed N years of history ending today (e.g. --years 3)"
+    )
+    date_group.add_argument(
+        "--start-date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Explicit range start date (UTC). Requires --end-date."
+    )
+    date_group.add_argument(
+        "--end-date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Explicit range end date (UTC). Requires --start-date."
+    )
+    date_group.add_argument(
+        "--batches",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Split the date range into N equal slices and run the pipeline "
+            "once per slice (default: 1). Each batch loads --transactions rows."
+        )
+    )
+
     args = parser.parse_args()
+
+    # Validate date args
+    if args.start_date and not args.end_date:
+        parser.error("--start-date requires --end-date")
+    if args.end_date and not args.start_date:
+        parser.error("--end-date requires --start-date")
 
     if args.fx_source:
         fx_source.set_source(args.fx_source)
 
-    run(
-        n_transactions=args.transactions,
-        noise_level=args.noise,
-        clean=args.clean,
-        dry_run=args.dry_run,
-        benchmark=args.benchmark,
-    )
+    # ── Determine date range ─────────────────────────────────────────────────
+    if args.years or (args.start_date and args.end_date):
+        if args.start_date and args.end_date:
+            # Explicit range takes priority over --years
+            range_end   = datetime.fromisoformat(args.end_date).replace(tzinfo=timezone.utc)
+            range_start = datetime.fromisoformat(args.start_date).replace(tzinfo=timezone.utc)
+        else:
+            range_end   = datetime.now(timezone.utc).replace(
+                              hour=0, minute=0, second=0, microsecond=0)
+            range_start = range_end - timedelta(days=365 * args.years)
+
+        n_batches     = max(1, args.batches)
+        total_seconds = (range_end - range_start).total_seconds()
+        slice_seconds = total_seconds / n_batches
+
+        print(f"Historical seed: {range_start.date()} → {range_end.date()} "
+              f"| {n_batches} batch(es) × {args.transactions:,} rows each")
+
+        for i in range(n_batches):
+            batch_start = range_start + timedelta(seconds=i * slice_seconds)
+            batch_end   = range_start + timedelta(seconds=(i + 1) * slice_seconds)
+            print(f"\n[{i + 1}/{n_batches}] {batch_start.date()} → {batch_end.date()}")
+            run(
+                n_transactions=args.transactions,
+                noise_level=args.noise,
+                clean=args.clean,
+                dry_run=args.dry_run,
+                benchmark=args.benchmark,
+                start_ts=batch_start,
+                end_ts=batch_end,
+            )
+
+    else:
+        # Default: recent-window mode (same as before)
+        run(
+            n_transactions=args.transactions,
+            noise_level=args.noise,
+            clean=args.clean,
+            dry_run=args.dry_run,
+            benchmark=args.benchmark,
+        )

@@ -87,19 +87,24 @@ def _print_benchmark_summary(
 
 
 def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
-        noise_level="medium", benchmark=False, dry_run=False, clean=False):
+        noise_level="medium", benchmark=False, dry_run=False, clean=False,
+        start_ts=None, end_ts=None):
     """
     Generate synthetic FX and transaction data, load into raw schema,
     and promote to analytics schema.
 
     Args:
         n_transactions: number of transaction rows to generate
-        window_minutes: length of the synthetic time window
+        window_minutes: length of the synthetic time window (ignored when
+                        start_ts and end_ts are both provided)
         batch_size:     rows per DB insert batch
         noise_level:    "low", "medium", or "high"
         benchmark:      if True, print timing and row-count summary at end
         dry_run:        if True, skip DB load and transform entirely
         clean:          if True, skip noise injection and normalization
+        start_ts:       datetime-like | None — explicit window start; when
+                        provided alongside end_ts, overrides window_minutes
+        end_ts:         datetime-like | None — explicit window end
 
     Returns:
         dict with raw load counts and transform counts, or None on dry_run.
@@ -107,8 +112,16 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
     timings = {}
     transform_counts = None
 
-    start = datetime.now(timezone.utc)
-    end   = start + timedelta(minutes=window_minutes)
+    if start_ts is not None and end_ts is not None:
+        import pandas as _pd
+        def _to_utc(ts):
+            t = _pd.Timestamp(ts)
+            return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+        start = _to_utc(start_ts)
+        end   = _to_utc(end_ts)
+    else:
+        start = datetime.now(timezone.utc)
+        end   = start + timedelta(minutes=window_minutes)
 
     logger.info(f"Window: {start.isoformat()} → {end.isoformat()}")
 

@@ -22,7 +22,8 @@ def generate_transactions(
     start_ts,
     end_ts,
     n_transactions=10_000,
-    seed=42
+    seed=42,
+    sampling='auto',
 ):
     """
     Generate a DataFrame of synthetic transactions.
@@ -32,6 +33,13 @@ def generate_transactions(
         end_ts:         datetime — end of the transaction window
         n_transactions: int — number of rows to generate
         seed:           int — random seed for reproducibility
+        sampling:       'auto' | 'dense' | 'uniform'
+                        'dense'   — second-level grid sampling; precise for short
+                                    windows (≤1 day) but O(window_seconds) memory
+                        'uniform' — float epoch sampling; memory-safe for any
+                                    window size including multi-year ranges
+                        'auto'    — picks 'dense' for windows ≤1 day, 'uniform'
+                                    otherwise (default)
 
     Returns:
         pd.DataFrame with columns matching raw.transaction_event
@@ -39,14 +47,44 @@ def generate_transactions(
     rng = np.random.default_rng(seed)
 
     # ── Timestamps ────────────────────────────────────────────────────────────
-    # Sample uniformly across the window, then apply business-hours weighting
-    timestamps = pd.date_range(start_ts, end_ts, freq="s")
-    raw_times = rng.choice(timestamps, size=n_transactions, replace=True)
+    window_seconds = (pd.Timestamp(end_ts) - pd.Timestamp(start_ts)).total_seconds()
 
-    hours = pd.DatetimeIndex(raw_times).hour
-    weights = np.where((hours >= 9) & (hours <= 17), 3.0, 1.0)
-    weights /= weights.sum()
-    tx_times = rng.choice(raw_times, size=n_transactions, replace=True, p=weights)
+    if sampling == 'auto':
+        sampling = 'dense' if window_seconds <= 86_400 else 'uniform'
+
+    if sampling == 'dense':
+        # Second-level grid — suitable for short windows (minutes to ~1 day).
+        # Memory cost is O(window_seconds), so only safe when the window is small.
+        timestamps = pd.date_range(start_ts, end_ts, freq="s")
+        raw_times = rng.choice(timestamps, size=n_transactions, replace=True)
+        dt_index = pd.DatetimeIndex(raw_times)
+        hour_w = np.where((dt_index.hour >= 9) & (dt_index.hour <= 17), 3.0, 1.0)
+        dow_w  = np.where(dt_index.dayofweek < 5, 2.0, 0.5)
+        weights = (hour_w * dow_w).astype(float)
+        weights /= weights.sum()
+        tx_times = rng.choice(raw_times, size=n_transactions, replace=True, p=weights)
+
+    else:
+        # Uniform float sampling — O(n), safe for any window including multi-year.
+        # Generates an initial pool, weights by business-hours + weekday, resamples.
+        start_epoch = pd.Timestamp(start_ts).timestamp()
+        end_epoch   = pd.Timestamp(end_ts).timestamp()
+        pool_size   = min(n_transactions * 4, 2_000_000)
+        raw_seconds = rng.uniform(start_epoch, end_epoch, size=pool_size)
+        raw_dt      = pd.to_datetime(raw_seconds, unit='s', utc=True)
+        hour_w = np.where((raw_dt.hour >= 9) & (raw_dt.hour <= 17), 3.0, 1.0)
+        dow_w  = np.where(raw_dt.dayofweek < 5, 2.0, 0.5)
+        weights = (hour_w * dow_w).astype(float)
+        weights /= weights.sum()
+        idx      = rng.choice(pool_size, size=n_transactions, replace=True, p=weights)
+        tx_times = raw_dt[idx]
+
+    # Ensure timezone-aware UTC to match timestamptz in DB.
+    tx_index = pd.DatetimeIndex(tx_times)
+    if tx_index.tz is None:
+        tx_times = tx_index.tz_localize("UTC")
+    else:
+        tx_times = tx_index.tz_convert("UTC")
 
     # Ensure timezone-aware UTC to match timestamptz in DB.
     # date_range inherits tz from start_ts if tz-aware; normalize either way.
