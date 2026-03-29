@@ -65,6 +65,16 @@ if __name__ == "__main__":
             "'live' reads from raw.fx_rate populated by live_fx.py"
         )
     )
+    parser.add_argument(
+        "--skip-transform",
+        action="store_true",
+        default=False,
+        help=(
+            "Load raw data only; skip the analytics transform. "
+            "Automatically enabled for historical range runs. "
+            "Run `python transform.py` once after all batches complete."
+        )
+    )
 
     # ── Historical date range ────────────────────────────────────────────────
     date_group = parser.add_argument_group(
@@ -128,6 +138,11 @@ if __name__ == "__main__":
         total_seconds = (range_end - range_start).total_seconds()
         slice_seconds = total_seconds / n_batches
 
+        # Historical runs always skip per-batch transform — run transform.py once at the end.
+        skip_tx = True
+        if not args.dry_run:
+            print(f"  Transform will be skipped per batch. Run `python transform.py` after this completes.")
+
         print(f"Historical seed: {range_start.date()} → {range_end.date()} "
               f"| {n_batches} batch(es) × {args.transactions:,} rows each")
 
@@ -143,7 +158,11 @@ if __name__ == "__main__":
                 benchmark=args.benchmark,
                 start_ts=batch_start,
                 end_ts=batch_end,
+                skip_transform=skip_tx,
             )
+
+        if not args.dry_run:
+            print(f"\nAll {n_batches} batches loaded. Run `python transform.py --seed` to promote to analytics schema.")
 
     else:
         # Default: recent-window mode (same as before)
@@ -153,4 +172,5 @@ if __name__ == "__main__":
             clean=args.clean,
             dry_run=args.dry_run,
             benchmark=args.benchmark,
+            skip_transform=args.skip_transform,
         )

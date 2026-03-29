@@ -88,23 +88,26 @@ def _print_benchmark_summary(
 
 def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
         noise_level="medium", benchmark=False, dry_run=False, clean=False,
-        start_ts=None, end_ts=None):
+        start_ts=None, end_ts=None, skip_transform=False):
     """
     Generate synthetic FX and transaction data, load into raw schema,
     and promote to analytics schema.
 
     Args:
-        n_transactions: number of transaction rows to generate
-        window_minutes: length of the synthetic time window (ignored when
-                        start_ts and end_ts are both provided)
-        batch_size:     rows per DB insert batch
-        noise_level:    "low", "medium", or "high"
-        benchmark:      if True, print timing and row-count summary at end
-        dry_run:        if True, skip DB load and transform entirely
-        clean:          if True, skip noise injection and normalization
-        start_ts:       datetime-like | None — explicit window start; when
-                        provided alongside end_ts, overrides window_minutes
-        end_ts:         datetime-like | None — explicit window end
+        n_transactions:  number of transaction rows to generate
+        window_minutes:  length of the synthetic time window (ignored when
+                         start_ts and end_ts are both provided)
+        batch_size:      rows per DB insert batch
+        noise_level:     "low", "medium", or "high"
+        benchmark:       if True, print timing and row-count summary at end
+        dry_run:         if True, skip DB load and transform entirely
+        clean:           if True, skip noise injection and normalization
+        start_ts:        datetime-like | None — explicit window start; when
+                         provided alongside end_ts, overrides window_minutes
+        end_ts:          datetime-like | None — explicit window end
+        skip_transform:  if True, load raw data only and skip the analytics
+                         transform. Use when bulk-seeding historical batches —
+                         run `python transform.py` once after all batches complete.
 
     Returns:
         dict with raw load counts and transform counts, or None on dry_run.
@@ -220,15 +223,18 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
     timings["load_raw"] = _timer() - t0
 
     # ── Transform ──────────────────────────────────────────────────────────────
-    t0 = _timer()
-    logger.info("Starting analytics transform...")
-    transform_conn = transform.get_connection()
-    try:
-        transform.run_seed(transform_conn)
-        transform_counts = transform.run_transform(transform_conn)
-    finally:
-        transform_conn.close()
-    timings["transform"] = _timer() - t0
+    if skip_transform:
+        logger.info("skip_transform=True — raw load complete. Run `python transform.py` after all batches.")
+    else:
+        t0 = _timer()
+        logger.info("Starting analytics transform...")
+        transform_conn = transform.get_connection()
+        try:
+            transform.run_seed(transform_conn)
+            transform_counts = transform.run_transform(transform_conn)
+        finally:
+            transform_conn.close()
+        timings["transform"] = _timer() - t0
 
     # ── Summary ────────────────────────────────────────────────────────────────
     if benchmark:

@@ -110,14 +110,14 @@ def load_fx_rates(conn, fx_df, batch_size=10_000):
     total = len(rows_list)
     inserted = 0
 
-    with conn.cursor() as cur:
-        for i in range(0, total, batch_size):
-            batch = rows_list[i : i + batch_size]
+    for i in range(0, total, batch_size):
+        batch = rows_list[i : i + batch_size]
+        with conn.cursor() as cur:
             execute_values(cur, sql, batch)
-            inserted += len(batch)
-            logger.info(f"fx_rate: inserted batch {i}–{i + len(batch)} ({inserted}/{total})")
+        conn.commit()
+        inserted += len(batch)
+        logger.info(f"fx_rate: inserted batch {i}–{i + len(batch)} ({inserted}/{total})")
 
-    conn.commit()
     logger.info(f"fx_rate: load complete — {total} rows processed")
     return total
 
@@ -171,14 +171,14 @@ def load_transactions(conn, tx_df, batch_size=10_000, batch_id=None):
     total = len(rows_list)
     inserted = 0
 
-    with conn.cursor() as cur:
-        for i in range(0, total, batch_size):
-            batch = rows_list[i : i + batch_size]
+    for i in range(0, total, batch_size):
+        batch = rows_list[i : i + batch_size]
+        with conn.cursor() as cur:
             execute_values(cur, sql, batch)
-            inserted += len(batch)
-            logger.info(f"transaction_event: inserted batch {i}–{i + len(batch)} ({inserted}/{total})")
+        conn.commit()
+        inserted += len(batch)
+        logger.info(f"transaction_event: inserted batch {i}–{i + len(batch)} ({inserted}/{total})")
 
-    conn.commit()
     logger.info(f"transaction_event: load complete — {total} rows processed")
     return total
 
@@ -298,14 +298,14 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
     total = len(rows_list)
     inserted = 0
 
-    with conn.cursor() as cur:
-        for i in range(0, total, batch_size):
-            batch = rows_list[i : i + batch_size]
+    for i in range(0, total, batch_size):
+        batch = rows_list[i : i + batch_size]
+        with conn.cursor() as cur:
             execute_values(cur, sql, batch)
-            inserted += len(batch)
-            logger.info(f"quarantine_event: inserted batch {i}–{i + len(batch)} ({inserted}/{total})")
+        conn.commit()
+        inserted += len(batch)
+        logger.info(f"quarantine_event: inserted batch {i}–{i + len(batch)} ({inserted}/{total})")
 
-    conn.commit()
     logger.info(f"quarantine_event: load complete — {total} rows processed")
     return total
 
