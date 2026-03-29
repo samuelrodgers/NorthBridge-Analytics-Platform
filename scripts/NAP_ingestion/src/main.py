@@ -131,7 +131,8 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
     batch_id = str(_uuid.uuid4())
     logger.info(f"Batch ID: {batch_id}")
 
-    logger.info(f"Generating {n_transactions:,} transactions over {window_minutes}min window...")
+    window_desc = f"{window_minutes}min window" if (start_ts is None or end_ts is None) else f"{start.date()} → {end.date()}"
+    logger.info(f"Generating {n_transactions:,} transactions over {window_desc}...")
 
     # ── Generate ───────────────────────────────────────────────────────────────
     t0 = _timer()
