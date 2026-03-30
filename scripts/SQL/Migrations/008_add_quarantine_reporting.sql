@@ -46,8 +46,6 @@ CREATE TABLE raw.quarantine_event (
     CONSTRAINT quarantine_event_pkey PRIMARY KEY (quarantine_id)
 );
 
-ALTER TABLE raw.quarantine_event OWNER TO alex_analytics;
-
 -- Index for dashboard queries: filter by batch, then by failure type
 CREATE INDEX idx_quarantine_event_batch_id
     ON raw.quarantine_event USING btree (batch_id);

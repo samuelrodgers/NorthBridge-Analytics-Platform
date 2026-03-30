@@ -2,3 +2,6 @@
 /scripts/NAP_ingestion/out/sql_errors.log
 scripts/NAP_ingestion/out/
 .env
+__pycache__/
+*.pyc
+*.pyo
