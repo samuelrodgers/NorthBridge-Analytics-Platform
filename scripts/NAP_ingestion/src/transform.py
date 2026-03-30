@@ -794,12 +794,15 @@ def run_transform(conn):
     with conn.cursor() as cur:
         try:
             fx_count       = insert_fx_rates(cur)
+
+            # Expenses must be generated and loaded before insert_time_dimension
+            # so their timestamps are included in the d_time population pass.
+            expense_rows   = generate_expense_events()
+            raw_exp_count  = load_expense_events(cur, expense_rows)
+
             time_count     = insert_time_dimension(cur)
             tx_count       = insert_transactions(cur)
             conv_count     = insert_conversions(cur)
-
-            expense_rows   = generate_expense_events()
-            raw_exp_count  = load_expense_events(cur, expense_rows)
             exp_count      = insert_expenses(cur)
 
             industry_count = refresh_f_industry(cur)
