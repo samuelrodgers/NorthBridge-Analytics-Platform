@@ -424,18 +424,22 @@ def insert_conversions(cur):
 # ON CONFLICT guard — same pattern as tx_id in transactions.py.
 
 def generate_expense_events(
-    window_hours: int = 24,
+    start_ts=None,
+    end_ts=None,
     seed: int = None,
 ) -> list[tuple]:
     """
     Generate synthetic expense event rows ready for bulk insert into
     raw.expense_event.
 
+    Timestamps are spread uniformly across [start_ts, end_ts]. When neither
+    is provided, defaults to the past 24 hours from now — preserving the
+    original CRON behaviour.
+
     Args:
-        window_hours: How many hours back from now the expense timestamps
-                      should be distributed across. Default 24 hours.
-        seed:         Optional random seed for reproducibility in tests.
-                      Production runs should leave this as None.
+        start_ts: datetime-like | None — start of the expense window.
+        end_ts:   datetime-like | None — end of the expense window.
+        seed:     Optional random seed for reproducibility in tests.
 
     Returns:
         List of tuples:
@@ -444,18 +448,27 @@ def generate_expense_events(
     """
     rng = np.random.default_rng(seed)
 
-    now = datetime.now(timezone.utc)
-    window_start = now - timedelta(hours=window_hours)
+    if start_ts is not None and end_ts is not None:
+        import pandas as _pd
+        def _to_utc(ts):
+            t = _pd.Timestamp(ts)
+            return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+        window_start = _to_utc(start_ts)
+        window_end   = _to_utc(end_ts)
+    else:
+        window_end   = datetime.now(timezone.utc)
+        window_start = window_end - timedelta(hours=24)
 
-    category_ids = list(EXPENSE_CATEGORIES.values())
+    window_seconds = (window_end - window_start).total_seconds()
+    category_ids   = list(EXPENSE_CATEGORIES.values())
 
     rows = []
     for meta in COMPANIES.values():
-        # Between 1 and 5 expense events per company per run
+        # Between 1 and 5 expense events per company per batch
         n_expenses = int(rng.integers(1, 6))
 
         for _ in range(n_expenses):
-            offset_seconds = rng.uniform(0, window_hours * 3600)
+            offset_seconds = rng.uniform(0, window_seconds)
             expense_ts = window_start + timedelta(seconds=float(offset_seconds))
 
             # Log-normal: median ~$500, sigma=0.8 gives a realistic spread
@@ -473,6 +486,29 @@ def generate_expense_events(
             ))
 
     return rows
+
+
+def load_expense_batch(conn, start_ts, end_ts) -> int:
+    """
+    Generate expense events for the given window and commit them to
+    raw.expense_event. Used by seed batches that skip the full transform
+    so that expenses accumulate alongside transactions and are ready for
+    the final transform.py run.
+
+    Args:
+        conn:     psycopg2 connection (committed and closed by caller).
+        start_ts: Start of the expense window.
+        end_ts:   End of the expense window.
+
+    Returns:
+        Number of rows inserted.
+    """
+    rows = generate_expense_events(start_ts=start_ts, end_ts=end_ts)
+    with conn.cursor() as cur:
+        load_expense_events(cur, rows)
+    conn.commit()
+    logger.info(f"raw.expense_event: staged {len(rows)} expense events for batch window")
+    return len(rows)
 
 
 SQL_INSERT_EXPENSE_EVENT = """
@@ -780,11 +816,17 @@ def run_seed(conn):
         logger.info("Seed complete.")
 
 
-def run_transform(conn):
+def run_transform(conn, start_ts=None, end_ts=None):
     """
     Batch transform: raw → analytics.
     All batch steps run inside a single transaction — all succeed or all
     roll back so the analytics schema is never left in a partial state.
+
+    Args:
+        start_ts: Start of the current pipeline window — passed to
+                  generate_expense_events so expenses land in the right
+                  time range. Defaults to last 24 hours when None.
+        end_ts:   End of the current pipeline window.
 
     SQL errors are written to sql_errors.log in addition to stderr so
     they are preserved across restarts for post-mortem debugging.
@@ -797,7 +839,7 @@ def run_transform(conn):
 
             # Expenses must be generated and loaded before insert_time_dimension
             # so their timestamps are included in the d_time population pass.
-            expense_rows   = generate_expense_events()
+            expense_rows   = generate_expense_events(start_ts=start_ts, end_ts=end_ts)
             raw_exp_count  = load_expense_events(cur, expense_rows)
 
             time_count     = insert_time_dimension(cur)
@@ -841,12 +883,12 @@ def run_transform(conn):
             raise
 
 
-def run(seed=False):
+def run(seed=False, start_ts=None, end_ts=None):
     conn = get_connection()
     try:
         if seed:
             run_seed(conn)
-        run_transform(conn)
+        run_transform(conn, start_ts=start_ts, end_ts=end_ts)
     finally:
         conn.close()
 

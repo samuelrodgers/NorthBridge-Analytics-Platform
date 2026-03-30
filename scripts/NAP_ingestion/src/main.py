@@ -224,14 +224,22 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
 
     # ── Transform ──────────────────────────────────────────────────────────────
     if skip_transform:
-        logger.info("skip_transform=True — raw load complete. Run `python transform.py` after all batches.")
+        # Stage expenses for this batch window into raw.expense_event so they
+        # are ready for the final transform.py run after all batches complete.
+        exp_conn = get_connection()
+        try:
+            n_exp = transform.load_expense_batch(exp_conn, start, end)
+            logger.info(f"Staged {n_exp} expense events for batch window")
+        finally:
+            exp_conn.close()
+        logger.info("skip_transform=True — raw load complete. Run `python transform.py --seed` after all batches.")
     else:
         t0 = _timer()
         logger.info("Starting analytics transform...")
         transform_conn = transform.get_connection()
         try:
             transform.run_seed(transform_conn)
-            transform_counts = transform.run_transform(transform_conn)
+            transform_counts = transform.run_transform(transform_conn, start_ts=start, end_ts=end)
         finally:
             transform_conn.close()
         timings["transform"] = _timer() - t0
