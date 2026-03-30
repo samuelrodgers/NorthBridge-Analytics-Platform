@@ -584,7 +584,25 @@ SQL_REFRESH_FINDUSTRY = """
 
     WITH
 
-    -- Aggregate transaction revenue and counts per industry per day
+    -- Only process days that do not yet have an f_industry row.
+    -- This makes CRON runs O(new rows) instead of O(all rows) — once a
+    -- day is committed it is never re-scanned (BR-024: no in-place updates).
+    -- SQL_ENSURE_MIDNIGHT_DTIME must run first so midnight d_time rows exist.
+    unprocessed_days AS (
+        SELECT DISTINCT DATE_TRUNC('day', dt.t_stamp) AS day
+        FROM analytics.f_transaction ft
+        JOIN analytics.d_time dt
+          ON dt.time_id = ft.time_id
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM analytics.d_time midnight_dt
+            JOIN analytics.f_industry fi
+              ON fi.time_id = midnight_dt.time_id
+            WHERE midnight_dt.t_stamp = DATE_TRUNC('day', dt.t_stamp)
+        )
+    ),
+
+    -- Aggregate revenue for unprocessed days only
     daily_revenue AS (
         SELECT
             dc.industry_id,
@@ -597,10 +615,11 @@ SQL_REFRESH_FINDUSTRY = """
           ON dt.time_id = ft.time_id
         JOIN analytics.d_company dc
           ON dc.c_id = ft.c_id
+        WHERE DATE_TRUNC('day', dt.t_stamp) IN (SELECT day FROM unprocessed_days)
         GROUP BY dc.industry_id, DATE_TRUNC('day', dt.t_stamp)
     ),
 
-    -- Aggregate expense totals per industry per day
+    -- Aggregate expenses for unprocessed days only
     daily_expenses AS (
         SELECT
             dc.industry_id,
@@ -611,6 +630,7 @@ SQL_REFRESH_FINDUSTRY = """
           ON dt.time_id = fe.time_id
         JOIN analytics.d_company dc
           ON dc.c_id = fe.c_id
+        WHERE DATE_TRUNC('day', dt.t_stamp) IN (SELECT day FROM unprocessed_days)
         GROUP BY dc.industry_id, DATE_TRUNC('day', dt.t_stamp)
     ),
 
@@ -634,59 +654,41 @@ SQL_REFRESH_FINDUSTRY = """
          AND de.day          = dr.day
     ),
 
-    -- Period-over-period revenue growth via LAG.
-    -- NULL on first row per industry (BR-026).
-    -- NULL if prior period revenue was zero (avoid divide-by-zero).
+    -- Growth rate via LATERAL lookup into existing f_industry rows.
+    -- More correct than LAG() for incremental runs: LAG() only sees rows in
+    -- the current INSERT batch, so a CRON run inserting only today would have
+    -- no prior-period row to compare against. The LATERAL correctly reaches
+    -- back into already-committed historical rows.
     with_growth AS (
         SELECT
             c.*,
             CASE
-                WHEN LAG(c.total_revenue) OVER (
-                         PARTITION BY c.industry_id ORDER BY c.day
-                     ) IS NULL
-                    THEN NULL
-                WHEN LAG(c.total_revenue) OVER (
-                         PARTITION BY c.industry_id ORDER BY c.day
-                     ) = 0
-                    THEN NULL
-                ELSE (
-                    -- Cap to numeric(7,4) range [-999.9999, 999.9999].
-                    -- Extreme values occur when synthetic runs land on the
-                    -- same calendar day with very different transaction counts.
-                    -- Out-of-range values are stored as NULL rather than
-                    -- overflowing the column.
-                    CASE
-                        WHEN ABS(
-                            ROUND(
-                                (
-                                    c.total_revenue
-                                    - LAG(c.total_revenue) OVER (
-                                          PARTITION BY c.industry_id ORDER BY c.day
-                                      )
-                                )
-                                / LAG(c.total_revenue) OVER (
-                                      PARTITION BY c.industry_id ORDER BY c.day
-                                  ) * 100,
-                                4
-                            )
-                        ) >= 1000
-                        THEN NULL
-                        ELSE ROUND(
-                            (
-                                c.total_revenue
-                                - LAG(c.total_revenue) OVER (
-                                      PARTITION BY c.industry_id ORDER BY c.day
-                                  )
-                            )
-                            / LAG(c.total_revenue) OVER (
-                                  PARTITION BY c.industry_id ORDER BY c.day
-                              ) * 100,
-                            4
-                        )
-                    END
+                WHEN prev.total_revenue IS NULL THEN NULL
+                WHEN prev.total_revenue = 0     THEN NULL
+                WHEN ABS(
+                    ROUND(
+                        (c.total_revenue - prev.total_revenue)
+                        / prev.total_revenue * 100,
+                        4
+                    )
+                ) >= 1000                       THEN NULL
+                ELSE ROUND(
+                    (c.total_revenue - prev.total_revenue)
+                    / prev.total_revenue * 100,
+                    4
                 )
             END AS revenue_growth_rate
         FROM combined c
+        LEFT JOIN LATERAL (
+            SELECT fi.total_revenue
+            FROM analytics.f_industry fi
+            JOIN analytics.d_time dt
+              ON fi.time_id = dt.time_id
+            WHERE fi.industry_id = c.industry_id
+              AND dt.t_stamp      < c.day
+            ORDER BY dt.t_stamp DESC
+            LIMIT 1
+        ) prev ON true
     )
 
     -- Resolve calendar day → time_id via the midnight d_time rows inserted above

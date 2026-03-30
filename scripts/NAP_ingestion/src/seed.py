@@ -143,13 +143,13 @@ if __name__ == "__main__":
         if not args.dry_run:
             print(f"  Transform will be skipped per batch. Run `python transform.py` after this completes.")
 
-        print(f"Historical seed: {range_start.date()} → {range_end.date()} "
-              f"| {n_batches} batch(es) × {args.transactions:,} rows each")
+        print(f"Historical seed: {range_start.date()} to {range_end.date()} "
+              f"| {n_batches} batch(es) x {args.transactions:,} rows each")
 
         for i in range(n_batches):
             batch_start = range_start + timedelta(seconds=i * slice_seconds)
             batch_end   = range_start + timedelta(seconds=(i + 1) * slice_seconds)
-            print(f"\n[{i + 1}/{n_batches}] {batch_start.date()} → {batch_end.date()}")
+            print(f"\n[{i + 1}/{n_batches}] {batch_start.date()} to {batch_end.date()}")
             run(
                 n_transactions=args.transactions,
                 noise_level=args.noise,
@@ -162,7 +162,7 @@ if __name__ == "__main__":
             )
 
         if not args.dry_run:
-            print(f"\nAll {n_batches} batches loaded. Run `python transform.py --seed` to promote to analytics schema.")
+            print(f"\nAll {n_batches} batches loaded. Run `python transform.py --seed` to promote to analytics schema."  )
 
     else:
         # Default: recent-window mode (same as before)
