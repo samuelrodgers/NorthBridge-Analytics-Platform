@@ -834,6 +834,7 @@ def run_transform(conn, start_ts=None, end_ts=None):
     logger.info("Starting batch transform...")
 
     with conn.cursor() as cur:
+        cur.execute("SET statement_timeout = 0")
         try:
             fx_count       = insert_fx_rates(cur)
 
