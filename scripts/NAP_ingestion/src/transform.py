@@ -349,6 +349,70 @@ def insert_transactions(cur):
     return count
 
 
+SQL_INSERT_FTRANSACTION_BATCH = """
+    INSERT INTO analytics.f_transaction (tx_id, amount, c_id, time_id, cncy)
+    SELECT
+        t.tx_id,
+        t.amount - COALESCE(t.fee_amount, 0)    AS amount,
+        t.c_id,
+        d.time_id,
+        TRIM(t.base_cncy)                        AS cncy
+    FROM raw.transaction_event t
+    JOIN analytics.d_time d
+      ON d.t_stamp = t.tx_timestamp
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM analytics.f_transaction f
+        WHERE f.tx_id = t.tx_id
+    )
+    AND t.tx_timestamp >= %(start)s AND t.tx_timestamp < %(end)s
+"""
+
+
+def insert_transactions_batched(conn, batch_days=60) -> int:
+    """
+    Insert f_transaction rows in date-range batches, committing after each.
+    Used for large historical seeds where a single INSERT exhausts RDS memory.
+    Each batch processes batch_days of raw.transaction_event rows.
+    CRON runs use insert_transactions() instead (small row counts, no issue).
+    """
+    from datetime import timedelta
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT MIN(tx_timestamp), MAX(tx_timestamp) "
+            "FROM raw.transaction_event WHERE tx_timestamp IS NOT NULL"
+        )
+        row = cur.fetchone()
+
+    if not row or row[0] is None:
+        logger.info("f_transaction: no raw rows to process")
+        return 0
+
+    min_ts, max_ts = row
+    total = 0
+    batch_num = 0
+    current = min_ts
+
+    while current <= max_ts:
+        next_ts = current + timedelta(days=batch_days)
+        batch_num += 1
+        with conn.cursor() as cur:
+            cur.execute("SET statement_timeout = 0")
+            cur.execute(SQL_INSERT_FTRANSACTION_BATCH, {"start": current, "end": next_ts})
+            count = cur.rowcount
+        conn.commit()
+        total += count
+        logger.info(
+            f"f_transaction batch {batch_num}: inserted {count} rows "
+            f"({current.date()} to {next_ts.date()})"
+        )
+        current = next_ts
+
+    logger.info(f"f_transaction: inserted {total} rows total ({batch_num} batches)")
+    return total
+
+
 # ============================================================
 # BATCH STEP 7 — f_conversion
 # ============================================================
@@ -820,72 +884,97 @@ def run_seed(conn):
         logger.info("Seed complete.")
 
 
-def run_transform(conn, start_ts=None, end_ts=None):
+def run_transform(conn, start_ts=None, end_ts=None, batch_tx=False):
     """
     Batch transform: raw → analytics.
-    All batch steps run inside a single transaction — all succeed or all
-    roll back so the analytics schema is never left in a partial state.
+
+    Normal mode (batch_tx=False): all steps run in a single transaction —
+    all succeed or all roll back. Used by CRON runs which process small
+    row counts and complete quickly.
+
+    Seed mode (batch_tx=True): f_transaction is inserted in 60-day batches
+    with an intermediate commit after each. Phases 1 and 3 still commit
+    atomically. Used for large historical seeds where a single INSERT
+    exhausts RDS memory and hits connection timeouts.
 
     Args:
-        start_ts: Start of the current pipeline window — passed to
-                  generate_expense_events so expenses land in the right
-                  time range. Defaults to last 24 hours when None.
-        end_ts:   End of the current pipeline window.
-
-    SQL errors are written to sql_errors.log in addition to stderr so
-    they are preserved across restarts for post-mortem debugging.
+        start_ts:  Start of the current pipeline window.
+        end_ts:    End of the current pipeline window.
+        batch_tx:  If True, insert f_transaction in batched mode.
     """
     logger.info("Starting batch transform...")
 
+    # ── Phase 1: fx_rates, expenses, d_time ──────────────────────────────────
     with conn.cursor() as cur:
         cur.execute("SET statement_timeout = 0")
         try:
-            fx_count       = insert_fx_rates(cur)
+            fx_count      = insert_fx_rates(cur)
 
             # Expenses must be generated and loaded before insert_time_dimension
             # so their timestamps are included in the d_time population pass.
-            expense_rows   = generate_expense_events(start_ts=start_ts, end_ts=end_ts)
-            raw_exp_count  = load_expense_events(cur, expense_rows)
+            expense_rows  = generate_expense_events(start_ts=start_ts, end_ts=end_ts)
+            raw_exp_count = load_expense_events(cur, expense_rows)
 
-            time_count     = insert_time_dimension(cur)
-            tx_count       = insert_transactions(cur)
-            conv_count     = insert_conversions(cur)
-            exp_count      = insert_expenses(cur)
-
-            industry_count = refresh_f_industry(cur)
-
+            time_count    = insert_time_dimension(cur)
             conn.commit()
-
-            logger.info(
-                f"✅ Transform complete — "
-                f"f_fx_rate: {fx_count}, "
-                f"d_time: {time_count}, "
-                f"f_transaction: {tx_count}, "
-                f"f_conversion: {conv_count}, "
-                f"raw.expense_event: {raw_exp_count}, "
-                f"f_expense: {exp_count}, "
-                f"f_industry: {industry_count}"
-            )
-
-            return {
-                "fx_rates":      fx_count,
-                "d_time":        time_count,
-                "transactions":  tx_count,
-                "conversions":   conv_count,
-                "raw_expenses":  raw_exp_count,
-                "expenses":      exp_count,
-                "industry_rows": industry_count,
-            }
-
         except Exception as e:
             conn.rollback()
-            _log_sql_error(
-                step="run_transform",
-                error=e,
-                sql=getattr(e, "pgerror", "") or "",
-            )
-            logger.error(f"❌ Transform failed — rolled back. Error: {e}")
+            _log_sql_error(step="run_transform phase 1", error=e,
+                           sql=getattr(e, "pgerror", "") or "")
+            logger.error(f"❌ Transform failed (phase 1) — rolled back. Error: {e}")
             raise
+
+    # ── Phase 2: f_transaction ────────────────────────────────────────────────
+    try:
+        if batch_tx:
+            tx_count = insert_transactions_batched(conn)
+        else:
+            with conn.cursor() as cur:
+                cur.execute("SET statement_timeout = 0")
+                tx_count = insert_transactions(cur)
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        _log_sql_error(step="run_transform phase 2 (f_transaction)", error=e,
+                       sql=getattr(e, "pgerror", "") or "")
+        logger.error(f"❌ Transform failed (f_transaction) — rolled back. Error: {e}")
+        raise
+
+    # ── Phase 3: f_conversion, f_expense, f_industry ─────────────────────────
+    with conn.cursor() as cur:
+        cur.execute("SET statement_timeout = 0")
+        try:
+            conv_count     = insert_conversions(cur)
+            exp_count      = insert_expenses(cur)
+            industry_count = refresh_f_industry(cur)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            _log_sql_error(step="run_transform phase 3", error=e,
+                           sql=getattr(e, "pgerror", "") or "")
+            logger.error(f"❌ Transform failed (phase 3) — rolled back. Error: {e}")
+            raise
+
+    logger.info(
+        f"✅ Transform complete — "
+        f"f_fx_rate: {fx_count}, "
+        f"d_time: {time_count}, "
+        f"f_transaction: {tx_count}, "
+        f"f_conversion: {conv_count}, "
+        f"raw.expense_event: {raw_exp_count}, "
+        f"f_expense: {exp_count}, "
+        f"f_industry: {industry_count}"
+    )
+
+    return {
+        "fx_rates":      fx_count,
+        "d_time":        time_count,
+        "transactions":  tx_count,
+        "conversions":   conv_count,
+        "raw_expenses":  raw_exp_count,
+        "expenses":      exp_count,
+        "industry_rows": industry_count,
+    }
 
 
 def run(seed=False, start_ts=None, end_ts=None):
@@ -893,7 +982,7 @@ def run(seed=False, start_ts=None, end_ts=None):
     try:
         if seed:
             run_seed(conn)
-        run_transform(conn, start_ts=start_ts, end_ts=end_ts)
+        run_transform(conn, start_ts=start_ts, end_ts=end_ts, batch_tx=seed)
     finally:
         conn.close()
 
