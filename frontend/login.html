@@ -1,127 +1,250 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — Northbridge Analytics</title>
+  <link rel="icon" type="image/png" href="assets/images/favicon.png">
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    body {
+      visibility: visible; /* login page never hides */
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      background: var(--bg-base);
+    }
 
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <meta name="description" content="">
-    <meta name="author" content="">
+    /* ── Left panel ── */
+    .login-panel-left {
+      flex: 1;
+      display: none;
+      background: url('assets/images/Analytics_Logo.jpeg') center/cover no-repeat;
+      position: relative;
+    }
+    .login-panel-left::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(10,17,28,0.35) 0%, rgba(10,17,28,0.1) 100%);
+    }
+    @media (min-width: 768px) {
+      .login-panel-left { display: block; }
+    }
 
-    <title>SB Admin 2 - Login</title>
+    /* ── Right panel ── */
+    .login-panel-right {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      box-sizing: border-box;
+    }
+    @media (min-width: 768px) {
+      .login-panel-right { width: 420px; flex-shrink: 0; }
+    }
 
-    <!-- Custom fonts for this template-->
-    <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet" type="text/css">
-    <link
-        href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i"
-        rel="stylesheet">
+    .login-card {
+      width: 100%;
+      max-width: 360px;
+    }
 
-    <!-- Custom styles for this template-->
-    <link href="css/sb-admin-2.min.css" rel="stylesheet">
+    /* ── Branding ── */
+    .login-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    .login-brand-logo {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 12px;
+    }
+    .login-brand-name {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+    .login-brand-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-top: -8px;
+    }
 
+    /* ── Form ── */
+    .login-form { display: flex; flex-direction: column; gap: 12px; }
+
+    .login-field { display: flex; flex-direction: column; gap: 5px; }
+    .login-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .login-input {
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      outline: none;
+      transition: border-color 0.15s;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    .login-input:focus { border-color: var(--accent-border); }
+    .login-input::placeholder { color: var(--text-tertiary); }
+
+    .login-btn {
+      margin-top: 4px;
+      padding: 11px 0;
+      border-radius: var(--radius-md);
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.15s;
+    }
+    .login-btn:hover { opacity: 0.88; }
+    .login-btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .login-btn-secondary {
+      background: var(--surface-2);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+      margin-top: 0;
+    }
+
+    .login-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 4px 0;
+    }
+    .login-divider::before,
+    .login-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border-subtle);
+    }
+    .login-divider-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .login-error {
+      display: none;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      font-size: 12px;
+      color: #f87171;
+    }
+
+    .login-footer {
+      margin-top: 28px;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      line-height: 1.6;
+    }
+  </style>
 </head>
+<body>
 
-<body class="bg-gradient-primary">
+  <div class="login-panel-left"></div>
 
-    <div class="container">
+  <div class="login-panel-right">
+    <div class="login-card">
 
-        <!-- Outer Row -->
-        <div class="row justify-content-center">
+      <div class="login-brand">
+        <img class="login-brand-logo" src="assets/images/Analytics_Logo.jpeg" alt="Northbridge">
+        <div>
+          <div class="login-brand-name">Northbridge Financial</div>
+          <div class="login-brand-sub">Analytics Console</div>
+        </div>
+      </div>
 
-            <div class="col-xl-10 col-lg-12 col-md-9">
-
-                <div class="card o-hidden border-0 shadow-lg my-5">
-                    <div class="card-body p-0">
-                        <!-- Nested Row within Card Body -->
-                        <div class="row">
-                            <div class="col-lg-6 d-none d-lg-block bg-login-image"></div>
-                            <div class="col-lg-6">
-                                <div class="p-5">
-                                    <div class="text-center">
-                                        <h1 class="h4 text-gray-900 mb-4">Welcome Back!</h1>
-                                    </div>
-                                    <form class="user" id="login-form">
-                                        <div class="form-group">
-                                            <input type="email" class="form-control form-control-user"
-                                                id="exampleInputEmail" aria-describedby="emailHelp"
-                                                placeholder="Enter Email Address...">
-                                        </div>
-                                        <div class="form-group">
-                                            <input type="password" class="form-control form-control-user"
-                                                id="exampleInputPassword" placeholder="Password">
-                                        </div>
-                                        <div class="form-group">
-                                            <div class="custom-control custom-checkbox small">
-                                                <input type="checkbox" class="custom-control-input" id="customCheck">
-                                                <label class="custom-control-label" for="customCheck">Remember
-                                                    Me</label>
-                                            </div>
-                                        </div>
-                                        <button type="submit" class="btn btn-primary btn-user btn-block">
-                                            Login
-                                        </button>
-                                        <hr>
-                                        </form>
-                                    </div>
-                                    <div class="text-center mb-2">
-                                        <p class="small text-muted mb-1">⚠️ Demo site — some features may be incomplete.</p>
-                                        <button type="button" id="demo-btn" class="btn btn-outline-secondary btn-user btn-block">
-                                            View Demo (No Login Required)
-                                        </button>
-                                    </div>
-                                    <div class="text-center">
-                                        <a class="small" href="register.html">Create an Account!</a>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
+      <form class="login-form" id="login-form" autocomplete="on">
+        <div class="login-field">
+          <label class="login-label" for="input-email">Email</label>
+          <input class="login-input" type="email" id="input-email" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+        <div class="login-field">
+          <label class="login-label" for="input-password">Password</label>
+          <input class="login-input" type="password" id="input-password" placeholder="••••••••" autocomplete="current-password" required>
         </div>
 
-    <!-- Bootstrap core JavaScript-->
-    <script src="vendor/jquery/jquery.min.js"></script>
-    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+        <div class="login-error" id="login-error"></div>
 
-    <!-- Core plugin JavaScript-->
-    <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+        <button type="submit" class="login-btn login-btn-primary">Sign in</button>
 
-    <!-- Custom scripts for all pages-->
-    <script src="js/sb-admin-2.min.js"></script>
+        <div class="login-divider"><span class="login-divider-label">or</span></div>
+
+        <button type="button" class="login-btn login-btn-secondary" id="demo-btn">View demo — no login required</button>
+      </form>
+
+      <div class="login-footer">
+        Demo environment · some features may be incomplete
+      </div>
+
+    </div>
+  </div>
 
 <script type="module">
   import { login, redirectIfAuthed } from "./auth.js";
   redirectIfAuthed();
-  const form = document.getElementById("login-form");
-  const err = document.createElement("div");
-  err.className = "alert alert-danger d-none mt-3";
-  form.appendChild(err);
+
+  const form  = document.getElementById("login-form");
+  const err   = document.getElementById("login-error");
+
+  function showError(msg) {
+    err.textContent = msg;
+    err.style.display = "block";
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const email = document.getElementById("exampleInputEmail").value;
-    const password = document.getElementById("exampleInputPassword").value;
+    err.style.display = "none";
+    const email    = document.getElementById("input-email").value;
+    const password = document.getElementById("input-password").value;
     try {
       await login(email, password);
       window.location.replace("/index.html");
     } catch (e) {
-      err.textContent = e.message;
-      err.classList.remove("d-none");
+      showError(e.message);
     }
   });
+
   document.getElementById("demo-btn").addEventListener("click", async () => {
+    err.style.display = "none";
     try {
       await login("guest@guest.com", "guest");
       window.location.replace("/index.html");
-    } catch (e) {
-      err.textContent = "Demo login failed — please try again.";
-      err.classList.remove("d-none");
+    } catch {
+      showError("Demo login failed — please try again.");
     }
   });
 </script>
 </body>
-
 </html>
