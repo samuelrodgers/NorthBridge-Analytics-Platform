@@ -102,67 +102,28 @@
     <!-- Content -->
     <div class="content">
 
-      <!-- ── Q3: Conversion rate by currency pair ── -->
+      <!-- ── FX Analytics ── -->
       <div>
-        <div class="section-hdr"><h2>Q3 · Conversion rate by currency pair</h2></div>
+        <div class="section-hdr"><h2>FX &amp; conversion analytics</h2><span class="section-sub">— currency mix · fee burden · Q3 + Q4 performance queries</span></div>
         <div class="query-ref" style="margin: 8px 0 10px">
-          <div class="query-ref-label">Performance query — 3-table join</div>
-          <div class="query-ref-name">Q3 — f_conversion → f_transaction → f_fx_rate</div>
+          <div class="query-ref-label">Performance queries — 3-table joins</div>
+          <div class="query-ref-name">Q3 — f_transaction (currency mix) · Q4 — f_conversion → f_transaction → d_company (fee burden)</div>
           <div class="query-ref-desc">
-            Computes what fraction of transactions required FX conversion per currency pair.
-            Tests join depth and aggregation across two fact tables. Non-converted transactions
-            have no f_conversion row — LEFT JOIN intentional. Unique constraint
-            <code style="font-family:var(--font-mono);font-size:10px">f_conversion_one_per_tx</code>
-            ensures max one conversion per transaction.
+            Q3 shows transaction volume split by currency, revealing platform FX exposure.
+            Q4 measures total FX fee revenue per company — larger companies generate more fee volume.
+            Both queries join across multiple fact tables; Q4 uses NULLIF to guard against zero base_amount division.
           </div>
         </div>
         <div class="card">
           <div class="card-hdr">
             <div>
-              <div class="card-title">Conversion rate by currency pair</div>
-              <div class="card-sub">f_fx_rate.base_cncy → quote_cncy</div>
+              <div class="card-title">FX analytics — currency mix &amp; fee revenue</div>
+              <div class="card-sub">f_transaction · f_conversion · d_company</div>
             </div>
-            <button class="btn primary">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
-              </svg>
-              Export CSV
-            </button>
+            <span class="schema-tag analytics">analytics schema</span>
           </div>
-          <div class="card-body flush">
-            <div id="fx-q3-mount" style="width:100%; height:450px;"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Q4: Fee burden by company ── -->
-      <div id="fees">
-        <div class="section-hdr"><h2>Q4 · Fee burden by company</h2></div>
-        <div class="query-ref" style="margin: 8px 0 10px">
-          <div class="query-ref-label">Performance query</div>
-          <div class="query-ref-name">Q4 — f_conversion → f_transaction → d_company</div>
-          <div class="query-ref-desc">
-            Measures fee burden per company — useful for detecting anomalous fee patterns.
-            Only conversion rows have fees (<code style="font-family:var(--font-mono);font-size:10px">fee_amount</code>
-            is NULL on raw transactions that weren't converted). Uses NULLIF to guard against
-            zero base_amount division. Scoped to converted transactions only.
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-hdr">
-            <div>
-              <div class="card-title">Average fee % by company</div>
-              <div class="card-sub">AVG(fee_amount / base_amount) × 100 · f_conversion JOIN d_company</div>
-            </div>
-            <button class="btn primary">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
-              </svg>
-              Export CSV
-            </button>
-          </div>
-          <div class="card-body flush">
-            <div id="fx-q4-mount" style="width:100%; height:450px;"></div>
+          <div class="card-body flush" style="overflow:hidden;">
+            <div id="fx-mount" style="width:100%; height:550px;"></div>
           </div>
         </div>
       </div>
@@ -180,10 +141,8 @@
 </script>
 <script>
   window.onload = function () {
-    resizeMount('fx-q3-mount', '100%', '100%');
-    resizeMount('fx-q4-mount', '100%', '100%');
-    embedDashboard(DASHBOARDS.fxRates, 'fx-q3-mount');
-    embedDashboard(DASHBOARDS.fxFees,  'fx-q4-mount');
+    resizeMount('fx-mount', '100%', '100%');
+    embedDashboard(DASHBOARDS.fx, 'fx-mount');
   };
 </script>
 </body>

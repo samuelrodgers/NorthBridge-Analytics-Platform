@@ -48,8 +48,7 @@ const DASHBOARDS = {
   quarantine: '8a6dfe5e-3f6e-49b8-8b83-757895c58d25',
   dataHealth: '',   // TODO: paste UUID after creating dashboard
   pipeline:   '',   // TODO: paste UUID after creating dashboard
-  fxRates:    '',   // TODO: paste UUID after creating dashboard
-  fxFees:     '',   // TODO: paste UUID after creating dashboard
+  fx:         'ea995c11-ac00-48ed-a92e-8529978b19fb',
 };
 
 // ── Guest token fetch from Bouncer ──────────────────────────

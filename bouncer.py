@@ -34,8 +34,7 @@ ALLOWED_DASHBOARDS = [
     "8a6dfe5e-3f6e-49b8-8b83-757895c58d25",  # quarantine
     # "xxxxxxxx-...",  # dataHealth
     # "xxxxxxxx-...",  # pipeline
-    # "xxxxxxxx-...",  # fxRates
-    # "xxxxxxxx-...",  # fxFees
+    "ea995c11-ac00-48ed-a92e-8529978b19fb",  # fx
 ]
 
 # ---------------------------------------------------------------------------
