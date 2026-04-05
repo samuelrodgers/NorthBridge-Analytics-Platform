@@ -94,7 +94,7 @@ function resizeMount(mountId, width, height) {
     if (iframe) {
       iframe.style.width = width;
       iframe.style.height = height;
-      iframe.style.minWidth = width;
+      iframe.style.minWidth = '0';
       iframe.style.minHeight = height;
       observer.disconnect();
     }
