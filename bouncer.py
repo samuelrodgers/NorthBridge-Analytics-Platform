@@ -455,12 +455,6 @@ def quarantine_rows(
     }
 
 
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
 @app.get("/api/fx/rates")
 def get_fx_rates(payload: dict = Depends(require_auth_cookie)):
     """Latest rate per currency pair from raw.fx_rate."""
@@ -494,3 +488,9 @@ def get_company_revenues(payload: dict = Depends(require_auth_cookie)):
         """)
         revenues = [dict(r) for r in cur.fetchall()]
     return {"revenues": revenues}
+
+
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

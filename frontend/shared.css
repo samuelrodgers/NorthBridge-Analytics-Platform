@@ -583,33 +583,71 @@ code, pre { font-family: var(--font-mono); }
   line-height: 1.5;
 }
 
-/* ── FX rate strip ── */
-.fx-rate-strip {
+/* ── FX live ticker bar ── */
+.fx-ticker-bar {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
-.fx-rate-card {
-  background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border-mid);
   border-radius: var(--radius-lg);
-  padding: 12px 18px;
-  min-width: 120px;
+  height: 44px;
+  overflow: hidden;
+  margin-bottom: 16px;
 }
-.fx-rate-pair {
+.fx-ticker-label {
   font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--text-tertiary);
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 6px;
+  padding: 0 16px;
+  border-right: 1px solid var(--border-mid);
+  white-space: nowrap;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.fx-rate-value {
+.fx-ticker-scroll-wrap {
+  flex: 1;
+  overflow: hidden;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+.fx-ticker-track {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  animation: fx-scroll 28s linear infinite;
+}
+.fx-ticker-track:hover { animation-play-state: paused; }
+.fx-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 22px;
   font-family: var(--font-mono);
-  font-size: 20px;
+  white-space: nowrap;
+}
+.fx-ticker-pair {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.06em;
+}
+.fx-ticker-rate {
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
+}
+.fx-ticker-sep {
+  color: var(--border-strong);
+  font-size: 10px;
+}
+@keyframes fx-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
 /* ── FX converter ── */

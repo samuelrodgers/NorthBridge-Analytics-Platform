@@ -102,14 +102,42 @@
     <!-- Content -->
     <div class="content">
 
-      <!-- ── Live FX Rates ── -->
-      <div>
-        <div class="section-hdr">
-          <h2>Live FX rates</h2>
-          <span class="section-sub">— latest rate per pair · raw.fx_rate · refreshes every 5s</span>
+      <!-- ── Live FX rate ticker ── -->
+      <div class="fx-ticker-bar">
+        <div class="fx-ticker-label">
+          <div class="ticker-dot"></div>
+          FX live
         </div>
-        <div class="fx-rate-strip" id="fx-rate-strip">
-          <div class="fx-rate-card"><div class="fx-rate-pair">loading…</div><div class="fx-rate-value">—</div></div>
+        <div class="fx-ticker-scroll-wrap">
+          <div class="fx-ticker-track" id="fx-ticker-track">
+            <span class="fx-ticker-item"><span class="fx-ticker-pair">loading…</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── FX Analytics ── -->
+      <div>
+        <div class="section-hdr"><h2>FX &amp; conversion analytics</h2><span class="section-sub">— currency mix · fee burden · Q3 + Q4 performance queries</span></div>
+        <div class="query-ref" style="margin: 8px 0 10px">
+          <div class="query-ref-label">Performance queries — 3-table joins</div>
+          <div class="query-ref-name">Q3 — f_transaction (currency mix) · Q4 — f_conversion → f_transaction → d_company (fee burden)</div>
+          <div class="query-ref-desc">
+            Q3 shows transaction volume split by currency, revealing platform FX exposure.
+            Q4 measures total FX fee revenue per company — larger companies generate more fee volume.
+            Both queries join across multiple fact tables; Q4 uses NULLIF to guard against zero base_amount division.
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div>
+              <div class="card-title">FX analytics — currency mix &amp; fee revenue</div>
+              <div class="card-sub">f_transaction · f_conversion · d_company</div>
+            </div>
+            <span class="schema-tag analytics">analytics schema</span>
+          </div>
+          <div class="card-body flush" style="overflow:hidden;">
+            <div id="fx-mount" style="width:100%; height:600px;"></div>
+          </div>
         </div>
       </div>
 
@@ -163,32 +191,6 @@
 
       </div>
 
-      <!-- ── FX Analytics ── -->
-      <div style="margin-top:16px">
-        <div class="section-hdr"><h2>FX &amp; conversion analytics</h2><span class="section-sub">— currency mix · fee burden · Q3 + Q4 performance queries</span></div>
-        <div class="query-ref" style="margin: 8px 0 10px">
-          <div class="query-ref-label">Performance queries — 3-table joins</div>
-          <div class="query-ref-name">Q3 — f_transaction (currency mix) · Q4 — f_conversion → f_transaction → d_company (fee burden)</div>
-          <div class="query-ref-desc">
-            Q3 shows transaction volume split by currency, revealing platform FX exposure.
-            Q4 measures total FX fee revenue per company — larger companies generate more fee volume.
-            Both queries join across multiple fact tables; Q4 uses NULLIF to guard against zero base_amount division.
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-hdr">
-            <div>
-              <div class="card-title">FX analytics — currency mix &amp; fee revenue</div>
-              <div class="card-sub">f_transaction · f_conversion · d_company</div>
-            </div>
-            <span class="schema-tag analytics">analytics schema</span>
-          </div>
-          <div class="card-body flush" style="overflow:hidden;">
-            <div id="fx-mount" style="width:100%; height:600px;"></div>
-          </div>
-        </div>
-      </div>
-
     </div><!-- /.content -->
   </div><!-- /.main -->
 </div><!-- /.shell -->
@@ -222,16 +224,18 @@
       return map;
     }
 
-    function renderRateStrip(rates) {
-      const strip = document.getElementById('fx-rate-strip');
-      if (!strip) return;
+    function renderTicker(rates) {
+      const track = document.getElementById('fx-ticker-track');
+      if (!track) return;
       const usdRates = rates.filter(r => r.quote_cncy === 'USD');
-      strip.innerHTML = usdRates.map(r => `
-        <div class="fx-rate-card">
-          <div class="fx-rate-pair">${r.base_cncy}/${r.quote_cncy}</div>
-          <div class="fx-rate-value">${parseFloat(r.rate).toFixed(4)}</div>
-        </div>
-      `).join('');
+      const items = usdRates.map(r =>
+        `<span class="fx-ticker-item">` +
+        `<span class="fx-ticker-pair">${r.base_cncy}/${r.quote_cncy}</span>` +
+        `<span class="fx-ticker-rate">${parseFloat(r.rate).toFixed(4)}</span>` +
+        `</span><span class="fx-ticker-sep">◆</span>`
+      ).join('');
+      // Duplicate for seamless loop
+      track.innerHTML = items + items;
     }
 
     function populateConverter(rates) {
@@ -279,7 +283,7 @@
         if (!res.ok) return;
         const { rates } = await res.json();
         rateMap = buildRateMap(rates);
-        renderRateStrip(rates);
+        renderTicker(rates);
         populateConverter(rates);
         updateConverter();
         renderValuations();
@@ -296,12 +300,9 @@
       } catch (_) {}
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
-      const amtEl = document.getElementById('conv-amount');
-      const selEl = document.getElementById('conv-currency');
-      if (amtEl) amtEl.addEventListener('input', updateConverter);
-      if (selEl) selEl.addEventListener('change', updateConverter);
-    });
+    // Elements exist since this script is at bottom of body
+    document.getElementById('conv-amount').addEventListener('input', updateConverter);
+    document.getElementById('conv-currency').addEventListener('change', updateConverter);
 
     fetchRates();
     fetchRevenues();
