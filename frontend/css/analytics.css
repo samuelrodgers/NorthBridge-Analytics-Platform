@@ -1,0 +1,92 @@
+/* ── Base dashboard background ── */
+.dashboard,
+.dashboard-content,
+.grid-container,
+.grid-content,
+.grid-row {
+    background-color: #161d27 !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* ── Fix horizontal overflow + white border ── */
+.grid-container > div:first-child {
+    width: 98% !important;
+}
+
+html, body {
+    background-color: #161d27 !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* ── Fix horizontal overflow ── */
+.grid-container > div:first-child {
+    width: 98% !important;
+}
+
+/* ── Remove all chart borders and shadows ── */
+.chart-slice {
+    background-color: #161d27 !important;
+    border: 0.5px solid #263040 !important;
+    box-shadow: none !important;
+    border-radius: 6px !important;
+}
+
+/* ── Chart header ── */
+.chart-header {
+    background-color: #161d27 !important;
+    border-bottom: none !important;
+}
+
+.editable-title {
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 11px !important;
+    color: #556270 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+}
+
+/* ── Hide navbar ── */
+.navbar {
+    display: none !important;
+}
+
+/* ── Remove row/grid padding so charts fill the iframe ── */
+.dragdroppable-row,
+.background--transparent {
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* ── Reduce chart holder padding ── */
+.dashboard-component-chart-holder {
+    padding: 6px !important;
+    background-color: #161d27 !important;
+}
+
+/* ── Scrollbar to match the shell ── */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+
+.empty-droptarget-inner,
+.dragdroppable-empty {
+    display: none !important;
+}
+
+iframe {
+    border: none !important;
+    border-width: 0px !important;
+}
