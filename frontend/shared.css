@@ -591,6 +591,8 @@ code, pre { font-family: var(--font-mono); }
   border: 1px solid var(--border-mid);
   border-radius: var(--radius-lg);
   height: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
   overflow: hidden;
   margin-bottom: 16px;
 }
