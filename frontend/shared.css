@@ -349,7 +349,8 @@ code, pre { font-family: var(--font-mono); }
 #fx-q4-mount iframe,
 #company-mount iframe,
 #industry-mount iframe,
-#fx-mount iframe {
+#fx-mount iframe,
+#analytics-mount iframe {
     border: none !important;
     width: 100% !important;
     min-width: unset !important;
