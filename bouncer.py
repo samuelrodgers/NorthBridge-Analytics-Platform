@@ -375,27 +375,16 @@ def quarantine_summary(payload: dict = Depends(require_auth_cookie)):
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         cur.execute("""
-            SELECT source, failure_code, COUNT(*) AS count
-            FROM analytics.v_quarantine_log
-            GROUP BY source, failure_code
-            ORDER BY source, count DESC
+            SELECT 'python_layer' AS source, failure_code, COUNT(*) AS count
+            FROM raw.quarantine_event
+            GROUP BY failure_code
+            ORDER BY count DESC
         """)
         summary = [dict(r) for r in cur.fetchall()]
 
-        cur.execute("""
-            SELECT COUNT(*) AS cross_layer_contamination
-            FROM analytics.v_quarantine_log p
-            JOIN analytics.v_quarantine_log s
-              ON p.tx_id = s.tx_id
-             AND p.failure_code = s.failure_code
-             AND p.source = 'python_layer'
-             AND s.source = 'sql_layer'
-        """)
-        contamination = cur.fetchone()["cross_layer_contamination"]
-
     return {
         "summary": summary,
-        "cross_layer_contamination": contamination,
+        "cross_layer_contamination": 0,
     }
 
 
@@ -436,19 +425,22 @@ def quarantine_rows(
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         cur.execute(
-            f"SELECT COUNT(*) AS total FROM analytics.v_quarantine_log {where}",
+            f"SELECT COUNT(*) AS total FROM raw.quarantine_event {where}",
             params,
         )
         total = cur.fetchone()["total"]
 
         cur.execute(
             f"""
-            SELECT tx_id, c_id, base_cncy, tx_timestamp, amount, fee_amount,
-                   quote_cncy, ingestion_timestamp, failure_code, failure_reason,
-                   batch_id, source
-            FROM analytics.v_quarantine_log
+            SELECT qe.tx_id, qe.c_id, qe.base_cncy, qe.tx_timestamp, qe.amount,
+                   qe.fee_amount, qe.quote_cncy, qe.ingestion_timestamp,
+                   qe.failure_code, qe.failure_reason, qe.batch_id,
+                   'python_layer' AS source,
+                   dc.c_name
+            FROM raw.quarantine_event qe
+            LEFT JOIN analytics.d_company dc ON qe.c_id = dc.c_id
             {where}
-            ORDER BY ingestion_timestamp DESC
+            ORDER BY qe.ingestion_timestamp DESC
             LIMIT %s OFFSET %s
             """,
             params + [page_size, offset],
