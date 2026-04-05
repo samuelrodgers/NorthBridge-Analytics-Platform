@@ -111,3 +111,29 @@ SELECT
 FROM analytics.f_industry fi
 JOIN analytics.d_time d ON fi.time_id = d.time_id
 JOIN analytics.d_industry di ON fi.industry_id = di.industry_id
+
+-- fx_currency_mix
+/*
+transaction count and total amount by currency — shows platform FX exposure (Q3 chart on fx.html)
+*/
+SELECT
+    ft.cncy                  AS currency,
+    COUNT(ft.tx_id)          AS transaction_count,
+    ROUND(SUM(ft.amount), 2) AS total_amount
+FROM analytics.f_transaction ft
+GROUP BY ft.cncy
+ORDER BY transaction_count DESC
+
+-- fx_fee_burden
+/*
+total FX fee revenue per company — larger companies generate more fee volume (Q4 chart on fx.html)
+*/
+SELECT
+    dc.c_name,
+    COUNT(fc.cx_id)              AS conversion_count,
+    ROUND(SUM(fc.fee_amount), 2) AS total_fees_usd
+FROM analytics.f_conversion fc
+JOIN analytics.f_transaction ft ON fc.tx_id = ft.tx_id
+JOIN analytics.d_company dc ON ft.c_id = dc.c_id
+GROUP BY dc.c_id, dc.c_name
+ORDER BY total_fees_usd DESC
