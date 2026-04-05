@@ -9,6 +9,16 @@
     box-shadow: none !important;
 }
 
+/* ── Fix horizontal overflow + white border ── */
+.grid-container > div:first-child {
+    width: 98% !important;
+}
+
+body {
+    background-color: #161d27 !important;
+    border: none !important;
+}
+
 /* ── Remove all chart borders and shadows ── */
 .chart-slice {
     background-color: #161d27 !important;
