@@ -6,6 +6,7 @@ export async function requireAuth() {
     if (!res.ok) throw new Error("Not authenticated");
     const user = await res.json();
     populateUserUI(user);
+    document.body.style.visibility = "visible";
     return user;
   } catch {
     window.location.replace("/login.html");
