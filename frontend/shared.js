@@ -12,23 +12,25 @@
   });
 })();
 
-// ── Live company value ticker ────────────────────────────────
-// TODO: replace mock with real API call:
-// fetch('/api/company-value').then(r => r.json()).then(d => { el.textContent = fmt(d.value); });
+// ── Live EUR→USD platform value ticker ──────────────────────
+// Fetches total EUR-denominated revenue converted at the current live
+// EUR/USD rate. Refreshes every 5 seconds — the value fluctuates because
+// the exchange rate moves, not because new transactions arrived.
 (function () {
   const el = document.getElementById('ticker-value');
   if (!el) return;
-
-  let base = 4_821_039;
-  let offset = 0;
 
   function fmt(n) {
     return '$' + Math.round(n).toLocaleString('en-US');
   }
 
-  function refresh() {
-    offset += (Math.random() - 0.47) * 1400;
-    el.textContent = fmt(base + offset);
+  async function refresh() {
+    try {
+      const res = await fetch('/api/value', { credentials: 'include' });
+      if (!res.ok) return;
+      const { value } = await res.json();
+      el.textContent = fmt(value);
+    } catch (_) {}
   }
 
   refresh();

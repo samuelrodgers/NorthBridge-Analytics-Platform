@@ -16,6 +16,7 @@
 #   load_all(conn, fx_df, tx_df, expense_df=None, quarantine_df=None)
 
 import os
+import uuid
 import logging
 from dotenv import load_dotenv
 import psycopg2
@@ -267,18 +268,28 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
         return 0
 
     df = quarantine_df.copy()
+
+    # Generate a deterministic quarantine_id so re-running the same batch
+    # produces identical IDs and ON CONFLICT DO NOTHING correctly deduplicates.
+    # uuid5 is derived from (batch_id, tx_id, failure_code) — the natural
+    # identity of a quarantine record within a pipeline run.
+    _NS = uuid.UUID("a7c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e")
+    df["quarantine_id"] = df.apply(
+        lambda row: str(uuid.uuid5(_NS, f"{batch_id}:{row.get('tx_id')}:{row.get('failure_code')}")),
+        axis=1,
+    )
     df["batch_id"] = batch_id
 
     sql = """
         INSERT INTO raw.quarantine_event
-            (tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
+            (quarantine_id, tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
              tx_timestamp, failure_code, failure_reason, batch_id)
         VALUES %s
         ON CONFLICT (quarantine_id) DO NOTHING
     """
 
     cols = [
-        "tx_id", "c_id", "base_cncy", "quote_cncy",
+        "quarantine_id", "tx_id", "c_id", "base_cncy", "quote_cncy",
         "amount", "fee_amount", "tx_timestamp",
         "failure_code", "failure_reason", "batch_id",
     ]

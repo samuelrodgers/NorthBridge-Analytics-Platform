@@ -96,7 +96,7 @@
       <span class="schema-tag analytics">analytics schema</span>
       <div class="ticker">
         <div class="ticker-dot"></div>
-        <span class="ticker-label">LIVE VALUE</span>
+        <span class="ticker-label">EUR REV (USD)</span>
         <span class="ticker-value" id="ticker-value">—</span>
       </div>
     </header>
@@ -104,13 +104,34 @@
     <!-- Content -->
     <div class="content">
 
-      <!-- KPI strip -->
+      <!-- KPI strip — API-backed, pre-aggregated from analytics.f_industry -->
       <div>
         <div class="section-hdr">
           <h2>Key metrics</h2>
-          <span class="section-sub">— embedded Superset · KPI strip dashboard</span>
+          <span class="section-sub">— analytics schema · /api/olap/kpis · pre-aggregated f_industry</span>
         </div>
-        <div id="kpi-strip-mount" style="margin-top:8px; width:100%; height:250px;"></div>
+        <div class="kpi-grid" style="margin-top:8px">
+          <div class="kpi-card">
+            <div class="kpi-label">Total revenue</div>
+            <div class="kpi-value" id="kpi-revenue">—</div>
+            <div class="kpi-delta muted">all currencies · f_industry</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Transactions</div>
+            <div class="kpi-value" id="kpi-tx-count">—</div>
+            <div class="kpi-delta muted">raw → analytics promoted</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Avg transaction</div>
+            <div class="kpi-value" id="kpi-avg-tx">—</div>
+            <div class="kpi-delta muted">revenue / transaction count</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Companies</div>
+            <div class="kpi-value" id="kpi-companies">—</div>
+            <div class="kpi-delta muted">active · d_company</div>
+          </div>
+        </div>
       </div>
 
       <!-- Main chart + quarantine log -->
@@ -170,11 +191,24 @@
   document.getElementById("logout-btn").addEventListener("click", logout);
 </script>
 <script>
+  // Load KPIs from pre-aggregated analytics schema
+  (async function loadKpis() {
+    function fmtMoney(n) { return '$' + Math.round(n).toLocaleString('en-US'); }
+    function fmtNum(n)   { return Math.round(n).toLocaleString('en-US'); }
+    try {
+      const res = await fetch('/api/olap/kpis', { credentials: 'include' });
+      if (!res.ok) return;
+      const d = await res.json();
+      document.getElementById('kpi-revenue').textContent   = fmtMoney(d.total_revenue);
+      document.getElementById('kpi-tx-count').textContent  = fmtNum(d.transaction_count);
+      document.getElementById('kpi-avg-tx').textContent    = fmtMoney(d.avg_transaction);
+      document.getElementById('kpi-companies').textContent = d.company_count;
+    } catch (_) {}
+  })();
+
   window.onload = function () {
-    resizeMount('kpi-strip-mount', '100%', '100%');
-    resizeMount('superset-mount',  '100%', '100%');
-    embedDashboard(DASHBOARDS.kpiStrip, 'kpi-strip-mount');
-    embedDashboard(DASHBOARDS.mainTx,   'superset-mount');
+    resizeMount('superset-mount', '100%', '100%');
+    embedDashboard(DASHBOARDS.mainTx, 'superset-mount');
   };
 </script>
 <script>

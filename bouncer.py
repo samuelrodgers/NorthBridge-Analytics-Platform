@@ -26,10 +26,16 @@ ALGORITHM         = "HS256"
 TOKEN_EXPIRE_MINS = 60 * 8
 
 ALLOWED_DASHBOARDS = [
-    "4f55a708-c316-406e-8480-1aa3d071631f",
-    "813326be-8203-4dce-9908-25e28d9f0e6e",
-    "0b663ea7-b0d8-4611-9ca4-a8761e17d875",
-    "75c09c9f-faf0-448b-9215-bda18bbf87f7"
+    "4f55a708-c316-406e-8480-1aa3d071631f",  # mainTx
+    "813326be-8203-4dce-9908-25e28d9f0e6e",  # kpiStrip
+    "0b663ea7-b0d8-4611-9ca4-a8761e17d875",  # company
+    "75c09c9f-faf0-448b-9215-bda18bbf87f7",  # industry
+    # Add new dashboard UUIDs here as they are created in Superset:
+    # "xxxxxxxx-...",  # quarantine
+    # "xxxxxxxx-...",  # dataHealth
+    # "xxxxxxxx-...",  # pipeline
+    # "xxxxxxxx-...",  # fxRates
+    # "xxxxxxxx-...",  # fxFees
 ]
 
 # ---------------------------------------------------------------------------
@@ -242,6 +248,70 @@ def get_token(
         return r.json()
     except Exception as e:
         return {"error": "Bouncer Script Error", "details": str(e)}
+
+# ---------------------------------------------------------------------------
+# Live FX value ticker
+# ---------------------------------------------------------------------------
+
+@app.get("/api/value")
+def get_platform_value(payload: dict = Depends(require_auth_cookie)):
+    """
+    Returns the current USD-equivalent value of all EUR-denominated platform
+    revenue, converted at the latest live EUR/USD rate.
+
+    The value fluctuates every refresh purely because the exchange rate moves
+    — not because new transactions arrived. This demonstrates that the
+    intrinsic USD value of foreign-currency revenue is continuously in flux.
+    """
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT ROUND(
+                SUM(ft.amount) * (
+                    SELECT rate FROM raw.fx_rate
+                    WHERE base_cncy = 'EUR' AND quote_cncy = 'USD'
+                    ORDER BY fx_timestamp DESC LIMIT 1
+                ),
+                2
+            ) AS usd_value
+            FROM analytics.f_transaction ft
+            WHERE ft.cncy = 'EUR'
+        """)
+        row = cur.fetchone()
+    return {"value": float(row["usd_value"]) if row and row["usd_value"] else 0.0}
+
+
+# ---------------------------------------------------------------------------
+# OLAP endpoints — pre-aggregated analytics schema
+# ---------------------------------------------------------------------------
+
+@app.get("/api/olap/kpis")
+def get_kpis(payload: dict = Depends(require_auth_cookie)):
+    """
+    Returns four headline KPIs derived entirely from the pre-aggregated
+    analytics schema (f_industry, d_company). Queries run against O(7K rows)
+    in f_industry rather than O(6M rows) in raw — demonstrating that OLAP
+    pre-aggregation enables sub-100ms API responses at scale.
+    """
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                SUM(total_revenue)                                          AS total_revenue,
+                SUM(transaction_count)                                      AS transaction_count,
+                ROUND(SUM(total_revenue) / NULLIF(SUM(transaction_count), 0), 2)
+                                                                            AS avg_transaction,
+                (SELECT COUNT(*) FROM analytics.d_company)                  AS company_count
+            FROM analytics.f_industry
+        """)
+        row = cur.fetchone()
+    return {
+        "total_revenue":     float(row["total_revenue"] or 0),
+        "transaction_count": int(row["transaction_count"] or 0),
+        "avg_transaction":   float(row["avg_transaction"] or 0),
+        "company_count":     int(row["company_count"] or 0),
+    }
+
 
 # ---------------------------------------------------------------------------
 # Quarantine endpoints
