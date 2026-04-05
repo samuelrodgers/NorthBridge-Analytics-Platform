@@ -160,18 +160,16 @@
             <span class="pill red" id="quarantine-count">—</span>
             <a href="governance.html" class="btn">View all →</a>
           </div>
-          <div class="card-body flush scrollable" style="max-height:300px">
+          <div class="card-body flush scrollable">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>tx_id</th>
                   <th>Failure</th>
-                  <th>Source</th>
                   <th>Ingested</th>
                 </tr>
               </thead>
               <tbody id="quarantine-tbody">
-                <tr><td colspan="4" class="muted" style="text-align:center;padding:16px">Loading…</td></tr>
+                <tr><td colspan="2" class="muted" style="text-align:center;padding:16px">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -247,22 +245,19 @@
 
       // Render rows
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No quarantine rows.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:16px">No quarantine rows.</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map(r => {
         const colour = PILL_COLOUR[r.failure_code] || 'gray';
-        const txShort = r.tx_id ? r.tx_id.slice(0, 8) : '—';
         return `<tr>
-          <td class="mono">${txShort}</td>
           <td><span class="pill ${colour}">${r.failure_code}</span></td>
-          <td class="muted">${r.source === 'python_layer' ? 'python' : 'sql'}</td>
           <td class="muted">${fmtDate(r.ingestion_timestamp)}</td>
         </tr>`;
       }).join('');
 
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">Failed to load quarantine data.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="2" class="muted" style="text-align:center;padding:16px">Failed to load quarantine data.</td></tr>';
       console.error('Quarantine fetch failed:', err);
     }
   }

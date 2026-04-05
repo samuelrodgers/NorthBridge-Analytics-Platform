@@ -329,7 +329,11 @@ def quarantine_health(payload: dict = Depends(require_auth_cookie)):
         cur.execute("SELECT COUNT(*) AS total FROM analytics.v_quarantine_log")
         total_quarantined = cur.fetchone()["total"]
 
-        cur.execute("SELECT COUNT(*) AS total FROM raw.transaction_event")
+        cur.execute("""
+            SELECT reltuples::bigint AS total
+            FROM pg_class
+            WHERE relname = 'transaction_event'
+        """)
         total_raw = cur.fetchone()["total"]
 
         cur.execute("""
