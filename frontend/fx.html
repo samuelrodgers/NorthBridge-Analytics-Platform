@@ -113,6 +113,7 @@
             <span class="fx-ticker-item"><span class="fx-ticker-pair">loading…</span></span>
           </div>
         </div>
+        <button class="fx-ticker-pause-btn" id="fx-ticker-pause" title="Pause / resume ticker">⏸</button>
       </div>
 
       <!-- ── FX Analytics ── -->
@@ -303,6 +304,19 @@
     // Elements exist since this script is at bottom of body
     document.getElementById('conv-amount').addEventListener('input', updateConverter);
     document.getElementById('conv-currency').addEventListener('change', updateConverter);
+
+    // Pause / resume ticker
+    (function () {
+      const btn   = document.getElementById('fx-ticker-pause');
+      const track = document.getElementById('fx-ticker-track');
+      let paused  = false;
+      btn.addEventListener('click', function () {
+        paused = !paused;
+        track.classList.toggle('paused', paused);
+        btn.textContent = paused ? '▶' : '⏸';
+        btn.title       = paused ? 'Resume ticker' : 'Pause ticker';
+      });
+    })();
 
     fetchRates();
     fetchRevenues();

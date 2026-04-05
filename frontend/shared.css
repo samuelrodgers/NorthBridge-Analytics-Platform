@@ -590,26 +590,26 @@ code, pre { font-family: var(--font-mono); }
   background: var(--surface-2);
   border: 1px solid var(--border-mid);
   border-radius: var(--radius-lg);
-  height: 44px;
-  min-height: 44px;
+  height: 60px;
+  min-height: 60px;
   flex-shrink: 0;
   overflow: hidden;
   margin-bottom: 16px;
 }
 .fx-ticker-label {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   color: var(--accent);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  padding: 0 16px;
+  padding: 0 18px;
   border-right: 1px solid var(--border-mid);
   white-space: nowrap;
   height: 100%;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 .fx-ticker-scroll-wrap {
   flex: 1;
@@ -622,31 +622,47 @@ code, pre { font-family: var(--font-mono); }
   display: flex;
   align-items: center;
   width: max-content;
-  animation: fx-scroll 28s linear infinite;
+  animation: fx-scroll 56s linear infinite;
 }
-.fx-ticker-track:hover { animation-play-state: paused; }
+.fx-ticker-track.paused { animation-play-state: paused; }
 .fx-ticker-item {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 22px;
+  gap: 9px;
+  padding: 0 28px;
   font-family: var(--font-mono);
   white-space: nowrap;
 }
 .fx-ticker-pair {
-  font-size: 10px;
-  color: var(--text-tertiary);
-  letter-spacing: 0.06em;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.08em;
 }
 .fx-ticker-rate {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--text-primary);
 }
 .fx-ticker-sep {
   color: var(--border-strong);
-  font-size: 10px;
+  font-size: 11px;
 }
+.fx-ticker-pause-btn {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--border-mid);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  height: 100%;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.fx-ticker-pause-btn:hover { color: var(--accent); }
 @keyframes fx-scroll {
   0%   { transform: translateX(0); }
   100% { transform: translateX(-50%); }
