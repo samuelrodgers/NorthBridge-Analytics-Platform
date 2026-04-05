@@ -45,7 +45,7 @@ const DASHBOARDS = {
   mainTx:     '4f55a708-c316-406e-8480-1aa3d071631f',
   company:    '0b663ea7-b0d8-4611-9ca4-a8761e17d875',
   industry:   '75c09c9f-faf0-448b-9215-bda18bbf87f7', 
-  quarantine: '',   // TODO: paste UUID after creating dashboard
+  quarantine: '8a6dfe5e-3f6e-49b8-8b83-757895c58d25',
   dataHealth: '',   // TODO: paste UUID after creating dashboard
   pipeline:   '',   // TODO: paste UUID after creating dashboard
   fxRates:    '',   // TODO: paste UUID after creating dashboard
