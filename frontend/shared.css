@@ -422,6 +422,25 @@ code, pre { font-family: var(--font-mono); }
 .card-body.flush { padding: 0; }
 .card-body.scrollable { overflow-y: auto; }
 
+/* Coming-soon placeholder */
+.coming-soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 160px;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-lg);
+  margin: 12px;
+}
+
 /* Action button */
 .btn {
   display: inline-flex;
