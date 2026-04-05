@@ -14,9 +14,11 @@
     width: 98% !important;
 }
 
-body {
+html, body {
     background-color: #161d27 !important;
     border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
 /* ── Remove all chart borders and shadows ── */

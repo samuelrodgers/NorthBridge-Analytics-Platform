@@ -346,7 +346,10 @@ code, pre { font-family: var(--font-mono); }
 #fx-health-mount iframe,
 #pipeline-mount iframe,
 #fx-q3-mount iframe,
-#fx-q4-mount iframe {
+#fx-q4-mount iframe,
+#company-mount iframe,
+#industry-mount iframe,
+#fx-mount iframe {
     border: none !important;
     width: 100% !important;
     min-width: unset !important;
