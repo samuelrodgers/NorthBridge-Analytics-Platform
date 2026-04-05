@@ -102,8 +102,69 @@
     <!-- Content -->
     <div class="content">
 
-      <!-- ── FX Analytics ── -->
+      <!-- ── Live FX Rates ── -->
       <div>
+        <div class="section-hdr">
+          <h2>Live FX rates</h2>
+          <span class="section-sub">— latest rate per pair · raw.fx_rate · refreshes every 5s</span>
+        </div>
+        <div class="fx-rate-strip" id="fx-rate-strip">
+          <div class="fx-rate-card"><div class="fx-rate-pair">loading…</div><div class="fx-rate-value">—</div></div>
+        </div>
+      </div>
+
+      <!-- ── Converter + Company Valuations ── -->
+      <div class="col-2" style="margin-top:16px">
+
+        <!-- Currency converter -->
+        <div class="card">
+          <div class="card-hdr">
+            <div>
+              <div class="card-title">Currency converter</div>
+              <div class="card-sub">Live rates · converts any currency to USD</div>
+            </div>
+            <div class="ticker-dot" style="margin-left:auto;"></div>
+          </div>
+          <div class="card-body">
+            <div class="fx-converter">
+              <div class="fx-converter-input-row">
+                <input type="number" id="conv-amount" class="fx-input" placeholder="Amount" value="1000" min="0">
+                <select id="conv-currency" class="fx-select"></select>
+              </div>
+              <div class="fx-converter-label">→ USD equivalent</div>
+              <div class="fx-converter-result" id="conv-result">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Company USD valuations -->
+        <div class="card">
+          <div class="card-hdr">
+            <div>
+              <div class="card-title">Company USD valuations</div>
+              <div class="card-sub">Total revenue converted at live rates · updates every 5s</div>
+            </div>
+            <div class="ticker-dot" style="margin-left:auto;"></div>
+          </div>
+          <div class="card-body flush scrollable" style="max-height:280px">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th style="text-align:right">USD Valuation</th>
+                </tr>
+              </thead>
+              <tbody id="valuation-tbody">
+                <tr><td colspan="2" class="muted" style="text-align:center;padding:16px">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── FX Analytics ── -->
+      <div style="margin-top:16px">
         <div class="section-hdr"><h2>FX &amp; conversion analytics</h2><span class="section-sub">— currency mix · fee burden · Q3 + Q4 performance queries</span></div>
         <div class="query-ref" style="margin: 8px 0 10px">
           <div class="query-ref-label">Performance queries — 3-table joins</div>
@@ -144,6 +205,108 @@
     resizeMount('fx-mount', '100%', '100%');
     embedDashboard(DASHBOARDS.fx, 'fx-mount');
   };
+</script>
+<script>
+  (function () {
+    let revenues = [];
+    let rateMap  = { USD: 1.0 };
+    let converterPopulated = false;
+
+    function fmtUSD(n) {
+      return '$' + Math.round(n).toLocaleString('en-US');
+    }
+
+    function buildRateMap(rates) {
+      const map = { USD: 1.0 };
+      rates.forEach(r => { if (r.quote_cncy === 'USD') map[r.base_cncy] = parseFloat(r.rate); });
+      return map;
+    }
+
+    function renderRateStrip(rates) {
+      const strip = document.getElementById('fx-rate-strip');
+      if (!strip) return;
+      const usdRates = rates.filter(r => r.quote_cncy === 'USD');
+      strip.innerHTML = usdRates.map(r => `
+        <div class="fx-rate-card">
+          <div class="fx-rate-pair">${r.base_cncy}/${r.quote_cncy}</div>
+          <div class="fx-rate-value">${parseFloat(r.rate).toFixed(4)}</div>
+        </div>
+      `).join('');
+    }
+
+    function populateConverter(rates) {
+      if (converterPopulated) return;
+      const sel = document.getElementById('conv-currency');
+      if (!sel) return;
+      const usdOpt = document.createElement('option');
+      usdOpt.value = 'USD'; usdOpt.textContent = 'USD';
+      sel.appendChild(usdOpt);
+      rates.filter(r => r.quote_cncy === 'USD').forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.base_cncy; opt.textContent = r.base_cncy;
+        sel.appendChild(opt);
+      });
+      converterPopulated = true;
+    }
+
+    function updateConverter() {
+      const amount   = parseFloat(document.getElementById('conv-amount').value) || 0;
+      const currency = document.getElementById('conv-currency').value;
+      const rate     = rateMap[currency] || 1.0;
+      document.getElementById('conv-result').textContent = fmtUSD(amount * rate);
+    }
+
+    function renderValuations() {
+      const tbody = document.getElementById('valuation-tbody');
+      if (!tbody || revenues.length === 0) return;
+      const companies = {};
+      revenues.forEach(r => {
+        if (!companies[r.c_name]) companies[r.c_name] = 0;
+        companies[r.c_name] += parseFloat(r.total_revenue) * (rateMap[r.cncy] || 1.0);
+      });
+      const sorted = Object.entries(companies).sort((a, b) => b[1] - a[1]);
+      tbody.innerHTML = sorted.map(([name, val]) => `
+        <tr>
+          <td>${name}</td>
+          <td class="mono" style="text-align:right">${fmtUSD(val)}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function fetchRates() {
+      try {
+        const res = await fetch('/api/fx/rates', { credentials: 'include' });
+        if (!res.ok) return;
+        const { rates } = await res.json();
+        rateMap = buildRateMap(rates);
+        renderRateStrip(rates);
+        populateConverter(rates);
+        updateConverter();
+        renderValuations();
+      } catch (_) {}
+    }
+
+    async function fetchRevenues() {
+      try {
+        const res = await fetch('/api/fx/company-revenues', { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        revenues = data.revenues;
+        renderValuations();
+      } catch (_) {}
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const amtEl = document.getElementById('conv-amount');
+      const selEl = document.getElementById('conv-currency');
+      if (amtEl) amtEl.addEventListener('input', updateConverter);
+      if (selEl) selEl.addEventListener('change', updateConverter);
+    });
+
+    fetchRates();
+    fetchRevenues();
+    setInterval(fetchRates, 5000);
+  })();
 </script>
 </body>
 </html>

@@ -459,3 +459,38 @@ def quarantine_rows(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+@app.get("/api/fx/rates")
+def get_fx_rates(payload: dict = Depends(require_auth_cookie)):
+    """Latest rate per currency pair from raw.fx_rate."""
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT DISTINCT ON (base_cncy, quote_cncy)
+                base_cncy, quote_cncy,
+                ROUND(rate::numeric, 6) AS rate,
+                fx_timestamp
+            FROM raw.fx_rate
+            ORDER BY base_cncy, quote_cncy, fx_timestamp DESC
+        """)
+        rates = [dict(r) for r in cur.fetchall()]
+    return {"rates": rates}
+
+
+@app.get("/api/fx/company-revenues")
+def get_company_revenues(payload: dict = Depends(require_auth_cookie)):
+    """Total revenue per company per currency — loaded once, combined client-side with live rates."""
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT dc.c_name,
+                   ft.cncy,
+                   ROUND(SUM(ft.amount), 2) AS total_revenue
+            FROM analytics.f_transaction ft
+            JOIN analytics.d_company dc ON ft.c_id = dc.c_id
+            GROUP BY dc.c_id, dc.c_name, ft.cncy
+            ORDER BY dc.c_name, ft.cncy
+        """)
+        revenues = [dict(r) for r in cur.fetchall()]
+    return {"revenues": revenues}
