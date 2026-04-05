@@ -12,6 +12,24 @@
   });
 })();
 
+// ── Query-ref toggle buttons ─────────────────────────────────
+// Injects an "ⓘ schema" button into each .section-hdr that precedes
+// a .query-ref block. Clicking toggles the block open/closed.
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.query-ref').forEach(function (ref) {
+    const hdr = ref.previousElementSibling;
+    if (!hdr || !hdr.classList.contains('section-hdr')) return;
+    const btn = document.createElement('button');
+    btn.className = 'query-ref-toggle';
+    btn.innerHTML = 'ⓘ schema';
+    btn.addEventListener('click', function () {
+      const open = ref.classList.toggle('open');
+      btn.innerHTML = open ? '✕ schema' : 'ⓘ schema';
+    });
+    hdr.appendChild(btn);
+  });
+});
+
 // ── Live EUR→USD platform value ticker ──────────────────────
 // Fetches total EUR-denominated revenue converted at the current live
 // EUR/USD rate. Refreshes every 5 seconds — the value fluctuates because

@@ -543,7 +543,26 @@ code, pre { font-family: var(--font-mono); }
   border-left: 3px solid var(--accent-border);
   border-radius: var(--radius-md);
   padding: 10px 14px;
+  display: none;
 }
+.query-ref.open { display: block; }
+.query-ref-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin-left: auto;
+  letter-spacing: 0.05em;
+  transition: color 0.12s, border-color 0.12s;
+}
+.query-ref-toggle:hover { color: var(--text-secondary); border-color: var(--accent-border); }
 .query-ref-label {
   font-family: var(--font-mono);
   font-size: 9px;

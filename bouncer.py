@@ -326,7 +326,9 @@ def quarantine_health(payload: dict = Depends(require_auth_cookie)):
     with get_db() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        cur.execute("SELECT COUNT(*) AS total FROM analytics.v_quarantine_log")
+        # Use raw.quarantine_event directly — v_quarantine_log scans all 6M
+        # transaction_event rows on every query (window function in the view).
+        cur.execute("SELECT COUNT(*) AS total FROM raw.quarantine_event")
         total_quarantined = cur.fetchone()["total"]
 
         cur.execute("""
@@ -338,7 +340,7 @@ def quarantine_health(payload: dict = Depends(require_auth_cookie)):
 
         cur.execute("""
             SELECT COUNT(*) AS recent
-            FROM analytics.v_quarantine_log
+            FROM raw.quarantine_event
             WHERE ingestion_timestamp >= NOW() - INTERVAL '2 hours'
         """)
         recent = cur.fetchone()["recent"]
