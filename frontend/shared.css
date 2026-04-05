@@ -350,7 +350,8 @@ code, pre { font-family: var(--font-mono); }
 #company-mount iframe,
 #industry-mount iframe,
 #fx-mount iframe,
-#analytics-mount iframe {
+#analytics-mount iframe,
+#pipeline-mount iframe {
     border: none !important;
     width: 100% !important;
     min-width: unset !important;

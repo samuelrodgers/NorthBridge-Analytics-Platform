@@ -168,46 +168,16 @@
           <span class="section-sub">— raw schema vs analytics schema</span>
         </div>
 
-        <div class="col-2" style="margin-top:8px">
-
-          <div class="card">
-            <div class="card-hdr">
-              <div>
-                <div class="card-title">Row count: raw → analytics</div>
-                <div class="card-sub">Ingestion completeness check</div>
-              </div>
-              <span class="schema-tag both">both schemas</span>
-            </div>
-            <div class="card-body flush">
-              <div id="health-mount" style="width:100%; height:300px;"><div class="coming-soon">In development</div></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-hdr">
-              <div>
-                <div class="card-title">FX rate ingestion</div>
-                <div class="card-sub">raw.fx_rate → analytics.f_fx_rate</div>
-              </div>
-              <span class="schema-tag both">both schemas</span>
-            </div>
-            <div class="card-body flush">
-              <div id="fx-health-mount" style="width:100%; height:300px;"><div class="coming-soon">In development</div></div>
-            </div>
-          </div>
-
-        </div>
-
-        <div class="card" style="margin-top:16px">
+        <div class="card" style="margin-top:8px">
           <div class="card-hdr">
             <div>
-              <div class="card-title">Ingestion timeline — raw.transaction_event</div>
-              <div class="card-sub">ingestion_timestamp over time · BRIN index on raw.fx_rate</div>
+              <div class="card-title">Pipeline status — row counts · FX ingestion · timeline</div>
+              <div class="card-sub">raw.transaction_event · raw.fx_rate · analytics.f_transaction · analytics.f_expense</div>
             </div>
-            <span class="schema-tag raw">raw schema</span>
+            <span class="schema-tag both">both schemas</span>
           </div>
-          <div class="card-body flush">
-            <div id="pipeline-mount" style="width:100%; height:400px;"><div class="coming-soon">In development</div></div>
+          <div class="card-body flush" style="overflow:hidden;">
+            <div id="pipeline-mount" style="width:100%; height:1400px;"></div>
           </div>
         </div>
 
@@ -227,13 +197,9 @@
 <script>
   window.onload = function () {
     resizeMount('quarantine-mount', '100%', '100%');
-    resizeMount('health-mount',     '100%', '100%');
-    resizeMount('fx-health-mount',  '100%', '100%');
     resizeMount('pipeline-mount',   '100%', '100%');
-    embedDashboard(DASHBOARDS.quarantine,  'quarantine-mount');
-    embedDashboard(DASHBOARDS.dataHealth,  'health-mount');
-    embedDashboard(DASHBOARDS.dataHealth,  'fx-health-mount');
-    embedDashboard(DASHBOARDS.pipeline,    'pipeline-mount');
+    embedDashboard(DASHBOARDS.quarantine, 'quarantine-mount');
+    embedDashboard(DASHBOARDS.pipeline,   'pipeline-mount');
   };
 </script>
 <script>

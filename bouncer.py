@@ -33,8 +33,7 @@ ALLOWED_DASHBOARDS = [
     # Add new dashboard UUIDs here as they are created in Superset:
     "3bc8f17c-3e49-4611-98df-545a061c65ed",  # analytics
     "8a6dfe5e-3f6e-49b8-8b83-757895c58d25",  # quarantine
-    # "xxxxxxxx-...",  # dataHealth
-    # "xxxxxxxx-...",  # pipeline
+    "9a9fdd7c-27fc-4c4b-8d54-af074a2f8f52",  # pipeline
     "ea995c11-ac00-48ed-a92e-8529978b19fb",  # fx
 ]
 

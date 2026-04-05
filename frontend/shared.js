@@ -47,8 +47,7 @@ const DASHBOARDS = {
   industry:   '75c09c9f-faf0-448b-9215-bda18bbf87f7', 
   analytics:  '3bc8f17c-3e49-4611-98df-545a061c65ed',
   quarantine: '8a6dfe5e-3f6e-49b8-8b83-757895c58d25',
-  dataHealth: '',   // TODO: paste UUID after creating dashboard
-  pipeline:   '',   // TODO: paste UUID after creating dashboard
+  pipeline:   '9a9fdd7c-27fc-4c4b-8d54-af074a2f8f52',
   fx:         'ea995c11-ac00-48ed-a92e-8529978b19fb',
 };
 
