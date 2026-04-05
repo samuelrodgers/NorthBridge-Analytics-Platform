@@ -339,11 +339,17 @@ code, pre { font-family: var(--font-mono); }
 .view-chip.active svg { opacity: 1; }
 
 /* ── KPI grid ── */
-#kpi-strip-mount iframe {
+#kpi-strip-mount iframe,
+#superset-mount iframe,
+#quarantine-mount iframe,
+#health-mount iframe,
+#fx-health-mount iframe,
+#pipeline-mount iframe,
+#fx-q3-mount iframe,
+#fx-q4-mount iframe {
     border: none !important;
-}
-#superset-mount iframe {
-    border: none !important;
+    width: 100% !important;
+    min-width: unset !important;
 }
 .kpi-grid {
   display: grid;
