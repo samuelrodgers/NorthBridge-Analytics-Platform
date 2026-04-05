@@ -317,6 +317,48 @@ def get_kpis(payload: dict = Depends(require_auth_cookie)):
 # Quarantine endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/api/quarantine/health")
+def quarantine_health(payload: dict = Depends(require_auth_cookie)):
+    """
+    Governance KPI stats for the data health panel.
+    Returns total quarantined rows, pass rate, new rows since last transform
+    run (2h window), and the most recent ingestion timestamp.
+    """
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        cur.execute("SELECT COUNT(*) AS total FROM analytics.v_quarantine_log")
+        total_quarantined = cur.fetchone()["total"]
+
+        cur.execute("SELECT COUNT(*) AS total FROM raw.transaction_event")
+        total_raw = cur.fetchone()["total"]
+
+        cur.execute("""
+            SELECT COUNT(*) AS recent
+            FROM analytics.v_quarantine_log
+            WHERE ingestion_timestamp >= NOW() - INTERVAL '2 hours'
+        """)
+        recent = cur.fetchone()["recent"]
+
+        cur.execute("""
+            SELECT MAX(ingestion_timestamp) AS latest
+            FROM raw.transaction_event
+        """)
+        latest_raw = cur.fetchone()["latest"]
+
+    pass_rate = round((total_raw - total_quarantined) / total_raw * 100, 2) if total_raw else 100.0
+    clean = total_raw - total_quarantined
+
+    return {
+        "total_quarantined": total_quarantined,
+        "total_raw":         total_raw,
+        "clean_rows":        clean,
+        "pass_rate":         pass_rate,
+        "new_since_last_run": recent,
+        "latest_ingestion":  latest_raw.isoformat() if latest_raw else None,
+    }
+
+
 @app.get("/api/quarantine/summary")
 def quarantine_summary(payload: dict = Depends(require_auth_cookie)):
     """

@@ -108,35 +108,31 @@
         <div class="kpi-grid" style="margin-top:8px">
           <div class="kpi-card">
             <div class="kpi-label">Quarantined rows</div>
-            <div class="kpi-value" style="color:var(--red)">14</div>
-            <div class="kpi-delta down">3 new since last ETL run</div>
+            <div class="kpi-value" id="gov-quarantined" style="color:var(--red)">—</div>
+            <div class="kpi-delta down" id="gov-recent">— new since last run</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">Pass rate</div>
-            <div class="kpi-value">99.89%</div>
-            <div class="kpi-delta up">12,833 / 12,847 rows clean</div>
+            <div class="kpi-value" id="gov-pass-rate">—</div>
+            <div class="kpi-delta up" id="gov-clean-of-total">— / — rows clean</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-label">Raw → analytics lag</div>
-            <div class="kpi-value">2m 14s</div>
-            <div class="kpi-delta muted">last ingestion_timestamp delta</div>
+            <div class="kpi-label">Total raw rows</div>
+            <div class="kpi-value" id="gov-total-raw">—</div>
+            <div class="kpi-delta muted">raw.transaction_event</div>
           </div>
           <div class="kpi-card">
-            <div class="kpi-label">Schema drift events</div>
-            <div class="kpi-value">1</div>
-            <div class="kpi-delta muted">raw vs analytics mismatch</div>
+            <div class="kpi-label">Latest ingestion</div>
+            <div class="kpi-value" id="gov-latest" style="font-size:1rem">—</div>
+            <div class="kpi-delta muted">raw.transaction_event</div>
           </div>
         </div>
       </div>
 
-      <!-- Active notice -->
-      <div class="notice danger">
+      <!-- Active notice (shown only when recent quarantine rows exist) -->
+      <div class="notice danger" id="gov-notice" style="display:none">
         <span class="notice-icon">⚠</span>
-        <span>
-          3 new quarantine rows detected since last ETL run. Failure types: null c_id (×2), duplicate key (×1).
-          Review below and check <code style="font-family:var(--font-mono);font-size:10px">raw.prevent_modification()</code>
-          trigger — append-only violations indicate upstream write issues.
-        </span>
+        <span id="gov-notice-text"></span>
       </div>
 
       <!-- ── Full quarantine log ── -->
@@ -239,6 +235,40 @@
     embedDashboard(DASHBOARDS.dataHealth,  'fx-health-mount');
     embedDashboard(DASHBOARDS.pipeline,    'pipeline-mount');
   };
+</script>
+<script>
+  (async function loadGovernanceHealth() {
+    function fmtNum(n) { return Math.round(n).toLocaleString('en-US'); }
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+    try {
+      const res = await fetch('/api/quarantine/health', { credentials: 'include' });
+      if (!res.ok) return;
+      const d = await res.json();
+
+      document.getElementById('gov-quarantined').textContent    = fmtNum(d.total_quarantined);
+      document.getElementById('gov-recent').textContent         = `${d.new_since_last_run} new since last run`;
+      document.getElementById('gov-pass-rate').textContent      = d.pass_rate + '%';
+      document.getElementById('gov-clean-of-total').textContent = `${fmtNum(d.clean_rows)} / ${fmtNum(d.total_raw)} rows clean`;
+      document.getElementById('gov-total-raw').textContent      = fmtNum(d.total_raw);
+      document.getElementById('gov-latest').textContent         = fmtDate(d.latest_ingestion);
+
+      // Update sidebar badge
+      const badge = document.querySelector('.sb-badge');
+      if (badge) badge.textContent = d.total_quarantined;
+
+      // Show active notice only if there are recent violations
+      if (d.new_since_last_run > 0) {
+        document.getElementById('gov-notice').style.display = '';
+        document.getElementById('gov-notice-text').textContent =
+          `${d.new_since_last_run} new quarantine row${d.new_since_last_run > 1 ? 's' : ''} detected since last ETL run. Review the quarantine log below.`;
+      }
+    } catch (err) {
+      console.error('Governance health fetch failed:', err);
+    }
+  })();
 </script>
 </body>
 </html>
