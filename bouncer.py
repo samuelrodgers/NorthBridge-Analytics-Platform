@@ -31,6 +31,7 @@ ALLOWED_DASHBOARDS = [
     "0b663ea7-b0d8-4611-9ca4-a8761e17d875",  # company
     "75c09c9f-faf0-448b-9215-bda18bbf87f7",  # industry
     # Add new dashboard UUIDs here as they are created in Superset:
+    "3bc8f17c-3e49-4611-98df-545a061c65ed",  # analytics
     "8a6dfe5e-3f6e-49b8-8b83-757895c58d25",  # quarantine
     # "xxxxxxxx-...",  # dataHealth
     # "xxxxxxxx-...",  # pipeline

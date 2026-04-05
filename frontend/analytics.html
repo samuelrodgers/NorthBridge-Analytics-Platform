@@ -102,139 +102,29 @@
     <!-- Content -->
     <div class="content">
 
-      <!-- ── Q2: Volume by fiscal quarter + currency ── -->
-      <div id="quarter">
-        <div class="section-hdr"><h2>Q2 · Volume by fiscal quarter &amp; currency</h2></div>
+      <!-- ── Q2 + Q5: Analytics dashboard ── -->
+      <div>
+        <div class="section-hdr"><h2>Transaction analytics</h2><span class="section-sub">— Q2 · Q5 performance queries</span></div>
         <div class="query-ref" style="margin: 8px 0 10px">
-          <div class="query-ref-label">Performance query</div>
-          <div class="query-ref-name">Q2 — star join: f_transaction → d_time</div>
-          <div class="query-ref-desc">Groups by fiscal quarter and transaction currency. Tests multi-column grouping on a dimension table. fisc_quarter is pre-computed on d_time — no date_trunc needed.</div>
-        </div>
-        <div class="col-2">
-          <div class="card">
-            <div class="card-hdr">
-              <div>
-                <div class="card-title">Volume by fiscal quarter</div>
-                <div class="card-sub">d_time.fisc_quarter · all currencies</div>
-              </div>
-              <button class="btn">
-                <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-                  <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
-                </svg>
-                Export CSV
-              </button>
-            </div>
-            <div class="card-body flush">
-              <div class="coming-soon" style="min-height:160px;">In development</div>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Fiscal quarter</th>
-                    <th>Currency</th>
-                    <th style="text-align:right">Tx count</th>
-                    <th style="text-align:right">Total (USD)</th>
-                    <th style="text-align:right">Avg (USD)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td class="mono">Q1</td><td class="mono">USD</td>
-                    <td class="mono" style="text-align:right">1,840</td>
-                    <td class="mono" style="text-align:right">$712,400</td>
-                    <td class="mono" style="text-align:right">$387.17</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">Q1</td><td class="mono">EUR</td>
-                    <td class="mono" style="text-align:right">922</td>
-                    <td class="mono" style="text-align:right">$310,800</td>
-                    <td class="mono" style="text-align:right">$337.09</td>
-                  </tr>
-                  <tr>
-                    <td class="mono">Q2</td><td class="mono">USD</td>
-                    <td class="mono" style="text-align:right">2,100</td>
-                    <td class="mono" style="text-align:right">$830,200</td>
-                    <td class="mono" style="text-align:right">$395.33</td>
-                  </tr>
-                  <tr>
-                    <td colspan="5" style="text-align:center;padding:8px;color:var(--text-tertiary);font-family:var(--font-mono);font-size:11px">— in development —</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-hdr">
-              <div class="card-title">Filter by quarter</div>
-            </div>
-            <div class="card-body">
-              <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">
-                Select a fiscal quarter to filter all charts on this page. Maps to <code style="font-family:var(--font-mono);font-size:11px;color:var(--text-code)">d_time.fisc_quarter</code>.
-              </p>
-              <div style="display:flex;flex-direction:column;gap:6px" id="quarter-picker">
-                <button class="btn" onclick="setQuarter(1, this)" style="justify-content:flex-start">
-                  <span style="font-family:var(--font-mono)">Q1</span>
-                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Jan – Mar</span>
-                </button>
-                <button class="btn" onclick="setQuarter(2, this)" style="justify-content:flex-start">
-                  <span style="font-family:var(--font-mono)">Q2</span>
-                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Apr – Jun</span>
-                </button>
-                <button class="btn" onclick="setQuarter(3, this)" style="justify-content:flex-start">
-                  <span style="font-family:var(--font-mono)">Q3</span>
-                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Jul – Sep</span>
-                </button>
-                <button class="btn" onclick="setQuarter(4, this)" style="justify-content:flex-start">
-                  <span style="font-family:var(--font-mono)">Q4</span>
-                  <span style="margin-left:auto;color:var(--text-tertiary);font-size:11px">Oct – Dec</span>
-                </button>
-                <button class="btn primary" onclick="setQuarter(null, this)" style="justify-content:flex-start;margin-top:4px">
-                  All quarters
-                </button>
-              </div>
-              <div style="margin-top:16px">
-                <div class="stat-row">
-                  <span class="stat-row-label">Active filter</span>
-                  <span class="stat-row-value accent mono" id="quarter-label">All</span>
-                </div>
-                <div class="stat-row">
-                  <span class="stat-row-label">Filter param</span>
-                  <span class="stat-row-value mono" id="quarter-param" style="font-size:10px;color:var(--text-tertiary)">fisc_quarter = *</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Q5: Running revenue over time ── -->
-      <div id="running-revenue">
-        <div class="section-hdr"><h2>Q5 · Running company revenue over time</h2></div>
-        <div class="query-ref" style="margin: 8px 0 10px">
-          <div class="query-ref-label">Performance query — window function</div>
-          <div class="query-ref-name">Q5 — f_transaction → d_time → d_company · cumulative window</div>
+          <div class="query-ref-label">Performance queries — star join · window function</div>
+          <div class="query-ref-name">Q2 — f_transaction → d_time · Q5 — f_transaction → d_time → d_company · cumulative window</div>
           <div class="query-ref-desc">
-            Buckets revenue by minute, computes cumulative sum per company using a window function
-            (SUM OVER PARTITION BY c_id ORDER BY minute_bucket). Most sensitive to index
-            availability on d_time — expect the largest before/after delta in performance
-            benchmarks here.
+            Q2 groups by fiscal quarter and currency — tests multi-column grouping on a dimension table.
+            fisc_quarter is pre-computed on d_time, no date_trunc needed.
+            Q5 computes cumulative revenue per company per day using a window function
+            (SUM OVER PARTITION BY c_id ORDER BY day_bucket). Most sensitive to index availability on d_time.
           </div>
         </div>
         <div class="card">
           <div class="card-hdr">
             <div>
-              <div class="card-title">Running revenue — per company, per minute</div>
-              <div class="card-sub">Window: SUM(amount) OVER (PARTITION BY c_id ORDER BY minute_bucket)</div>
+              <div class="card-title">Transaction volume &amp; cumulative revenue</div>
+              <div class="card-sub">f_transaction · d_time · d_company</div>
             </div>
-            <button class="btn primary">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
-                <path d="M8 1v10M4 7l4 4 4-4"/><path d="M2 13h12"/>
-              </svg>
-              Export CSV
-            </button>
+            <span class="schema-tag analytics">analytics schema</span>
           </div>
-          <div class="card-body flush">
-            <div class="coming-soon" style="min-height:220px;">In development</div>
+          <div class="card-body flush" style="overflow:hidden;">
+            <div id="analytics-mount" style="width:100%; height:700px;"></div>
           </div>
         </div>
       </div>
@@ -249,6 +139,12 @@
   import { requireAuth, logout } from "./auth.js";
   await requireAuth();
   document.getElementById("logout-btn").addEventListener("click", logout);
+</script>
+<script>
+  window.onload = function () {
+    resizeMount('analytics-mount', '100%', '100%');
+    embedDashboard(DASHBOARDS.analytics, 'analytics-mount');
+  };
 </script>
 </body>
 </html>

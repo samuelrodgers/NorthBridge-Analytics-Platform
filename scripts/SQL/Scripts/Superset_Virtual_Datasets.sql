@@ -112,6 +112,25 @@ FROM analytics.f_industry fi
 JOIN analytics.d_time d ON fi.time_id = d.time_id
 JOIN analytics.d_industry di ON fi.industry_id = di.industry_id
 
+-- tx_running_revenue
+/*
+cumulative revenue per company per day using a window function — powers Q5 on analytics.html
+SUM OVER PARTITION BY c_id ORDER BY day gives the running total; day grain avoids minute-level row explosion
+*/
+SELECT
+    dc.c_name,
+    DATE_TRUNC('day', dt.t_stamp)              AS day_bucket,
+    ROUND(SUM(ft.amount), 2)                   AS bucket_revenue_usd,
+    ROUND(SUM(SUM(ft.amount)) OVER (
+        PARTITION BY dc.c_id
+        ORDER BY DATE_TRUNC('day', dt.t_stamp)
+    ), 2)                                       AS running_revenue_usd
+FROM analytics.f_transaction ft
+JOIN analytics.d_time dt    ON ft.time_id = dt.time_id
+JOIN analytics.d_company dc ON ft.c_id    = dc.c_id
+GROUP BY dc.c_id, dc.c_name, DATE_TRUNC('day', dt.t_stamp)
+ORDER BY dc.c_name, day_bucket
+
 -- fx_currency_mix
 /*
 transaction count and total amount by currency — shows platform FX exposure (Q3 chart on fx.html)
