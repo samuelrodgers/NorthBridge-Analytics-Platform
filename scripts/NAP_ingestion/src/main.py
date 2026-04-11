@@ -253,7 +253,9 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
 
     # Merge raw load counts and transform counts for the return value so
     # callers (e.g. the dashboard API) have a single dict to work with.
-    return {**raw_counts, **(transform_counts or {})}
+    # batch_id is included so callers can link pipeline_run records to the
+    # rows inserted by this run without querying the DB.
+    return {"batch_id": batch_id, **raw_counts, **(transform_counts or {})}
 
 
 if __name__ == "__main__":
