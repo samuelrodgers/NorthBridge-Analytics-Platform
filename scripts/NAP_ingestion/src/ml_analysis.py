@@ -401,6 +401,67 @@ def run_pca(
     # plt.savefig('kmeans_selection.png', dpi=150)
     # plt.show()
 
+    # --- Fit final k-means with k=3
+    km_final = KMeans(n_clusters=3, random_state=42, n_init=10)
+    cluster_labels = km_final.fit_predict(X1_reduced)
+
+    # --- Plot clusters in PCA space
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Left plot — colored by cluster assignment
+    colors_cluster = ['steelblue', 'darkorange', 'green']
+    for cluster_id, color in enumerate(colors_cluster):
+        mask = cluster_labels == cluster_id
+        ax1.scatter(
+            X1_reduced[mask, 0],
+            X1_reduced[mask, 1],
+            c=color,
+            label=f'Cluster {cluster_id}',
+            alpha=0.3,
+            s=5
+        )
+    ax1.set_xlabel('Principal Component 1')
+    ax1.set_ylabel('Principal Component 2')
+    ax1.set_title('K-Means Clusters (k=3)')
+    ax1.legend(markerscale=3)
+
+    # Right plot — colored by failure code (same as before, for comparison)
+    colors_failure = {
+        'INVALID_AMOUNT': 'steelblue',
+        'NULL_TIMESTAMP': 'green',
+    }
+    for failure_code, color in colors_failure.items():
+        mask = y1 == failure_code
+        ax2.scatter(
+            X1_reduced[mask, 0],
+            X1_reduced[mask, 1],
+            c=color,
+            label=failure_code,
+            alpha=0.3,
+            s=5
+        )
+    ax2.set_xlabel('Principal Component 1')
+    ax2.set_ylabel('Principal Component 2')
+    ax2.set_title('Failure Codes (for comparison)')
+    ax2.legend(markerscale=3)
+
+    plt.suptitle('K-Means Clusters vs Failure Codes — Analysis 1', fontsize=13)
+    plt.tight_layout()
+    plt.savefig('kmeans_clusters.png', dpi=150)
+    plt.show()
+
+    # --- How well do clusters align with failure codes?
+    alignment = pd.crosstab(
+        y1,
+        cluster_labels,
+        rownames=['Failure Code'],
+        colnames=['Cluster']
+    )
+    print("\nCluster vs Failure Code alignment:")
+    print(alignment)
+    print("\nNormalized by failure code (row %):")
+    print(alignment.div(alignment.sum(axis=1), axis=0).round(3))
+
     pass
 
 
