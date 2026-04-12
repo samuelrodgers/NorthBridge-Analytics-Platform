@@ -211,6 +211,51 @@ def preprocess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]
 
 
 # ============================================================
+# STAGE 3 — PCA SUPPORT FUNCTIONS
+# ============================================================
+
+def plot_scree(pca) -> None:
+    """
+    Scree plot: explained variance per principal component.
+
+    Args:
+        pca: fitted sklearn PCA object
+    """
+    # --- Plot explained variance ratio per component
+    # --- Plot cumulative explained variance
+    # --- Mark the elbow / chosen n_components
+    pass
+
+
+def plot_scatter(X_pca: np.ndarray, y: pd.Series) -> None:
+    """
+    2D scatter plot of PC1 vs PC2, colored by failure_code.
+
+    Args:
+        X_pca: PCA-transformed array, shape (n_samples, n_components)
+        y:     failure_code Series aligned to X_pca rows
+    """
+    # --- Assign a color to each unique failure_code
+    # --- Scatter PC1 (x-axis) vs PC2 (y-axis)
+    # --- Add legend and axis labels
+    pass
+
+
+def plot_loadings(pca, feature_names: list[str]) -> None:
+    """
+    Loadings heatmap: contribution of each original feature to each component.
+
+    Args:
+        pca:           fitted sklearn PCA object
+        feature_names: ordered list of feature column names from X
+    """
+    # --- Build loadings DataFrame (features × components)
+    # --- Plot as heatmap with feature names on y-axis, PC index on x-axis
+    # --- Annotate or color-scale by loading magnitude
+    pass
+
+
+# ============================================================
 # STAGE 3 — PCA FRAMEWORK
 # ============================================================
 
@@ -230,11 +275,11 @@ def run_pca(
 
     # --- Fit PCA on Analysis 1 X only
 
-    # --- Scree plot: explained variance per component
+    plot_scree(pca)
 
-    # --- 2D scatter plot: PC1 vs PC2 colored by failure_code
+    plot_scatter(X_pca, y_analysis1)
 
-    # --- Loadings heatmap: original features vs top components
+    plot_loadings(pca, feature_names=list(X.columns))
 
     # --- Project Analysis 2 records into PCA space
 
