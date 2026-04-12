@@ -313,6 +313,27 @@ def run_pca(
     plt.show()
 
     # --- Loadings heatmap: original features vs top components
+    n_display = 5  # show top 5 components for readability
+
+    loadings = pd.DataFrame(
+        pca.components_[:n_display].T,
+        index=X1.columns,
+        columns=[f'PC{i + 1}' for i in range(n_display)]
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 12))
+    im = ax.imshow(loadings.values, cmap='coolwarm', aspect='auto', vmin=-1, vmax=1)
+
+    ax.set_xticks(range(n_display))
+    ax.set_xticklabels([f'PC{i + 1}' for i in range(n_display)])
+    ax.set_yticks(range(len(X1.columns)))
+    ax.set_yticklabels(X1.columns)
+
+    plt.colorbar(im, ax=ax, label='Loading value')
+    ax.set_title('PCA Loadings — Top 5 Components')
+    plt.tight_layout()
+    plt.savefig('loadings_heatmap.png', dpi=150)
+    plt.show()
 
     # --- Project Analysis 2 records into PCA space
 
