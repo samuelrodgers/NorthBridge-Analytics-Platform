@@ -279,7 +279,38 @@ def run_pca(
     print(f"\nComponents needed for 90% variance: "
           f"{np.argmax(cumulative_variance >= 0.90) + 1}")
 
+    # --- Refit PCA with chosen n_components
+    n_components = 11
+    pca = PCA(n_components=n_components)
+    X1_reduced = pca.fit_transform(X1)
+
     # --- 2D scatter plot: PC1 vs PC2 colored by failure_code
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    colors = {
+        'INVALID_AMOUNT': 'steelblue',
+        'NULL_COMPANY_ID': 'darkorange',
+        'NULL_TIMESTAMP': 'green'
+    }
+
+    for failure_code, color in colors.items():
+        mask = y1 == failure_code
+        ax.scatter(
+            X1_reduced[mask, 0],
+            X1_reduced[mask, 1],
+            c=color,
+            label=failure_code,
+            alpha=0.3,
+            s=5
+        )
+
+    ax.set_xlabel('Principal Component 1')
+    ax.set_ylabel('Principal Component 2')
+    ax.set_title('PCA Scatter Plot — Quarantine Records by Failure Code (Analysis 1)')
+    ax.legend(markerscale=3)
+    plt.tight_layout()
+    plt.savefig('pca_scatter.png', dpi=150)
+    plt.show()
 
     # --- Loadings heatmap: original features vs top components
 
