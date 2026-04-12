@@ -423,6 +423,25 @@ def run_pca(
     plt.savefig('analysis2_projection.png', dpi=150)
     plt.show()
 
+    # --- Analysis 2 in PC2/PC3 space
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.scatter(
+        X2_reduced[:, 1],  # PC2
+        X2_reduced[:, 2],  # PC3
+        c='purple',
+        alpha=0.3,
+        s=5,
+        label='NULL_COMPANY_ID'
+    )
+    ax.set_xlabel('Principal Component 2')
+    ax.set_ylabel('Principal Component 3')
+    ax.set_title('Analysis 2 — NULL_COMPANY_ID in PC2/PC3 Space')
+    ax.legend(markerscale=3)
+    plt.tight_layout()
+    plt.savefig('analysis2_pc2pc3.png', dpi=150)
+    plt.show()
+
     # --- K-means clustering on PCA-reduced Analysis 1 data
     # Elbow method to justify k
     # inertias = []
