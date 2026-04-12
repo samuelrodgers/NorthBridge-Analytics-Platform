@@ -354,6 +354,7 @@ def run_pca(
     print(f"\nComponents needed for 90% variance: "
           f"{np.argmax(cumulative_variance >= 0.90) + 1}")
 
+    # --- Scree plot: explained variance per component
     plot_scree(explained_variance, cumulative_variance)
 
     # --- Refit PCA with chosen n_components
@@ -361,8 +362,10 @@ def run_pca(
     pca = PCA(n_components=n_components)
     X1_reduced = pca.fit_transform(X1)
 
+    # --- 2D scatter plot: PC1 vs PC2 colored by failure_code
     plot_scatter(X1_reduced, y1)
 
+    # --- Loadings heatmap: original features vs top components
     plot_loadings(pca, feature_names=list(X1.columns))
 
     # --- Project Analysis 2 records into PCA space
