@@ -462,6 +462,72 @@ def run_pca(
     print("\nNormalized by failure code (row %):")
     print(alignment.div(alignment.sum(axis=1), axis=0).round(3))
 
+    # --- Targeted clustering on failure-relevant components only (PC2 and PC3)
+    X1_targeted = X1_reduced[:, 1:3]  # PC2 and PC3 only (0-indexed)
+
+    km_targeted = KMeans(n_clusters=3, random_state=42, n_init=10)
+    cluster_labels_targeted = km_targeted.fit_predict(X1_targeted)
+
+    # Alignment table
+    alignment_targeted = pd.crosstab(
+        y1,
+        cluster_labels_targeted,
+        rownames=['Failure Code'],
+        colnames=['Cluster']
+    )
+    print("\nTargeted clustering (PC2+PC3) vs Failure Code alignment:")
+    print(alignment_targeted)
+    print("\nNormalized by failure code (row %):")
+    print(alignment_targeted.div(alignment_targeted.sum(axis=1), axis=0).round(3))
+
+    # Silhouette comparison
+    sil_full = silhouette_score(X1_reduced, cluster_labels)
+    sil_targeted = silhouette_score(X1_targeted, cluster_labels_targeted)
+    print(f"\nSilhouette score — full 11 components: {sil_full:.3f}")
+    print(f"Silhouette score — PC2+PC3 only:       {sil_targeted:.3f}")
+
+    # Visual comparison
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    for cluster_id, color in enumerate(['steelblue', 'darkorange', 'green']):
+        mask = cluster_labels_targeted == cluster_id
+        ax1.scatter(
+            X1_targeted[mask, 0],
+            X1_targeted[mask, 1],
+            c=color,
+            label=f'Cluster {cluster_id}',
+            alpha=0.3,
+            s=5
+        )
+    ax1.set_xlabel('Principal Component 2')
+    ax1.set_ylabel('Principal Component 3')
+    ax1.set_title('Targeted Clusters — PC2 + PC3 Only')
+    ax1.legend(markerscale=3)
+
+    colors_failure = {
+        'INVALID_AMOUNT': 'steelblue',
+        'NULL_TIMESTAMP': 'green',
+    }
+    for failure_code, color in colors_failure.items():
+        mask = y1 == failure_code
+        ax2.scatter(
+            X1_targeted[mask, 0],
+            X1_targeted[mask, 1],
+            c=color,
+            label=failure_code,
+            alpha=0.3,
+            s=5
+        )
+    ax2.set_xlabel('Principal Component 2')
+    ax2.set_ylabel('Principal Component 3')
+    ax2.set_title('Failure Codes — PC2 + PC3')
+    ax2.legend(markerscale=3)
+
+    plt.suptitle('Targeted Clustering vs Failure Codes', fontsize=13)
+    plt.tight_layout()
+    plt.savefig('kmeans_targeted.png', dpi=150)
+    plt.show()
+
     pass
 
 
