@@ -14,8 +14,6 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
 
 from loader import get_connection
@@ -315,6 +313,119 @@ def plot_loadings(pca, feature_names: list[str], n_display: int = 5) -> None:
 
 
 # ============================================================
+# STAGE 3 — PCA HELPER FUNCTIONS
+# ============================================================
+
+def split_analyses(
+    X: pd.DataFrame,
+    y: pd.Series,
+    df_meta: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+    """
+    Split X and y into Analysis 1 (company_known=1) and Analysis 2 (company_known=0).
+
+    Returns:
+        X1, y1 — records with a resolvable company ID
+        X2, y2 — records where company ID was null (NULL_COMPANY_ID failures)
+    """
+    known_mask = df_meta["company_known"] == 1
+
+    X1 = X[known_mask].reset_index(drop=True)
+    y1 = y[known_mask].reset_index(drop=True)
+
+    X2 = X[~known_mask].reset_index(drop=True)
+    y2 = y[~known_mask].reset_index(drop=True)
+
+    print(f"Analysis 1 (company known):   {len(X1):,} records")
+    print(f"Analysis 2 (company unknown): {len(X2):,} records")
+
+    return X1, y1, X2, y2
+
+
+def fit_full_pca(
+    X1: pd.DataFrame,
+    n_components: int = 25,
+) -> tuple[PCA, np.ndarray, np.ndarray]:
+    """
+    Fit a full PCA on Analysis 1 to inspect explained variance before
+    choosing a reduced component count.
+
+    Prints per-component and cumulative variance, and the number of
+    components needed to reach 90% explained variance.
+
+    Returns:
+        pca_full            — fitted PCA object (all n_components)
+        explained_variance  — per-component variance ratio array
+        cumulative_variance — cumulative sum of explained_variance
+    """
+    pca_full = PCA(n_components=n_components)
+    pca_full.fit(X1)
+
+    explained_variance  = pca_full.explained_variance_ratio_
+    cumulative_variance = np.cumsum(explained_variance)
+
+    print("\nExplained variance per component:")
+    for i, (ev, cv) in enumerate(zip(explained_variance, cumulative_variance)):
+        print(f"  PC{i + 1}: {ev:.3f} individual  {cv:.3f} cumulative")
+
+    print(f"\nComponents needed for 90% variance: "
+          f"{np.argmax(cumulative_variance >= 0.90) + 1}")
+
+    return pca_full, explained_variance, cumulative_variance
+
+
+def refit_pca(
+    X1: pd.DataFrame,
+    n_components: int = 11,
+) -> tuple[PCA, np.ndarray]:
+    """
+    Refit PCA with the chosen number of components and transform X1.
+
+    Args:
+        X1:           Analysis 1 feature matrix
+        n_components: number of components to keep (default: 11)
+
+    Returns:
+        pca        — fitted PCA object
+        X1_reduced — transformed array, shape (n_samples, n_components)
+    """
+    pca = PCA(n_components=n_components)
+    X1_reduced = pca.fit_transform(X1)
+    return pca, X1_reduced
+
+
+def project_analysis2(pca: PCA, X2: pd.DataFrame) -> np.ndarray:
+    """
+    Project Analysis 2 records into the PCA space fitted on Analysis 1.
+
+    Args:
+        pca: PCA object already fitted on Analysis 1
+        X2:  Analysis 2 feature matrix (same columns as X1)
+
+    Returns:
+        X2_reduced — transformed array, shape (n_samples, n_components)
+    """
+    # --- Apply fitted PCA transform to Analysis 2
+    # --- Compare distribution of Analysis 2 projections to Analysis 1
+    pass
+
+
+def run_kmeans(X1_reduced: np.ndarray, y1: pd.Series) -> None:
+    """
+    K-means clustering on PCA-reduced Analysis 1 data.
+
+    Args:
+        X1_reduced: PCA-transformed array from refit_pca()
+        y1:         failure_code Series aligned to X1_reduced rows
+    """
+    # --- Choose k (elbow method or silhouette score)
+    # --- Fit KMeans on X1_reduced
+    # --- Compare cluster assignments to y1 failure codes
+    # --- Visualise clusters in PC1/PC2 space
+    pass
+
+
+# ============================================================
 # STAGE 3 — PCA FRAMEWORK
 # ============================================================
 
@@ -331,274 +442,22 @@ def run_pca(
     """
 
     # --- Split into Analysis 1 (company_known=1) and Analysis 2 (company_known=0)
-    known_mask = df_meta["company_known"] == 1
-
-    X1 = X[known_mask].reset_index(drop=True)
-    y1 = y[known_mask].reset_index(drop=True)
-
-    X2 = X[~known_mask].reset_index(drop=True)
-    y2 = y[~known_mask].reset_index(drop=True)
-
-    print(f"Analysis 1 (company known):   {len(X1):,} records")
-    print(f"Analysis 2 (company unknown): {len(X2):,} records")
+    X1, y1, X2, y2 = split_analyses(X, y, df_meta)
 
     # --- Fit PCA on Analysis 1 X only
-    pca_full = PCA(n_components=25)
-    pca_full.fit(X1)
-
-    explained_variance  = pca_full.explained_variance_ratio_
-    cumulative_variance = np.cumsum(explained_variance)
-
-    print("\nExplained variance per component:")
-    for i, (ev, cv) in enumerate(zip(explained_variance, cumulative_variance)):
-        print(f"  PC{i + 1}: {ev:.3f} individual  {cv:.3f} cumulative")
-
-    print(f"\nComponents needed for 90% variance: "
-          f"{np.argmax(cumulative_variance >= 0.90) + 1}")
-
-    # --- Scree plot: explained variance per component
+    pca_full, explained_variance, cumulative_variance = fit_full_pca(X1)
     plot_scree(explained_variance, cumulative_variance)
 
     # --- Refit PCA with chosen n_components
-    n_components = 11
-    pca = PCA(n_components=n_components)
-    X1_reduced = pca.fit_transform(X1)
-
-    # --- 2D scatter plot: PC1 vs PC2 colored by failure_code
+    pca, X1_reduced = refit_pca(X1)
     plot_scatter(X1_reduced, y1)
-
-    # --- Loadings heatmap: original features vs top components
     plot_loadings(pca, feature_names=list(X1.columns))
 
     # --- Project Analysis 2 records into PCA space
-    X2_reduced = pca.transform(X2)
-
-    # Plot Analysis 2 projections alongside Analysis 1 for reference
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-
-    # Left — Analysis 2 records in PC1/PC2 space
-    ax1.scatter(
-        X2_reduced[:, 0],
-        X2_reduced[:, 1],
-        c='purple',
-        alpha=0.3,
-        s=5,
-        label='NULL_COMPANY_ID'
-    )
-    ax1.set_xlabel('Principal Component 1')
-    ax1.set_ylabel('Principal Component 2')
-    ax1.set_title('Analysis 2 — NULL_COMPANY_ID Records in PCA Space')
-    ax1.legend(markerscale=3)
-
-    # Right — overlay Analysis 1 and Analysis 2 together
-    colors_failure = {
-        'INVALID_AMOUNT': 'steelblue',
-        'NULL_TIMESTAMP': 'green',
-    }
-    for failure_code, color in colors_failure.items():
-        mask = y1 == failure_code
-        ax2.scatter(
-            X1_reduced[mask, 0],
-            X1_reduced[mask, 1],
-            c=color,
-            label=failure_code,
-            alpha=0.2,
-            s=5
-        )
-    ax2.scatter(
-        X2_reduced[:, 0],
-        X2_reduced[:, 1],
-        c='purple',
-        alpha=0.4,
-        s=5,
-        label='NULL_COMPANY_ID'
-    )
-    ax2.set_xlabel('Principal Component 1')
-    ax2.set_ylabel('Principal Component 2')
-    ax2.set_title('Analysis 1 + Analysis 2 Overlay')
-    ax2.legend(markerscale=3)
-
-    plt.suptitle('NULL_COMPANY_ID Projection into PCA Space', fontsize=13)
-    plt.tight_layout()
-    plt.savefig('analysis2_projection.png', dpi=150)
-    plt.show()
-
-    # --- Analysis 2 in PC2/PC3 space
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    ax.scatter(
-        X2_reduced[:, 1],  # PC2
-        X2_reduced[:, 2],  # PC3
-        c='purple',
-        alpha=0.3,
-        s=5,
-        label='NULL_COMPANY_ID'
-    )
-    ax.set_xlabel('Principal Component 2')
-    ax.set_ylabel('Principal Component 3')
-    ax.set_title('Analysis 2 — NULL_COMPANY_ID in PC2/PC3 Space')
-    ax.legend(markerscale=3)
-    plt.tight_layout()
-    plt.savefig('analysis2_pc2pc3.png', dpi=150)
-    plt.show()
+    project_analysis2(pca, X2)
 
     # --- K-means clustering on PCA-reduced Analysis 1 data
-    # Elbow method to justify k
-    # inertias = []
-    # silhouette_scores = []
-    # k_range = range(2, 9)
-    #
-    # for k in k_range:
-    #     km = KMeans(n_clusters=k, random_state=42, n_init=10)
-    #     labels = km.fit_predict(X1_reduced)
-    #     inertias.append(km.inertia_)
-    #     silhouette_scores.append(silhouette_score(X1_reduced, labels))
-    #     print(f"  k={k} done — inertia: {km.inertia_:.1f}, silhouette: {silhouette_scores[-1]:.3f}")
-    #
-    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-    #
-    # ax1.plot(k_range, inertias, marker='o', color='steelblue')
-    # ax1.set_xlabel('Number of Clusters (k)')
-    # ax1.set_ylabel('Inertia')
-    # ax1.set_title('Elbow Method')
-    #
-    # ax2.plot(k_range, silhouette_scores, marker='o', color='darkorange')
-    # ax2.set_xlabel('Number of Clusters (k)')
-    # ax2.set_ylabel('Silhouette Score')
-    # ax2.set_title('Silhouette Score by k')
-    #
-    # plt.tight_layout()
-    # plt.savefig('kmeans_selection.png', dpi=150)
-    # plt.show()
-
-    # --- Fit final k-means with k=3
-    km_final = KMeans(n_clusters=3, random_state=42, n_init=10)
-    cluster_labels = km_final.fit_predict(X1_reduced)
-
-    # --- Plot clusters in PCA space
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-
-    # Left plot — colored by cluster assignment
-    colors_cluster = ['steelblue', 'darkorange', 'green']
-    for cluster_id, color in enumerate(colors_cluster):
-        mask = cluster_labels == cluster_id
-        ax1.scatter(
-            X1_reduced[mask, 0],
-            X1_reduced[mask, 1],
-            c=color,
-            label=f'Cluster {cluster_id}',
-            alpha=0.3,
-            s=5
-        )
-    ax1.set_xlabel('Principal Component 1')
-    ax1.set_ylabel('Principal Component 2')
-    ax1.set_title('K-Means Clusters (k=3)')
-    ax1.legend(markerscale=3)
-
-    # Right plot — colored by failure code (same as before, for comparison)
-    colors_failure = {
-        'INVALID_AMOUNT': 'steelblue',
-        'NULL_TIMESTAMP': 'green',
-    }
-    for failure_code, color in colors_failure.items():
-        mask = y1 == failure_code
-        ax2.scatter(
-            X1_reduced[mask, 0],
-            X1_reduced[mask, 1],
-            c=color,
-            label=failure_code,
-            alpha=0.3,
-            s=5
-        )
-    ax2.set_xlabel('Principal Component 1')
-    ax2.set_ylabel('Principal Component 2')
-    ax2.set_title('Failure Codes (for comparison)')
-    ax2.legend(markerscale=3)
-
-    plt.suptitle('K-Means Clusters vs Failure Codes — Analysis 1', fontsize=13)
-    plt.tight_layout()
-    plt.savefig('kmeans_clusters.png', dpi=150)
-    plt.show()
-
-    # --- How well do clusters align with failure codes?
-    alignment = pd.crosstab(
-        y1,
-        cluster_labels,
-        rownames=['Failure Code'],
-        colnames=['Cluster']
-    )
-    print("\nCluster vs Failure Code alignment:")
-    print(alignment)
-    print("\nNormalized by failure code (row %):")
-    print(alignment.div(alignment.sum(axis=1), axis=0).round(3))
-
-    # --- Targeted clustering on failure-relevant components only (PC2 and PC3)
-    X1_targeted = X1_reduced[:, 1:3]  # PC2 and PC3 only (0-indexed)
-
-    km_targeted = KMeans(n_clusters=3, random_state=42, n_init=10)
-    cluster_labels_targeted = km_targeted.fit_predict(X1_targeted)
-
-    # Alignment table
-    alignment_targeted = pd.crosstab(
-        y1,
-        cluster_labels_targeted,
-        rownames=['Failure Code'],
-        colnames=['Cluster']
-    )
-    print("\nTargeted clustering (PC2+PC3) vs Failure Code alignment:")
-    print(alignment_targeted)
-    print("\nNormalized by failure code (row %):")
-    print(alignment_targeted.div(alignment_targeted.sum(axis=1), axis=0).round(3))
-
-    # Silhouette comparison
-    sil_full = silhouette_score(X1_reduced, cluster_labels)
-    sil_targeted = silhouette_score(X1_targeted, cluster_labels_targeted)
-    print(f"\nSilhouette score — full 11 components: {sil_full:.3f}")
-    print(f"Silhouette score — PC2+PC3 only:       {sil_targeted:.3f}")
-
-    # Visual comparison
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-
-    for cluster_id, color in enumerate(['steelblue', 'darkorange', 'green']):
-        mask = cluster_labels_targeted == cluster_id
-        ax1.scatter(
-            X1_targeted[mask, 0],
-            X1_targeted[mask, 1],
-            c=color,
-            label=f'Cluster {cluster_id}',
-            alpha=0.3,
-            s=5
-        )
-    ax1.set_xlabel('Principal Component 2')
-    ax1.set_ylabel('Principal Component 3')
-    ax1.set_title('Targeted Clusters — PC2 + PC3 Only')
-    ax1.legend(markerscale=3)
-
-    colors_failure = {
-        'INVALID_AMOUNT': 'steelblue',
-        'NULL_TIMESTAMP': 'green',
-    }
-    for failure_code, color in colors_failure.items():
-        mask = y1 == failure_code
-        ax2.scatter(
-            X1_targeted[mask, 0],
-            X1_targeted[mask, 1],
-            c=color,
-            label=failure_code,
-            alpha=0.3,
-            s=5
-        )
-    ax2.set_xlabel('Principal Component 2')
-    ax2.set_ylabel('Principal Component 3')
-    ax2.set_title('Failure Codes — PC2 + PC3')
-    ax2.legend(markerscale=3)
-
-    plt.suptitle('Targeted Clustering vs Failure Codes', fontsize=13)
-    plt.tight_layout()
-    plt.savefig('kmeans_targeted.png', dpi=150)
-    plt.show()
-
-    pass
+    run_kmeans(X1_reduced, y1)
 
 
 # ============================================================
