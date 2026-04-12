@@ -371,6 +371,57 @@ def run_pca(
     plot_loadings(pca, feature_names=list(X1.columns))
 
     # --- Project Analysis 2 records into PCA space
+    X2_reduced = pca.transform(X2)
+
+    # Plot Analysis 2 projections alongside Analysis 1 for reference
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Left — Analysis 2 records in PC1/PC2 space
+    ax1.scatter(
+        X2_reduced[:, 0],
+        X2_reduced[:, 1],
+        c='purple',
+        alpha=0.3,
+        s=5,
+        label='NULL_COMPANY_ID'
+    )
+    ax1.set_xlabel('Principal Component 1')
+    ax1.set_ylabel('Principal Component 2')
+    ax1.set_title('Analysis 2 — NULL_COMPANY_ID Records in PCA Space')
+    ax1.legend(markerscale=3)
+
+    # Right — overlay Analysis 1 and Analysis 2 together
+    colors_failure = {
+        'INVALID_AMOUNT': 'steelblue',
+        'NULL_TIMESTAMP': 'green',
+    }
+    for failure_code, color in colors_failure.items():
+        mask = y1 == failure_code
+        ax2.scatter(
+            X1_reduced[mask, 0],
+            X1_reduced[mask, 1],
+            c=color,
+            label=failure_code,
+            alpha=0.2,
+            s=5
+        )
+    ax2.scatter(
+        X2_reduced[:, 0],
+        X2_reduced[:, 1],
+        c='purple',
+        alpha=0.4,
+        s=5,
+        label='NULL_COMPANY_ID'
+    )
+    ax2.set_xlabel('Principal Component 1')
+    ax2.set_ylabel('Principal Component 2')
+    ax2.set_title('Analysis 1 + Analysis 2 Overlay')
+    ax2.legend(markerscale=3)
+
+    plt.suptitle('NULL_COMPANY_ID Projection into PCA Space', fontsize=13)
+    plt.tight_layout()
+    plt.savefig('analysis2_projection.png', dpi=150)
+    plt.show()
 
     # --- K-means clustering on PCA-reduced Analysis 1 data
     # Elbow method to justify k
