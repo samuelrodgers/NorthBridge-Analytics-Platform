@@ -374,32 +374,32 @@ def run_pca(
 
     # --- K-means clustering on PCA-reduced Analysis 1 data
     # Elbow method to justify k
-    inertias = []
-    silhouette_scores = []
-    k_range = range(2, 9)
-
-    for k in k_range:
-        km = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = km.fit_predict(X1_reduced)
-        inertias.append(km.inertia_)
-        silhouette_scores.append(silhouette_score(X1_reduced, labels))
-        print(f"  k={k} done — inertia: {km.inertia_:.1f}, silhouette: {silhouette_scores[-1]:.3f}")
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-
-    ax1.plot(k_range, inertias, marker='o', color='steelblue')
-    ax1.set_xlabel('Number of Clusters (k)')
-    ax1.set_ylabel('Inertia')
-    ax1.set_title('Elbow Method')
-
-    ax2.plot(k_range, silhouette_scores, marker='o', color='darkorange')
-    ax2.set_xlabel('Number of Clusters (k)')
-    ax2.set_ylabel('Silhouette Score')
-    ax2.set_title('Silhouette Score by k')
-
-    plt.tight_layout()
-    plt.savefig('kmeans_selection.png', dpi=150)
-    plt.show()
+    # inertias = []
+    # silhouette_scores = []
+    # k_range = range(2, 9)
+    #
+    # for k in k_range:
+    #     km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    #     labels = km.fit_predict(X1_reduced)
+    #     inertias.append(km.inertia_)
+    #     silhouette_scores.append(silhouette_score(X1_reduced, labels))
+    #     print(f"  k={k} done — inertia: {km.inertia_:.1f}, silhouette: {silhouette_scores[-1]:.3f}")
+    #
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    #
+    # ax1.plot(k_range, inertias, marker='o', color='steelblue')
+    # ax1.set_xlabel('Number of Clusters (k)')
+    # ax1.set_ylabel('Inertia')
+    # ax1.set_title('Elbow Method')
+    #
+    # ax2.plot(k_range, silhouette_scores, marker='o', color='darkorange')
+    # ax2.set_xlabel('Number of Clusters (k)')
+    # ax2.set_ylabel('Silhouette Score')
+    # ax2.set_title('Silhouette Score by k')
+    #
+    # plt.tight_layout()
+    # plt.savefig('kmeans_selection.png', dpi=150)
+    # plt.show()
 
     pass
 
