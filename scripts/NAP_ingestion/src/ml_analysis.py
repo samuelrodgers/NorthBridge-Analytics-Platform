@@ -13,6 +13,8 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
 
 from loader import get_connection
 
@@ -227,10 +229,55 @@ def run_pca(
     """
 
     # --- Split into Analysis 1 (company_known=1) and Analysis 2 (company_known=0)
+    known_mask = df_meta["company_known"] == 1
+
+    X1 = X[known_mask].reset_index(drop=True)
+    y1 = y[known_mask].reset_index(drop=True)
+
+    X2 = X[~known_mask].reset_index(drop=True)
+    y2 = y[~known_mask].reset_index(drop=True)
+
+    print(f"Analysis 1 (company known): {len(X1)} records")
+    print(f"Analysis 2 (company unknown): {len(X2)} records")
 
     # --- Fit PCA on Analysis 1 X only
+    pca_full = PCA(n_components=25)
+    pca_full.fit(X1)
+
+    explained_variance = pca_full.explained_variance_ratio_
+    cumulative_variance = np.cumsum(explained_variance)
+
+    print("Explained variance per component:")
+    for i, (ev, cv) in enumerate(zip(explained_variance, cumulative_variance)):
+        print(f"  PC{i + 1}: {ev:.3f} individual  {cv:.3f} cumulative")
 
     # --- Scree plot: explained variance per component
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+
+    components = range(1, 26)
+
+    # Bar chart for individual explained variance
+    ax1.bar(components, explained_variance, alpha=0.6,
+            color='steelblue', label='Individual explained variance')
+    ax1.set_xlabel('Principal Component')
+    ax1.set_ylabel('Explained Variance Ratio', color='steelblue')
+    ax1.set_xticks(components)
+
+    # Overlay cumulative variance as a line on a second y-axis
+    ax2 = ax1.twinx()
+    ax2.plot(components, cumulative_variance, color='darkorange',
+             marker='o', linewidth=2, label='Cumulative explained variance')
+    ax2.set_ylabel('Cumulative Explained Variance', color='darkorange')
+    ax2.axhline(y=0.90, color='red', linestyle='--', alpha=0.5, label='90% threshold')
+
+    plt.title('Scree Plot — PCA on Quarantine Records (Analysis 1)')
+    fig.legend(loc='center right')
+    plt.tight_layout()
+    plt.savefig('scree_plot.png', dpi=150)
+    plt.show()
+
+    print(f"\nComponents needed for 90% variance: "
+          f"{np.argmax(cumulative_variance >= 0.90) + 1}")
 
     # --- 2D scatter plot: PC1 vs PC2 colored by failure_code
 
@@ -263,6 +310,9 @@ def main():
     print(f"Label distribution:\n{y.value_counts()}")
     print(f"\nFeature columns ({len(X.columns)}):\n{list(X.columns)}")
     print(f"\nFirst 5 rows:\n{X.head()}")
+
+    print("\nRunning PCA...")
+    run_pca(X, y, df_meta)
 
 
 if __name__ == "__main__":
