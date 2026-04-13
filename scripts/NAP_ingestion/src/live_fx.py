@@ -320,7 +320,7 @@ def run():
 
     logger.info(f"Starting live FX ingestion (polling every {POLL_INTERVAL}s)")
     logger.info(f"Currencies: {len(SYMBOLS.split(','))} pairs vs {TARGET_BASE}")
-    logger.info(f"API endpoint: {API_URL} (base: {API_BASE})")
+    logger.info(f"API endpoint: {API_URL}")
     logger.info("Press Ctrl+C to stop")
 
     # Ensure output directory exists before trying to write files
