@@ -19,14 +19,22 @@
     .login-panel-left {
       flex: 1;
       display: none;
-      background: url('assets/images/Analytics_Logo.jpeg') center/cover no-repeat;
       position: relative;
+      overflow: hidden;
+      background: #0f1a2e;
+    }
+    .login-panel-left::before {
+      content: '';
+      position: absolute;
+      inset: -50%;
+      background: url('assets/images/Graphic_4.jpeg') center/cover no-repeat;
+      transform: rotate(90deg);
     }
     .login-panel-left::after {
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(135deg, rgba(10,17,28,0.35) 0%, rgba(10,17,28,0.1) 100%);
+      background: linear-gradient(135deg, rgba(10,17,28,0.25) 0%, rgba(10,17,28,0.05) 100%);
     }
     @media (min-width: 768px) {
       .login-panel-left { display: block; }
@@ -203,11 +211,15 @@
 
         <div class="login-divider"><span class="login-divider-label">or</span></div>
 
+        <button type="button" class="login-btn login-btn-secondary" id="create-account-btn">Create an account</button>
+
+        <div class="login-divider"><span class="login-divider-label">or</span></div>
+
         <button type="button" class="login-btn login-btn-secondary" id="demo-btn">View demo — no login required</button>
       </form>
 
       <div class="login-footer">
-        <a href="register.html">Create an account</a> &nbsp;·&nbsp; Demo environment
+        Demo environment · some features may be incomplete
       </div>
 
     </div>
@@ -236,6 +248,10 @@
     } catch (e) {
       showError(e.message);
     }
+  });
+
+  document.getElementById("create-account-btn").addEventListener("click", () => {
+    window.location.href = "/register.html";
   });
 
   document.getElementById("demo-btn").addEventListener("click", async () => {
