@@ -119,6 +119,10 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
@@ -175,6 +179,25 @@ def me(payload: dict = Depends(require_auth_cookie)):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return {"id": user["id"], "name": user["name"], "email": user["email"]}
+
+@app.post("/api/auth/change-password")
+def change_password(body: ChangePasswordRequest, payload: dict = Depends(require_auth_cookie)):
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT password_hash FROM auth.users WHERE id = %s", (int(payload["sub"]),))
+        user = cur.fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not verify_password(body.current_password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    new_hash = hash_password(body.new_password)
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE auth.users SET password_hash = %s WHERE id = %s", (new_hash, int(payload["sub"])))
+        conn.commit()
+    return {"message": "Password updated successfully"}
 
 @app.post("/api/auth/forgot-password")
 def forgot_password(body: ForgotPasswordRequest):

@@ -55,6 +55,139 @@ document.addEventListener('DOMContentLoaded', function () {
   setInterval(refresh, 5000);
 })();
 
+// ── Account modal ────────────────────────────────────────────
+(function () {
+  // Inject modal HTML
+  const overlay = document.createElement('div');
+  overlay.className = 'acct-overlay';
+  overlay.id = 'acct-overlay';
+  overlay.innerHTML = `
+    <div class="acct-modal">
+      <div class="acct-modal-hdr">
+        <span class="acct-modal-title">Account</span>
+        <button class="acct-close-btn" id="acct-close">&#x2715;</button>
+      </div>
+      <div class="acct-user-block">
+        <div class="acct-avatar" id="acct-avatar">—</div>
+        <div>
+          <div class="acct-user-name" id="acct-name">—</div>
+          <div class="acct-user-email" id="acct-email">—</div>
+        </div>
+      </div>
+      <div>
+        <div class="acct-section-label">Change password</div>
+        <div class="acct-form">
+          <input class="acct-input" type="password" id="acct-current-pw" placeholder="Current password" autocomplete="current-password">
+          <input class="acct-input" type="password" id="acct-new-pw"     placeholder="New password (min 8 chars)" autocomplete="new-password">
+          <input class="acct-input" type="password" id="acct-confirm-pw" placeholder="Confirm new password" autocomplete="new-password">
+          <div class="acct-feedback" id="acct-feedback"></div>
+          <button class="acct-btn acct-btn-primary" id="acct-save-pw">Update password</button>
+        </div>
+      </div>
+      <button class="acct-btn acct-btn-danger" id="acct-logout-btn">Sign out</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Enhance sidebar footer — replace raw arrow button with labelled icon buttons
+  document.addEventListener('DOMContentLoaded', function () {
+    const logoutBtn = document.getElementById('logout-btn');
+    if (!logoutBtn) return;
+
+    // Replace with labelled buttons group
+    const actions = document.createElement('div');
+    actions.className = 'sb-footer-actions';
+    actions.innerHTML = `
+      <button class="sb-icon-btn" id="acct-open-btn" title="Account settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+        </svg>
+        Account
+      </button>
+      <button class="sb-icon-btn" id="sidebar-logout-btn" title="Sign out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+        Sign out
+      </button>
+    `;
+    logoutBtn.replaceWith(actions);
+
+    // Wire open/close
+    document.getElementById('acct-open-btn').addEventListener('click', openModal);
+    document.getElementById('acct-close').addEventListener('click', closeModal);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
+
+    // Wire sign out buttons
+    const doLogout = () => import('./auth.js').then(m => m.logout());
+    document.getElementById('sidebar-logout-btn').addEventListener('click', doLogout);
+    document.getElementById('acct-logout-btn').addEventListener('click', doLogout);
+
+    // Wire change password
+    document.getElementById('acct-save-pw').addEventListener('click', changePassword);
+  });
+
+  function openModal() {
+    // Populate user info from existing DOM elements
+    const name  = document.getElementById('nav-user-name')?.textContent || '—';
+    const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    document.getElementById('acct-name').textContent   = name;
+    document.getElementById('acct-avatar').textContent = initials;
+    // Fetch email fresh
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(r => r.json())
+      .then(u => { document.getElementById('acct-email').textContent = u.email || '—'; })
+      .catch(() => {});
+    clearForm();
+    overlay.classList.add('open');
+  }
+
+  function closeModal() {
+    overlay.classList.remove('open');
+    clearForm();
+  }
+
+  function clearForm() {
+    ['acct-current-pw', 'acct-new-pw', 'acct-confirm-pw'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    setFeedback('', '');
+  }
+
+  function setFeedback(msg, type) {
+    const el = document.getElementById('acct-feedback');
+    el.textContent = msg;
+    el.className = 'acct-feedback' + (type ? ' ' + type : '');
+  }
+
+  async function changePassword() {
+    const current  = document.getElementById('acct-current-pw').value;
+    const next     = document.getElementById('acct-new-pw').value;
+    const confirm  = document.getElementById('acct-confirm-pw').value;
+
+    if (!current || !next || !confirm) { setFeedback('All fields are required.', 'error'); return; }
+    if (next !== confirm)              { setFeedback('New passwords do not match.', 'error'); return; }
+    if (next.length < 8)              { setFeedback('Password must be at least 8 characters.', 'error'); return; }
+
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ current_password: current, new_password: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setFeedback(data.detail || 'Update failed.', 'error'); return; }
+      setFeedback('Password updated successfully.', 'success');
+      ['acct-current-pw', 'acct-new-pw', 'acct-confirm-pw'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+    } catch (_) {
+      setFeedback('Network error — please try again.', 'error');
+    }
+  }
+})();
+
 // ── Superset dashboard UUID registry ────────────────────────
 // After creating each dashboard in Superset, copy its UUID from
 // the URL (superset/dashboard/YOUR-UUID-HERE/) and paste it below.

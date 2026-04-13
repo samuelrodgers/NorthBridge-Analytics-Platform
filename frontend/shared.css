@@ -181,6 +181,141 @@ code, pre { font-family: var(--font-mono); }
 .sb-user-info { min-width: 0; }
 .sb-user-name { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-user-role { font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+.sb-footer-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.sb-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, background 0.15s;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+.sb-icon-btn svg { width: 14px; height: 14px; }
+.sb-icon-btn:hover { color: var(--text-primary); background: var(--surface-1); }
+
+/* ── Account modal ── */
+.acct-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.acct-overlay.open { display: flex; }
+.acct-modal {
+  background: var(--surface-1);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  width: 340px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.acct-modal-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.acct-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.acct-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+.acct-close-btn:hover { color: var(--text-primary); background: var(--surface-2); }
+.acct-user-block {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.acct-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.acct-user-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.acct-user-email { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+.acct-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.acct-form { display: flex; flex-direction: column; gap: 10px; }
+.acct-input {
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.acct-input:focus { border-color: var(--accent-border); }
+.acct-input::placeholder { color: var(--text-tertiary); }
+.acct-btn {
+  padding: 9px 0;
+  border-radius: var(--radius-md);
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  transition: opacity 0.15s;
+}
+.acct-btn:hover { opacity: 0.85; }
+.acct-btn-primary { background: var(--accent); color: #fff; }
+.acct-btn-danger { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.25); margin-top: 4px; }
+.acct-feedback {
+  display: none;
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.acct-feedback.error { display: block; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
+.acct-feedback.success { display: block; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #4ade80; }
 
 /* ── Main ── */
 .main {
