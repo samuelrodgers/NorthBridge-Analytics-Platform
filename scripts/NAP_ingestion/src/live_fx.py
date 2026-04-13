@@ -43,18 +43,21 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # ============================================================
 
-# API endpoint — frankfurter.app returns rates vs. EUR
-# We fetch EUR → all currencies, then invert to get USD-based rates
-API_URL    = "https://api.frankfurter.app/latest"
-API_BASE   = "EUR"   # API's base currency
-TARGET_BASE = "USD"  # What we store in the DB
+# API endpoint — Twelve Data returns rates as {base}/{quote} pairs
+# Each symbol costs 1 API credit; free plan allows 8 credits/min, 800/day.
+# 13 pairs × 1 poll/120s = ~6.5 credits/min — safely within limits.
+API_URL     = "https://api.twelvedata.com/exchange_rate"
+API_KEY     = os.getenv("TWELVE_DATA_API_KEY", "")
+TARGET_BASE = "USD"  # Quote currency — we store all rates vs. USD
 
 # Polling interval in seconds
-POLL_INTERVAL = 5
+# 120s keeps credit usage within Twelve Data free plan limits (8 credits/min)
+POLL_INTERVAL = 120
 
-# All currencies we care about — USD must be in the response so we can
-# calculate the EUR→USD cross rate
-SYMBOLS = ",".join(CURRENCY_CODES)
+# Symbols in {base}/USD format for all non-USD currencies
+SYMBOLS = ",".join(
+    f"{code}/USD" for code in sorted(CURRENCY_CODES) if code != "USD"
+)
 
 # Failure tracking for monitoring
 failure_counters = {
@@ -149,16 +152,15 @@ def validate_rates(rates: dict) -> list[str]:
 
 def fetch_rates() -> dict | None:
     """
-    Fetch current FX rates from frankfurter.app.
+    Fetch current FX rates from Twelve Data.
 
-    The API returns rates with EUR as base. We convert to USD-based rates:
-        EUR→USD rate from API = eur_to_usd
-        USD→EUR = 1 / eur_to_usd
-        USD→X   = (EUR→X) / eur_to_usd
+    Twelve Data returns rates already quoted vs. the symbol's quote currency,
+    so EUR/USD gives us how many USD per 1 EUR — exactly what we store.
+    No inversion needed.
 
     Returns:
         dict with keys:
-            "timestamp": datetime (UTC) — when the rate was valid
+            "timestamp": datetime (UTC) — when the rates were fetched
             "rates":     dict {currency: rate} — USD-based rates
         Returns None on any failure so the caller can apply backoff.
     """
@@ -167,7 +169,7 @@ def fetch_rates() -> dict | None:
 
         response = requests.get(
             API_URL,
-            params={"from": API_BASE, "to": SYMBOLS},
+            params={"symbol": SYMBOLS, "apikey": API_KEY},
             timeout=10,
         )
 
@@ -179,43 +181,39 @@ def fetch_rates() -> dict | None:
         response.raise_for_status()
         data = response.json()
 
-        rates_eur_based = data.get("rates", {})
-        if not rates_eur_based:
+        # Twelve Data returns a status field on errors
+        if data.get("status") == "error":
             failure_counters["malformed_responses"] += 1
-            logger.error("API response missing rates")
+            logger.error(f"Twelve Data API error: {data.get('message')}")
             return None
 
-        eur_to_usd = rates_eur_based.get("USD")
-        if not eur_to_usd:
-            failure_counters["malformed_responses"] += 1
-            logger.error("API response missing USD rate")
-            return None
-
+        # With multiple symbols the response is keyed by symbol string e.g. "EUR/USD"
         rates_usd_based = {}
-        for currency, rate_from_eur in rates_eur_based.items():
-            if currency == "USD":
-                rates_usd_based["EUR"] = round(1.0 / eur_to_usd, 7)
-            else:
-                rates_usd_based[currency] = round(rate_from_eur / eur_to_usd, 7)
+        ts = datetime.now(timezone.utc)
 
-        # API returns YYYY-MM-DD; treat as end-of-day UTC
-        date_str = data.get("date")
-        if date_str:
-            ts = datetime.strptime(date_str, "%Y-%m-%d").replace(
-                hour=23, minute=59, second=59, tzinfo=timezone.utc
-            )
-        else:
-            ts = datetime.now(timezone.utc)
-            logger.warning("API response missing date, using current time")
+        for symbol, payload in data.items():
+            if not isinstance(payload, dict):
+                continue
+            base = symbol.split("/")[0]
+            try:
+                rate = round(float(payload["rate"]), 7)
+            except (KeyError, ValueError):
+                failure_counters["malformed_responses"] += 1
+                logger.warning(f"Missing or invalid rate for {symbol}")
+                continue
 
-        # Clock skew guard — reject timestamps more than 24h in the future
-        now = datetime.now(timezone.utc)
-        if (ts - now).total_seconds() > 86400:
+            rates_usd_based[base] = rate
+
+            # Use the timestamp from the first valid response
+            if "timestamp" in payload:
+                try:
+                    ts = datetime.fromtimestamp(int(payload["timestamp"]), tz=timezone.utc)
+                except (ValueError, OSError):
+                    pass
+
+        if not rates_usd_based:
             failure_counters["malformed_responses"] += 1
-            logger.error(
-                f"API timestamp too far in future: {ts.isoformat()} "
-                f"(now: {now.isoformat()})"
-            )
+            logger.error("No valid rates parsed from Twelve Data response")
             return None
 
         validation_errors = validate_rates(rates_usd_based)
@@ -242,9 +240,9 @@ def fetch_rates() -> dict | None:
         failure_counters["api_errors"] += 1
         logger.error(f"API request failed: {e}")
         return None
-    except (KeyError, ValueError, ZeroDivisionError) as e:
+    except (KeyError, ValueError) as e:
         failure_counters["malformed_responses"] += 1
-        logger.error(f"Malformed API response or rate conversion error: {e}")
+        logger.error(f"Malformed API response: {e}")
         return None
 
 
