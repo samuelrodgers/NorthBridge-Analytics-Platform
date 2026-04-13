@@ -94,8 +94,47 @@ JOIN analytics.d_company co ON t.c_id = co.c_id
 
 -- industry_detail
 /*
-the f_industry pre-aggregate with time and industry name resolved, your base dataset for all industry-level charts
+industry metrics with hq_country for country-level filtering.
+built from f_transaction + f_expense via CTEs to avoid row multiplication.
+granularity: (industry, country, time) — charts aggregate further as needed.
+loses revenue_growth_rate (pre-computed in transform, all NULL anyway).
+
+if performance is too slow, revert to the original below.
 */
+WITH rev AS (
+  SELECT c_id, time_id,
+         SUM(amount)  AS total_revenue,
+         COUNT(tx_id) AS transaction_count
+  FROM analytics.f_transaction
+  GROUP BY c_id, time_id
+),
+exp AS (
+  SELECT c_id, time_id,
+         SUM(amount) AS total_expenses
+  FROM analytics.f_expense
+  GROUP BY c_id, time_id
+)
+SELECT
+  di.industry_id,
+  di.name                                                                   AS industry_name,
+  co.hq_country,
+  dt.t_stamp,
+  dt.fisc_quarter,
+  ROUND(SUM(rev.total_revenue), 2)                                          AS total_revenue,
+  ROUND(COALESCE(SUM(exp.total_expenses), 0), 2)                            AS total_expenses,
+  ROUND(SUM(rev.total_revenue) - COALESCE(SUM(exp.total_expenses), 0), 2)   AS net_profit,
+  SUM(rev.transaction_count)                                                AS transaction_count,
+  COUNT(DISTINCT rev.c_id)                                                  AS company_count,
+  ROUND(SUM(rev.total_revenue) / NULLIF(COUNT(DISTINCT rev.c_id), 0), 2)    AS avg_revenue_per_co
+FROM rev
+JOIN analytics.d_company  co ON rev.c_id      = co.c_id
+JOIN analytics.d_industry di ON co.industry_id = di.industry_id
+JOIN analytics.d_time     dt ON rev.time_id    = dt.time_id
+LEFT JOIN exp                ON rev.c_id = exp.c_id AND rev.time_id = exp.time_id
+GROUP BY di.industry_id, di.name, co.hq_country, dt.t_stamp, dt.fisc_quarter
+
+/*
+-- ORIGINAL (fast, from f_industry pre-aggregate, no country filter possible):
 SELECT
   fi.industry_id,
   fi.total_revenue,
@@ -111,6 +150,7 @@ SELECT
 FROM analytics.f_industry fi
 JOIN analytics.d_time d ON fi.time_id = d.time_id
 JOIN analytics.d_industry di ON fi.industry_id = di.industry_id
+*/
 
 -- tx_running_revenue
 /*
