@@ -1,135 +1,248 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create account — Northbridge Analytics</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    body {
+      visibility: visible;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      background: var(--bg-base);
+    }
 
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <meta name="description" content="">
-    <meta name="author" content="">
+    .login-panel-left {
+      flex: 1;
+      display: none;
+      background: url('assets/images/Analytics_Logo.jpeg') center/cover no-repeat;
+      position: relative;
+    }
+    .login-panel-left::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(10,17,28,0.35) 0%, rgba(10,17,28,0.1) 100%);
+    }
+    @media (min-width: 768px) {
+      .login-panel-left { display: block; }
+    }
 
-    <title>SB Admin 2 - Register</title>
+    .login-panel-right {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      box-sizing: border-box;
+    }
+    @media (min-width: 768px) {
+      .login-panel-right { width: 420px; flex-shrink: 0; }
+    }
 
-    <!-- Custom fonts for this template-->
-    <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet" type="text/css">
-    <link
-        href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i"
-        rel="stylesheet">
+    .login-card { width: 100%; max-width: 360px; }
 
-    <!-- Custom styles for this template-->
-    <link href="css/sb-admin-2.min.css" rel="stylesheet">
+    .login-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    .login-brand-logo {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 12px;
+    }
+    .login-brand-name {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+    .login-brand-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-top: -8px;
+    }
 
+    .login-form { display: flex; flex-direction: column; gap: 12px; }
+
+    .login-field { display: flex; flex-direction: column; gap: 5px; }
+    .login-row { display: flex; gap: 8px; }
+    .login-row .login-field { flex: 1; }
+
+    .login-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .login-input {
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      outline: none;
+      transition: border-color 0.15s;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    .login-input:focus { border-color: var(--accent-border); }
+    .login-input::placeholder { color: var(--text-tertiary); }
+
+    .login-btn {
+      margin-top: 4px;
+      padding: 11px 0;
+      border-radius: var(--radius-md);
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.15s;
+    }
+    .login-btn:hover { opacity: 0.88; }
+    .login-btn-primary { background: var(--accent); color: #fff; }
+
+    .login-error {
+      display: none;
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      font-size: 12px;
+      color: #f87171;
+    }
+    .login-success {
+      display: none;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.3);
+      border-radius: var(--radius-md);
+      padding: 9px 12px;
+      font-size: 12px;
+      color: #4ade80;
+    }
+
+    .login-footer {
+      margin-top: 24px;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      line-height: 1.6;
+    }
+    .login-footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .login-footer a:hover { text-decoration: underline; }
+  </style>
 </head>
+<body>
 
-<body class="bg-gradient-primary">
+  <div class="login-panel-left"></div>
 
-    <div class="container">
+  <div class="login-panel-right">
+    <div class="login-card">
 
-        <div class="card o-hidden border-0 shadow-lg my-5">
-            <div class="card-body p-0">
-                <!-- Nested Row within Card Body -->
-                <div class="row">
-                    <div class="col-lg-5 d-none d-lg-block bg-register-image"></div>
-                    <div class="col-lg-7">
-                        <div class="p-5">
-                            <div class="text-center">
-                                <h1 class="h4 text-gray-900 mb-4">Create an Account!</h1>
-                            </div>
-                            <form class="user" id="register-form">
-                                <div class="form-group row">
-                                    <div class="col-sm-6 mb-3 mb-sm-0">
-                                        <input type="text" class="form-control form-control-user" id="exampleFirstName"
-                                            placeholder="First Name">
-                                    </div>
-                                    <div class="col-sm-6">
-                                        <input type="text" class="form-control form-control-user" id="exampleLastName"
-                                            placeholder="Last Name">
-                                    </div>
-                                </div>
-                                <div class="form-group">
-                                    <input type="email" class="form-control form-control-user" id="exampleInputEmail"
-                                        placeholder="Email Address">
-                                </div>
-                                <div class="form-group row">
-                                    <div class="col-sm-6 mb-3 mb-sm-0">
-                                        <input type="password" class="form-control form-control-user"
-                                            id="exampleInputPassword" placeholder="Password">
-                                    </div>
-                                    <div class="col-sm-6">
-                                        <input type="password" class="form-control form-control-user"
-                                            id="exampleRepeatPassword" placeholder="Repeat Password">
-                                    </div>
-                                </div>
-                                <a href="login.html" class="btn btn-primary btn-user btn-block">
-                                    Register Account
-                                </a>
-                                <hr>
-                                <a href="index.html" class="btn btn-google btn-user btn-block">
-                                    <i class="fab fa-google fa-fw"></i> Register with Google
-                                </a>
-                                <a href="index.html" class="btn btn-facebook btn-user btn-block">
-                                    <i class="fab fa-facebook-f fa-fw"></i> Register with Facebook
-                                </a>
-                            </form>
-                            <hr>
-                            <div class="text-center">
-                                <a class="small" href="forgot-password.html">Forgot Password?</a>
-                            </div>
-                            <div class="text-center">
-                                <a class="small" href="login.html">Already have an account? Login!</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+      <div class="login-brand">
+        <img class="login-brand-logo" src="assets/images/Analytics_Logo.jpeg" alt="Northbridge">
+        <div>
+          <div class="login-brand-name">Northbridge Financial</div>
+          <div class="login-brand-sub">Create account</div>
+        </div>
+      </div>
+
+      <form class="login-form" id="register-form" autocomplete="on">
+        <div class="login-row">
+          <div class="login-field">
+            <label class="login-label" for="input-first">First name</label>
+            <input class="login-input" type="text" id="input-first" placeholder="First" autocomplete="given-name" required>
+          </div>
+          <div class="login-field">
+            <label class="login-label" for="input-last">Last name</label>
+            <input class="login-input" type="text" id="input-last" placeholder="Last" autocomplete="family-name" required>
+          </div>
+        </div>
+        <div class="login-field">
+          <label class="login-label" for="input-email">Email</label>
+          <input class="login-input" type="email" id="input-email" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+        <div class="login-field">
+          <label class="login-label" for="input-password">Password</label>
+          <input class="login-input" type="password" id="input-password" placeholder="••••••••" autocomplete="new-password" required>
+        </div>
+        <div class="login-field">
+          <label class="login-label" for="input-confirm">Confirm password</label>
+          <input class="login-input" type="password" id="input-confirm" placeholder="••••••••" autocomplete="new-password" required>
         </div>
 
+        <div class="login-error" id="register-error"></div>
+        <div class="login-success" id="register-success"></div>
+
+        <button type="submit" class="login-btn login-btn-primary">Create account</button>
+      </form>
+
+      <div class="login-footer">
+        Already have an account? <a href="login.html">Sign in</a>
+      </div>
+
     </div>
-
-    <!-- Bootstrap core JavaScript-->
-    <script src="vendor/jquery/jquery.min.js"></script>
-    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-
-    <!-- Core plugin JavaScript-->
-    <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
-
-    <!-- Custom scripts for all pages-->
-    <script src="js/sb-admin-2.min.js"></script>
+  </div>
 
 <script type="module">
   import { register, redirectIfAuthed } from "./auth.js";
   redirectIfAuthed();
-  const form = document.getElementById("register-form");
-  const msg = document.createElement("div");
-  msg.className = "alert d-none mt-3";
-  form.appendChild(msg);
+
+  const form    = document.getElementById("register-form");
+  const errEl   = document.getElementById("register-error");
+  const succEl  = document.getElementById("register-success");
+
+  function showError(msg) {
+    errEl.textContent  = msg;
+    errEl.style.display  = "block";
+    succEl.style.display = "none";
+  }
+
+  function showSuccess(msg) {
+    succEl.textContent   = msg;
+    succEl.style.display = "block";
+    errEl.style.display  = "none";
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const first = document.getElementById("exampleFirstName").value;
-    const last = document.getElementById("exampleLastName").value;
-    const email = document.getElementById("exampleInputEmail").value;
-    const password = document.getElementById("exampleInputPassword").value;
-    const repeat = document.getElementById("exampleRepeatPassword").value;
-    if (password !== repeat) {
-      msg.className = "alert alert-danger mt-3";
-      msg.textContent = "Passwords do not match.";
-      msg.classList.remove("d-none");
-      return;
-    }
+    errEl.style.display = succEl.style.display = "none";
+
+    const first    = document.getElementById("input-first").value.trim();
+    const last     = document.getElementById("input-last").value.trim();
+    const email    = document.getElementById("input-email").value.trim();
+    const password = document.getElementById("input-password").value;
+    const confirm  = document.getElementById("input-confirm").value;
+
+    if (password !== confirm) { showError("Passwords do not match."); return; }
+    if (password.length < 8)  { showError("Password must be at least 8 characters."); return; }
+
     try {
       await register(first + " " + last, email, password);
-      msg.className = "alert alert-success mt-3";
-      msg.textContent = "Account created! Redirecting to login...";
-      msg.classList.remove("d-none");
+      showSuccess("Account created! Redirecting to sign in…");
       setTimeout(() => window.location.replace("/login.html"), 1500);
     } catch (e) {
-      msg.className = "alert alert-danger mt-3";
-      msg.textContent = e.message;
-      msg.classList.remove("d-none");
+      showError(e.message);
     }
   });
 </script>
 </body>
-
 </html>

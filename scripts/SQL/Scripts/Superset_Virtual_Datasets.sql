@@ -101,36 +101,20 @@ loses revenue_growth_rate (pre-computed in transform, all NULL anyway).
 
 if performance is too slow, revert to the original below.
 */
-WITH rev AS (
-  SELECT c_id, time_id,
-         SUM(amount)  AS total_revenue,
-         COUNT(tx_id) AS transaction_count
-  FROM analytics.f_transaction
-  GROUP BY c_id, time_id
-),
-exp AS (
-  SELECT c_id, time_id,
-         SUM(amount) AS total_expenses
-  FROM analytics.f_expense
-  GROUP BY c_id, time_id
-)
 SELECT
   di.industry_id,
-  di.name                                                                   AS industry_name,
+  di.name                                                                        AS industry_name,
   co.hq_country,
   dt.t_stamp,
   dt.fisc_quarter,
-  ROUND(SUM(rev.total_revenue), 2)                                          AS total_revenue,
-  ROUND(COALESCE(SUM(exp.total_expenses), 0), 2)                            AS total_expenses,
-  ROUND(SUM(rev.total_revenue) - COALESCE(SUM(exp.total_expenses), 0), 2)   AS net_profit,
-  SUM(rev.transaction_count)                                                AS transaction_count,
-  COUNT(DISTINCT rev.c_id)                                                  AS company_count,
-  ROUND(SUM(rev.total_revenue) / NULLIF(COUNT(DISTINCT rev.c_id), 0), 2)    AS avg_revenue_per_co
-FROM rev
-JOIN analytics.d_company  co ON rev.c_id      = co.c_id
-JOIN analytics.d_industry di ON co.industry_id = di.industry_id
-JOIN analytics.d_time     dt ON rev.time_id    = dt.time_id
-LEFT JOIN exp                ON rev.c_id = exp.c_id AND rev.time_id = exp.time_id
+  ROUND(SUM(ft.amount), 2)                                                       AS total_revenue,
+  COUNT(ft.tx_id)                                                                AS transaction_count,
+  COUNT(DISTINCT ft.c_id)                                                        AS company_count,
+  ROUND(SUM(ft.amount) / NULLIF(COUNT(DISTINCT ft.c_id), 0), 2)                  AS avg_revenue_per_co
+FROM analytics.f_transaction ft
+JOIN analytics.d_company  co ON ft.c_id        = co.c_id
+JOIN analytics.d_industry di ON co.industry_id  = di.industry_id
+JOIN analytics.d_time     dt ON ft.time_id      = dt.time_id
 GROUP BY di.industry_id, di.name, co.hq_country, dt.t_stamp, dt.fisc_quarter
 
 /*
