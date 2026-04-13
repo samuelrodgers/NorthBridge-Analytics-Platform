@@ -28,7 +28,7 @@
     font-family: 'IBM Plex Mono', monospace !important;
     font-size: 10px !important;
     font-weight: 500 !important;
-    color: #556270 !important;
+    color: #94a3b8 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
 }
@@ -52,7 +52,7 @@
 .ant-tabs-tab {
     font-family: 'IBM Plex Mono', monospace !important;
     font-size: 11px !important;
-    color: #556270 !important;
+    color: #94a3b8 !important;
 }
 
 .ant-tabs-tab-active .ant-tabs-tab-btn {

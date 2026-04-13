@@ -37,7 +37,7 @@ html, body {
 .editable-title {
     font-family: 'IBM Plex Mono', monospace !important;
     font-size: 11px !important;
-    color: #556270 !important;
+    color: #94a3b8 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
 }
@@ -47,7 +47,7 @@ html, body {
     font-family: 'IBM Plex Mono', monospace !important;
     font-size: 10px !important;
     font-weight: 500 !important;
-    color: #556270 !important;
+    color: #94a3b8 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.08em !important;
 }
@@ -71,7 +71,7 @@ html, body {
 .ant-tabs-tab {
     font-family: 'IBM Plex Mono', monospace !important;
     font-size: 11px !important;
-    color: #556270 !important;
+    color: #94a3b8 !important;
 }
 
 .ant-tabs-tab-active .ant-tabs-tab-btn {
@@ -86,7 +86,7 @@ html, body {
     display: block !important;
     font-family: 'IBM Plex Mono', monospace !important;
     font-size: 11px !important;
-    color: #556270 !important;
+    color: #94a3b8 !important;
 }
 
 .ant-tabs-tab-active .ant-tabs-tab-btn {
