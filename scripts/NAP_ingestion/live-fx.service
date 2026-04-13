@@ -1,0 +1,18 @@
+[Unit]
+Description=Northbridge Live FX Rate Ingestion
+After=network.target postgresql.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/northbridge-analytics-platform/scripts/NAP_ingestion
+EnvironmentFile=/home/ubuntu/northbridge-analytics-platform/scripts/NAP_ingestion/.env
+ExecStart=/usr/bin/python3 src/live_fx.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
