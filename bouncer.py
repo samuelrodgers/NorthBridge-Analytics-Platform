@@ -100,6 +100,11 @@ def require_auth_cookie(access_token: str = Cookie(default=None)):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return payload
 
+def require_admin(payload: dict = Depends(require_auth_cookie)):
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return payload
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -145,13 +150,13 @@ def login(body: LoginRequest, response: Response):
     with get_db() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
-            "SELECT id, name, email, password_hash FROM auth.users WHERE email = %s",
+            "SELECT id, name, email, password_hash, role FROM auth.users WHERE email = %s",
             (body.email,)
         )
         user = cur.fetchone()
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_access_token({"sub": str(user["id"]), "email": user["email"]})
+    token = create_access_token({"sub": str(user["id"]), "email": user["email"], "role": user["role"]})
     response.set_cookie(
         key="access_token",
         value=token,
@@ -172,13 +177,13 @@ def me(payload: dict = Depends(require_auth_cookie)):
     with get_db() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
-            "SELECT id, name, email FROM auth.users WHERE id = %s",
+            "SELECT id, name, email, role FROM auth.users WHERE id = %s",
             (int(payload["sub"]),)
         )
         user = cur.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    return {"id": user["id"], "name": user["name"], "email": user["email"]}
+    return {"id": user["id"], "name": user["name"], "email": user["email"], "role": user["role"]}
 
 @app.post("/api/auth/change-password")
 def change_password(body: ChangePasswordRequest, payload: dict = Depends(require_auth_cookie)):

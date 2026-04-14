@@ -89,6 +89,18 @@ document.addEventListener('DOMContentLoaded', function () {
   `;
   document.body.appendChild(overlay);
 
+  // Apply role-based visibility on page load
+  document.addEventListener('DOMContentLoaded', function () {
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(u => {
+        if (u && u.role === 'admin') {
+          document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+        }
+      })
+      .catch(() => {});
+  });
+
   // Enhance sidebar footer — replace raw arrow button with labelled icon buttons
   document.addEventListener('DOMContentLoaded', function () {
     const logoutBtn = document.getElementById('logout-btn');
