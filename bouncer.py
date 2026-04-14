@@ -297,6 +297,7 @@ def get_platform_value(payload: dict = Depends(require_auth_cookie)):
                 SUM(ft.amount) * (
                     SELECT rate FROM raw.fx_rate
                     WHERE base_cncy = 'EUR' AND quote_cncy = 'USD'
+                      AND fx_timestamp <= NOW()
                     ORDER BY fx_timestamp DESC LIMIT 1
                 ),
                 2
@@ -494,6 +495,7 @@ def get_fx_rates(payload: dict = Depends(require_auth_cookie)):
                 ROUND(rate::numeric, 6) AS rate,
                 fx_timestamp
             FROM raw.fx_rate
+            WHERE fx_timestamp <= NOW()
             ORDER BY base_cncy, quote_cncy, fx_timestamp DESC
         """)
         rates = [dict(r) for r in cur.fetchall()]

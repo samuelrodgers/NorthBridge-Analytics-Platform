@@ -239,18 +239,29 @@
       return map;
     }
 
+    let tickerBuilt = false;
     function renderTicker(rates) {
       const track = document.getElementById('fx-ticker-track');
       if (!track) return;
       const usdRates = rates.filter(r => r.quote_cncy === 'USD');
-      const items = usdRates.map(r =>
-        `<span class="fx-ticker-item">` +
-        `<span class="fx-ticker-pair">${r.base_cncy}/${r.quote_cncy}</span>` +
-        `<span class="fx-ticker-rate">${parseFloat(r.rate).toFixed(4)}</span>` +
-        `</span><span class="fx-ticker-sep">◆</span>`
-      ).join('');
-      // Duplicate for seamless loop
-      track.innerHTML = items + items;
+      if (!tickerBuilt) {
+        // Build DOM once so the CSS animation is never reset
+        const items = usdRates.map(r =>
+          `<span class="fx-ticker-item">` +
+          `<span class="fx-ticker-pair">${r.base_cncy}/${r.quote_cncy}</span>` +
+          `<span class="fx-ticker-rate" data-pair="${r.base_cncy}">${parseFloat(r.rate).toFixed(4)}</span>` +
+          `</span><span class="fx-ticker-sep">◆</span>`
+        ).join('');
+        track.innerHTML = items + items; // duplicate for seamless loop
+        tickerBuilt = true;
+      } else {
+        // Update only the rate values in-place — animation keeps running
+        usdRates.forEach(r => {
+          track.querySelectorAll(`.fx-ticker-rate[data-pair="${r.base_cncy}"]`).forEach(el => {
+            el.textContent = parseFloat(r.rate).toFixed(4);
+          });
+        });
+      }
     }
 
     function populateConverter(rates) {
