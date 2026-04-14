@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <title>Company View — DataPlatform</title>
+  <title>Add company — DataPlatform</title>
   <link rel="stylesheet" href="shared.css">
   <style>body{visibility:hidden}</style>
 </head>
@@ -34,7 +34,7 @@
       </svg>
       Transaction volume
     </a>
-    <a class="sb-item active" href="company.html">
+    <a class="sb-item" href="company.html">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <rect x="2" y="8" width="3" height="7"/><rect x="7" y="5" width="3" height="10"/><rect x="12" y="2" width="3" height="13"/>
       </svg>
@@ -60,7 +60,6 @@
         <polyline points="5,8 7,10 11,6"/>
       </svg>
       Data quality
-      <span class="sb-badge">14</span>
     </a>
     <a class="sb-item" href="governance.html#pipeline">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
@@ -76,7 +75,7 @@
       </svg>
       Resolve quarantine
     </a>
-    <a class="sb-item admin-only" href="add-company.html" style="display:none">
+    <a class="sb-item active admin-only" href="add-company.html" style="display:none">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
         <rect x="2" y="6" width="12" height="9" rx="1"/><line x1="8" y1="3" x2="8" y2="15"/><line x1="2" y1="9" x2="14" y2="9"/>
       </svg>
@@ -96,71 +95,39 @@
   <!-- ═══ Main ═══ -->
   <div class="main">
 
-    <!-- Topbar -->
     <header class="topbar">
       <div class="tb-breadcrumb">
         <span class="tb-breadcrumb-root">dataplatform</span>
         <span class="tb-breadcrumb-sep">/</span>
-        <a class="tb-breadcrumb-root" href="index.html" style="text-decoration:none">dashboard</a>
-        <span class="tb-breadcrumb-sep">/</span>
-        <span class="tb-breadcrumb-current">Company View</span>
+        <span class="tb-breadcrumb-current">Add company</span>
       </div>
-      <span class="schema-tag analytics">analytics schema</span>
-      <div class="ticker">
-        <div class="ticker-dot"></div>
-        <span class="ticker-label">EUR REV (USD)</span>
-        <span class="ticker-value" id="ticker-value">—</span>
-      </div>
+      <span class="schema-tag" style="background:rgba(248,113,113,0.1);color:#f87171;border-color:rgba(248,113,113,0.3)">admin only</span>
     </header>
 
-    <!-- Content -->
     <div class="content">
-
-      <div>
-        <div class="section-hdr">
-          <h2>Company drill-down</h2>
-          <span class="section-sub">— tx_detail · expense_detail · tx_industry_benchmark</span>
-        </div>
-        <div class="query-ref" style="margin: 8px 0 10px">
-          <div class="query-ref-label">Cross-chart filter dashboard</div>
-          <div class="query-ref-name">f_transaction → d_company → d_industry · f_expense → d_expense_category</div>
-          <div class="query-ref-desc">
-            Per-company financial profile. Select a company from the filter bar to update all
-            charts simultaneously. Benchmarks company revenue against
-            <code style="font-family:var(--font-mono);font-size:10px">f_industry.avg_revenue_per_co</code>
-            for the matching industry and period.
+      <div class="card" style="max-width:560px">
+        <div class="card-hdr">
+          <div>
+            <div class="card-title">Add company</div>
+            <div class="card-sub">Register a new company in the analytics schema</div>
           </div>
         </div>
-        <div class="card" style="margin-top:8px">
-          <div class="card-hdr">
-            <div>
-              <div class="card-title">Company drill-down</div>
-              <div class="card-sub">Revenue · expenses · margin · industry benchmark</div>
-            </div>
-            <span class="schema-tag analytics">analytics schema</span>
-          </div>
-          <div class="card-body flush" style="overflow:hidden;">
-            <div id="company-mount" style="width:100%; height:2000px;"></div>
-          </div>
+        <div class="card-body" style="padding:32px;text-align:center;color:var(--text-tertiary);font-family:var(--font-mono);font-size:12px;line-height:2">
+          — not yet implemented —<br>
+          company registration form will go here
         </div>
       </div>
+    </div>
 
-    </div><!-- /.content -->
-  </div><!-- /.main -->
-</div><!-- /.shell -->
+  </div>
+</div>
 
-<script src="https://unpkg.com/@superset-ui/embedded-sdk"></script>
 <script src="shared.js"></script>
 <script type="module">
   import { requireAuth, logout } from "./auth.js";
-  await requireAuth();
+  const user = await requireAuth();
+  if (user.role !== 'admin') window.location.replace('/index.html');
   document.getElementById("logout-btn").addEventListener("click", logout);
-</script>
-<script>
-  window.onload = function () {
-    resizeMount('company-mount', '100%', '100%');
-    embedDashboard(DASHBOARDS.company, 'company-mount');
-  };
 </script>
 </body>
 </html>
