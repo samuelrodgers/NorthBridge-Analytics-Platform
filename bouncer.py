@@ -140,7 +140,7 @@ def register(body: RegisterRequest):
             raise HTTPException(status_code=409, detail="Email already registered")
         pw_hash = hash_password(body.password)
         cur.execute(
-            "INSERT INTO auth.users (name, email, password_hash) VALUES (%s, %s, %s)",
+            "INSERT INTO auth.users (name, email, password_hash, role) VALUES (%s, %s, %s, 'admin')",
             (body.name, body.email, pw_hash)
         )
     return {"message": "Account created. Please log in."}
