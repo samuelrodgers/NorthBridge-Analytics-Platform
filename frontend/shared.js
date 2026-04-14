@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <div>
           <div class="acct-user-name" id="acct-name">—</div>
           <div class="acct-user-email" id="acct-email">—</div>
+          <div class="acct-user-role-badge" id="acct-role">—</div>
         </div>
       </div>
       <div>
@@ -106,7 +107,21 @@ document.addEventListener('DOMContentLoaded', function () {
     const logoutBtn = document.getElementById('logout-btn');
     if (!logoutBtn) return;
 
-    // Replace with labelled buttons group
+    // Wrap avatar + user-info siblings into a .sb-footer-user row
+    const footer = logoutBtn.closest('.sb-footer');
+    if (footer) {
+      const avatar   = footer.querySelector('.sb-avatar');
+      const userInfo = footer.querySelector('.sb-user-info');
+      if (avatar && userInfo) {
+        const userRow = document.createElement('div');
+        userRow.className = 'sb-footer-user';
+        avatar.before(userRow);
+        userRow.appendChild(avatar);
+        userRow.appendChild(userInfo);
+      }
+    }
+
+    // Replace logout button with stacked labelled buttons
     const actions = document.createElement('div');
     actions.className = 'sb-footer-actions';
     actions.innerHTML = `
@@ -148,7 +163,12 @@ document.addEventListener('DOMContentLoaded', function () {
     // Fetch email fresh
     fetch('/api/auth/me', { credentials: 'include' })
       .then(r => r.json())
-      .then(u => { document.getElementById('acct-email').textContent = u.email || '—'; })
+      .then(u => {
+        document.getElementById('acct-email').textContent = u.email || '—';
+        const roleEl = document.getElementById('acct-role');
+        roleEl.textContent = u.role || '—';
+        roleEl.className = 'acct-user-role-badge' + (u.role === 'admin' ? ' admin' : '');
+      })
       .catch(() => {});
     clearForm();
     overlay.classList.add('open');

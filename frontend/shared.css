@@ -160,9 +160,10 @@ code, pre { font-family: var(--font-mono); }
   padding: 14px 18px;
   border-top: 1px solid var(--sidebar-border);
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
 }
+.sb-footer-user { display: flex; align-items: center; gap: 10px; }
 .sb-avatar {
   width: 28px;
   height: 28px;
@@ -181,26 +182,28 @@ code, pre { font-family: var(--font-mono); }
 .sb-user-info { min-width: 0; }
 .sb-user-name { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-user-role { font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
-.sb-footer-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.sb-footer-actions { display: flex; flex-direction: column; gap: 2px; }
 .sb-icon-btn {
   background: none;
   border: none;
   cursor: pointer;
   color: var(--text-tertiary);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
+  gap: 8px;
+  padding: 6px 8px;
   border-radius: var(--radius-sm);
   transition: color 0.15s, background 0.15s;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.05em;
   line-height: 1;
+  width: 100%;
+  text-align: left;
 }
-.sb-icon-btn svg { width: 14px; height: 14px; }
-.sb-icon-btn:hover { color: var(--text-primary); background: var(--surface-1); }
+.sb-icon-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.sb-icon-btn:hover { color: var(--text-primary); background: var(--surface-2); }
 
 /* ── Account modal ── */
 .acct-overlay {
@@ -271,6 +274,8 @@ code, pre { font-family: var(--font-mono); }
 }
 .acct-user-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
 .acct-user-email { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+.acct-user-role-badge { display: inline-block; margin-top: 4px; padding: 2px 7px; border-radius: 999px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; background: var(--surface-2); color: var(--text-tertiary); border: 1px solid var(--border-subtle); }
+.acct-user-role-badge.admin { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
 .acct-section-label {
   font-family: var(--font-mono);
   font-size: 10px;

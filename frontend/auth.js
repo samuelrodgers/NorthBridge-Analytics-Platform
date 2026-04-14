@@ -83,4 +83,13 @@ export async function resetPassword(token, newPassword) {
 function populateUserUI(user) {
   const nameEl = document.getElementById("nav-user-name");
   if (nameEl) nameEl.textContent = user.name;
+
+  const avatarEl = document.getElementById("nav-user-avatar");
+  if (avatarEl && user.name) {
+    avatarEl.textContent = user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  }
+
+  document.querySelectorAll('.sb-user-role').forEach(el => {
+    el.textContent = user.role || 'viewer';
+  });
 }
