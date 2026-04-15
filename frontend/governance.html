@@ -60,7 +60,7 @@
         <polyline points="5,8 7,10 11,6"/>
       </svg>
       Data quality
-      <span class="sb-badge">14</span>
+      <span class="sb-badge">!</span>
     </a>
     <a class="sb-item" href="governance.html#pipeline">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 16 16">
@@ -234,10 +234,6 @@
       document.getElementById('gov-clean-of-total').textContent = `${fmtNum(d.clean_rows)} / ${fmtNum(d.total_raw)} rows clean`;
       document.getElementById('gov-total-raw').textContent      = fmtNum(d.total_raw);
       document.getElementById('gov-latest').textContent         = fmtDate(d.latest_ingestion);
-
-      // Update sidebar badge
-      const badge = document.querySelector('.sb-badge');
-      if (badge) badge.textContent = d.total_quarantined;
 
       // Show active notice only if there are recent violations
       if (d.new_since_last_run > 0) {

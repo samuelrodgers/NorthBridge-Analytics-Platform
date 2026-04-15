@@ -102,6 +102,25 @@ document.addEventListener('DOMContentLoaded', function () {
       .catch(() => {});
   });
 
+  // Live quarantine badge — update sidebar "Data quality" badge on every page
+  document.addEventListener('DOMContentLoaded', function () {
+    fetch('/api/quarantine/summary', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const badge = document.querySelector('.sb-badge');
+        if (!badge) return;
+        const total = data ? data.summary.reduce((s, r) => s + r.count, 0) : 0;
+        if (total === 0) {
+          badge.textContent = '●';
+          badge.classList.add('sb-badge-ok');
+        } else {
+          badge.textContent = '!';
+          badge.classList.remove('sb-badge-ok');
+        }
+      })
+      .catch(() => {});
+  });
+
   // Enhance sidebar footer — replace raw arrow button with labelled icon buttons
   document.addEventListener('DOMContentLoaded', function () {
     const logoutBtn = document.getElementById('logout-btn');
