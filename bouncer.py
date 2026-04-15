@@ -6,6 +6,7 @@ import requests
 import bcrypt as _bcrypt
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
+from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, Response, Cookie, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -127,6 +128,11 @@ class ResetPasswordRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+class ResolveRequest(BaseModel):
+    quarantine_ids: List[str]
+    action: str
+    new_c_id: Optional[str] = None
 
 # ---------------------------------------------------------------------------
 # Auth routes
@@ -518,6 +524,111 @@ def get_company_revenues(payload: dict = Depends(require_auth_cookie)):
         """)
         revenues = [dict(r) for r in cur.fetchall()]
     return {"revenues": revenues}
+
+
+# ---------------------------------------------------------------------------
+# Admin — quarantine resolution
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/companies")
+def list_companies(payload: dict = Depends(require_admin)):
+    """All known companies for the assignment dropdown."""
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT c_id::text, c_name FROM analytics.d_company ORDER BY c_name")
+        return {"companies": [dict(r) for r in cur.fetchall()]}
+
+
+@app.get("/api/admin/quarantine/unresolved")
+def get_unresolved(
+    failure_codes: str = Query(..., description="Comma-separated failure codes to filter"),
+    payload: dict = Depends(require_admin),
+):
+    """Quarantine rows matching the given failure codes that have not yet been resolved."""
+    codes = [c.strip() for c in failure_codes.split(",")]
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                qe.quarantine_id::text,
+                qe.tx_id::text,
+                qe.c_id::text,
+                qe.base_cncy,
+                qe.quote_cncy,
+                qe.amount::float,
+                qe.fee_amount::float,
+                qe.tx_timestamp,
+                qe.failure_code,
+                qe.failure_reason,
+                qe.ingestion_timestamp,
+                dc.c_name
+            FROM raw.quarantine_event qe
+            LEFT JOIN analytics.d_company dc ON qe.c_id = dc.c_id
+            WHERE qe.failure_code = ANY(%s)
+              AND qe.quarantine_id NOT IN (
+                  SELECT quarantine_id FROM raw.quarantine_resolution
+              )
+            ORDER BY qe.ingestion_timestamp DESC
+        """, (codes,))
+        rows = cur.fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["tx_timestamp"] = r["tx_timestamp"].isoformat() if r["tx_timestamp"] else None
+        d["ingestion_timestamp"] = r["ingestion_timestamp"].isoformat() if r["ingestion_timestamp"] else None
+        result.append(d)
+    return {"rows": result, "total": len(result)}
+
+
+@app.post("/api/admin/quarantine/resolve")
+def resolve_quarantine(body: ResolveRequest, payload: dict = Depends(require_admin)):
+    """
+    Record a resolution for one or more quarantine rows.
+
+    action='deleted'  — marks rows as discarded; no downstream effect.
+    action='requeued' — re-inserts rows into raw.transaction_event with the
+                        corrected c_id so transform.py can promote them.
+    """
+    if body.action not in ("deleted", "requeued"):
+        raise HTTPException(status_code=400, detail="action must be 'deleted' or 'requeued'")
+    if body.action == "requeued" and not body.new_c_id:
+        raise HTTPException(status_code=400, detail="new_c_id required for requeue action")
+
+    user_id = int(payload["sub"])
+    requeued = 0
+
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if body.action == "requeued":
+            cur.execute("""
+                SELECT tx_id, base_cncy, quote_cncy, amount, fee_amount, tx_timestamp, batch_id
+                FROM raw.quarantine_event
+                WHERE quarantine_id = ANY(%s::uuid[])
+                  AND tx_id IS NOT NULL
+            """, (body.quarantine_ids,))
+            for qrow in cur.fetchall():
+                cur.execute("""
+                    INSERT INTO raw.transaction_event
+                        (tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
+                         tx_timestamp, ingestion_timestamp, batch_id)
+                    VALUES (%s, %s::uuid, %s, %s, %s, %s, %s, NOW(), %s)
+                """, (
+                    qrow["tx_id"], body.new_c_id, qrow["base_cncy"], qrow["quote_cncy"],
+                    qrow["amount"], qrow["fee_amount"], qrow["tx_timestamp"], qrow["batch_id"],
+                ))
+                requeued += 1
+
+        cur2 = conn.cursor()
+        for qid in body.quarantine_ids:
+            cur2.execute("""
+                INSERT INTO raw.quarantine_resolution
+                    (quarantine_id, action, new_c_id, resolved_by)
+                VALUES (%s::uuid, %s, %s::uuid, %s)
+            """, (qid, body.action, body.new_c_id, user_id))
+
+    return {"resolved": len(body.quarantine_ids), "requeued": requeued}
 
 
 # ---------------------------------------------------------------------------

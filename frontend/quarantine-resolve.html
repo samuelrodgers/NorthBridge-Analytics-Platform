@@ -6,7 +6,124 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <title>Resolve quarantine — DataPlatform</title>
   <link rel="stylesheet" href="shared.css">
-  <style>body{visibility:hidden}</style>
+  <style>
+    body { visibility: hidden }
+
+    /* ── Toolbar ── */
+    .resolve-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--surface-0);
+      flex-wrap: wrap;
+    }
+    .resolve-sel-label {
+      margin-left: auto;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      min-width: 80px;
+      text-align: right;
+    }
+
+    /* ── Buttons ── */
+    .rbtn {
+      padding: 5px 12px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-mid);
+      background: var(--surface-2);
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .rbtn:hover:not(:disabled) { background: var(--surface-3); color: var(--text-primary); }
+    .rbtn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .rbtn-danger {
+      background: var(--red-dim);
+      border-color: var(--red-border);
+      color: var(--red);
+    }
+    .rbtn-danger:hover:not(:disabled) { background: rgba(248,113,113,0.22); }
+    .rbtn-accent {
+      background: var(--accent-dim);
+      border-color: var(--accent-border);
+      color: var(--accent);
+    }
+    .rbtn-accent:hover:not(:disabled) { background: rgba(56,189,248,0.22); }
+
+    /* ── Company dropdown ── */
+    .resolve-company-sel {
+      background: var(--surface-1);
+      border: 1px solid var(--border-mid);
+      border-radius: var(--radius-md);
+      padding: 5px 10px;
+      color: var(--text-primary);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      max-width: 220px;
+    }
+
+    /* ── Sortable table headers ── */
+    .data-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    .data-table th.sortable:hover { color: var(--text-primary); }
+    .data-table th.sort-active { color: var(--accent); }
+    .sort-icon { margin-left: 3px; font-size: 9px; opacity: 0.7; }
+
+    /* ── Row selection ── */
+    .data-table tbody tr { cursor: pointer; }
+    .data-table tbody tr.row-sel { background: var(--accent-dim) !important; }
+    .data-table tbody tr.row-sel td { color: var(--text-primary); }
+    .col-chk { width: 32px; text-align: center; padding: 0 4px !important; }
+
+    /* ── Failure code pills ── */
+    .fc-pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .fc-red  { background: var(--red-dim);   color: var(--red);   border: 1px solid var(--red-border); }
+    .fc-amb  { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.3); }
+
+    /* ── Empty state ── */
+    .empty-state {
+      padding: 36px 0;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      line-height: 2;
+    }
+    .empty-icon { font-size: 20px; display: block; margin-bottom: 4px; color: var(--green); }
+
+    /* ── Toast ── */
+    .resolve-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 10px 18px;
+      border-radius: var(--radius-md);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    .resolve-toast.show { opacity: 1; transform: translateY(0); }
+    .toast-ok  { background: var(--green-dim); border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
+    .toast-err { background: var(--red-dim);   border: 1px solid var(--red-border);    color: var(--red);   }
+  </style>
 </head>
 <body>
 <div class="shell">
@@ -102,25 +219,125 @@
         <span class="tb-breadcrumb-current">Resolve quarantine</span>
       </div>
       <span class="schema-tag" style="background:rgba(248,113,113,0.1);color:#f87171;border-color:rgba(248,113,113,0.3)">admin only</span>
+      <div class="ticker">
+        <div class="ticker-dot"></div>
+        <span class="ticker-label">UNRESOLVED</span>
+        <span class="ticker-value" id="total-unresolved">—</span>
+      </div>
     </header>
 
     <div class="content">
-      <div class="card" style="max-width:560px">
+
+      <!-- ══ Section 1: Company Assignment ══════════════════════ -->
+      <div class="card">
         <div class="card-hdr">
           <div>
-            <div class="card-title">Resolve quarantine</div>
-            <div class="card-sub">Review and action failed validation rows</div>
+            <div class="card-title">Company assignment</div>
+            <div class="card-sub">NULL_COMPANY_ID · UNKNOWN_COMPANY — assign to a known company and requeue for ingestion, or discard</div>
           </div>
+          <span class="pill red" id="count-company">—</span>
         </div>
-        <div class="card-body" style="padding:32px;text-align:center;color:var(--text-tertiary);font-family:var(--font-mono);font-size:12px;line-height:2">
-          — not yet implemented —<br>
-          quarantine resolution UI will go here
+        <div class="resolve-toolbar">
+          <select class="resolve-company-sel" id="company-dropdown">
+            <option value="">Select company…</option>
+          </select>
+          <button class="rbtn rbtn-accent" id="btn-assign" disabled>Assign &amp; requeue</button>
+          <button class="rbtn rbtn-danger" id="btn-del-company" disabled>Delete selected</button>
+          <span class="resolve-sel-label" id="sel-company">0 selected</span>
+        </div>
+        <div class="card-body flush" style="overflow-x:auto">
+          <table class="data-table" id="table-company">
+            <thead>
+              <tr>
+                <th class="col-chk"><input type="checkbox" id="chk-all-company" title="Select all"></th>
+                <th class="sortable" data-sec="company" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="company" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="company" data-col="amount">Amount <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="company" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="company" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="company" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-company">
+              <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
-    </div>
 
-  </div>
-</div>
+      <!-- ══ Section 2: Duplicates ═══════════════════════════════ -->
+      <div class="card">
+        <div class="card-hdr">
+          <div>
+            <div class="card-title">Duplicate records</div>
+            <div class="card-sub">DUPLICATE_TX_ID — transactions sharing a TX ID; sort by TX ID to group copies, then delete extras</div>
+          </div>
+          <span class="pill red" id="count-dupe">—</span>
+        </div>
+        <div class="resolve-toolbar">
+          <button class="rbtn rbtn-danger" id="btn-del-dupe" disabled>Delete selected</button>
+          <span class="resolve-sel-label" id="sel-dupe">0 selected</span>
+        </div>
+        <div class="card-body flush" style="overflow-x:auto">
+          <table class="data-table" id="table-dupe">
+            <thead>
+              <tr>
+                <th class="col-chk"><input type="checkbox" id="chk-all-dupe" title="Select all"></th>
+                <th class="sortable" data-sec="dupe" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="dupe" data-col="c_name">Company <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="dupe" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="dupe" data-col="amount">Amount <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="dupe" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="dupe" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-dupe">
+              <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══ Section 3: Data Field Errors ═══════════════════════ -->
+      <div class="card">
+        <div class="card-hdr">
+          <div>
+            <div class="card-title">Data field errors</div>
+            <div class="card-sub">INVALID_AMOUNT · INVALID_BASE_CURRENCY · NULL_TIMESTAMP — malformed fields; sort by failure to batch-select by type</div>
+          </div>
+          <span class="pill amber" id="count-field">—</span>
+        </div>
+        <div class="resolve-toolbar">
+          <button class="rbtn rbtn-danger" id="btn-del-field" disabled>Delete selected</button>
+          <span class="resolve-sel-label" id="sel-field">0 selected</span>
+        </div>
+        <div class="card-body flush" style="overflow-x:auto">
+          <table class="data-table" id="table-field">
+            <thead>
+              <tr>
+                <th class="col-chk"><input type="checkbox" id="chk-all-field" title="Select all"></th>
+                <th class="sortable" data-sec="field" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="field" data-col="c_name">Company <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="field" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="field" data-col="amount">Amount <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="field" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="field" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="field" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-field">
+              <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /.content -->
+  </div><!-- /.main -->
+</div><!-- /.shell -->
+
+<!-- Toast notification -->
+<div class="resolve-toast" id="resolve-toast"></div>
 
 <script src="shared.js"></script>
 <script type="module">
@@ -128,6 +345,258 @@
   const user = await requireAuth();
   if (user.role !== 'admin') window.location.replace('/index.html');
   document.getElementById("logout-btn").addEventListener("click", logout);
+</script>
+<script>
+(function () {
+
+  // ── Per-section state ──────────────────────────────────────
+  const S = {
+    company: { rows: [], selected: new Set(), sortCol: null, sortDir: 'asc' },
+    dupe:    { rows: [], selected: new Set(), sortCol: null, sortDir: 'asc' },
+    field:   { rows: [], selected: new Set(), sortCol: null, sortDir: 'asc' },
+  };
+
+  const CODES = {
+    company: 'NULL_COMPANY_ID,UNKNOWN_COMPANY',
+    dupe:    'DUPLICATE_TX_ID',
+    field:   'INVALID_AMOUNT,INVALID_BASE_CURRENCY,NULL_TIMESTAMP',
+  };
+
+  const COL_COUNT = { company: 7, dupe: 7, field: 8 };
+
+  // ── Formatters ─────────────────────────────────────────────
+  function fmtUuid(v)   { return v ? `<span title="${v}">${v.slice(0,8)}…</span>` : '—'; }
+  function fmtDate(iso) {
+    if (!iso) return '<span class="muted">—</span>';
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' })
+         + ' ' + d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+  }
+  function fmtAmt(v) {
+    if (v == null) return '<span class="muted">—</span>';
+    return '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  const FC_CLASS = {
+    NULL_COMPANY_ID: 'fc-red', INVALID_AMOUNT: 'fc-red', DUPLICATE_TX_ID: 'fc-red',
+    NULL_TIMESTAMP: 'fc-amb', INVALID_BASE_CURRENCY: 'fc-amb', UNKNOWN_COMPANY: 'fc-amb',
+  };
+  function fmtFc(code) {
+    if (!code) return '—';
+    return `<span class="fc-pill ${FC_CLASS[code] || ''}">${code}</span>`;
+  }
+
+  // ── Toast ──────────────────────────────────────────────────
+  let _toastTimer;
+  function toast(msg, ok = true) {
+    const el = document.getElementById('resolve-toast');
+    el.textContent = msg;
+    el.className = `resolve-toast show ${ok ? 'toast-ok' : 'toast-err'}`;
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+  }
+
+  // ── Total counter ──────────────────────────────────────────
+  function updateTotal() {
+    const n = S.company.rows.length + S.dupe.rows.length + S.field.rows.length;
+    document.getElementById('total-unresolved').textContent = n;
+  }
+
+  // ── Load companies dropdown ────────────────────────────────
+  async function loadCompanies() {
+    try {
+      const res = await fetch('/api/admin/companies', { credentials: 'include' });
+      if (!res.ok) return;
+      const { companies } = await res.json();
+      const sel = document.getElementById('company-dropdown');
+      companies.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.c_id;
+        o.textContent = c.c_name;
+        sel.appendChild(o);
+      });
+    } catch (_) {}
+  }
+
+  // ── Load a section ─────────────────────────────────────────
+  async function loadSection(key) {
+    try {
+      const res = await fetch(`/api/admin/quarantine/unresolved?failure_codes=${CODES[key]}`, { credentials: 'include' });
+      if (!res.ok) return;
+      const { rows } = await res.json();
+      S[key].rows = rows;
+      S[key].selected.clear();
+    } catch (_) {}
+    render(key);
+    document.getElementById(`count-${key}`).textContent = S[key].rows.length;
+    updateTotal();
+  }
+
+  // ── Render a section table ─────────────────────────────────
+  function render(key) {
+    const s = S[key];
+    const tbody = document.getElementById(`tbody-${key}`);
+    const cols = COL_COUNT[key];
+
+    if (s.rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${cols}"><div class="empty-state">
+        <span class="empty-icon">✓</span>No unresolved records in this category</div></td></tr>`;
+      updateSelLabel(key);
+      return;
+    }
+
+    tbody.innerHTML = s.rows.map(r => {
+      const sel = s.selected.has(r.quarantine_id);
+      return `<tr class="${sel ? 'row-sel' : ''}" data-id="${r.quarantine_id}">
+        <td class="col-chk"><input type="checkbox" class="rchk" data-id="${r.quarantine_id}" ${sel ? 'checked' : ''}></td>
+        ${buildCells(key, r)}
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('tr[data-id]').forEach(tr => {
+      tr.addEventListener('click', e => { if (e.target.classList.contains('rchk')) return; toggleRow(key, tr.dataset.id); });
+    });
+    tbody.querySelectorAll('.rchk').forEach(chk => {
+      chk.addEventListener('change', () => toggleRow(key, chk.dataset.id));
+    });
+
+    updateSelLabel(key);
+    updateSortIcons(key);
+  }
+
+  function buildCells(key, r) {
+    if (key === 'company') {
+      return [fmtUuid(r.tx_id), r.base_cncy||'—', fmtAmt(r.amount), fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+        .map(v => `<td>${v}</td>`).join('');
+    }
+    if (key === 'dupe') {
+      return [fmtUuid(r.tx_id), r.c_name||'—', r.base_cncy||'—', fmtAmt(r.amount), fmtDate(r.tx_timestamp), fmtDate(r.ingestion_timestamp)]
+        .map(v => `<td>${v}</td>`).join('');
+    }
+    // field
+    return [fmtUuid(r.tx_id), r.c_name||'—', r.base_cncy||'—', fmtAmt(r.amount), fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+      .map(v => `<td>${v}</td>`).join('');
+  }
+
+  // ── Selection ──────────────────────────────────────────────
+  function toggleRow(key, id) {
+    const s = S[key];
+    s.selected.has(id) ? s.selected.delete(id) : s.selected.add(id);
+    const tr = document.querySelector(`#tbody-${key} tr[data-id="${id}"]`);
+    if (tr) {
+      tr.classList.toggle('row-sel', s.selected.has(id));
+      const chk = tr.querySelector('.rchk');
+      if (chk) chk.checked = s.selected.has(id);
+    }
+    updateSelLabel(key);
+  }
+
+  function toggleAll(key) {
+    const s = S[key];
+    const allSelected = s.selected.size === s.rows.length && s.rows.length > 0;
+    if (allSelected) s.selected.clear(); else s.rows.forEach(r => s.selected.add(r.quarantine_id));
+    render(key);
+    document.getElementById(`chk-all-${key}`).checked = !allSelected && s.rows.length > 0;
+  }
+
+  function updateSelLabel(key) {
+    const n = S[key].selected.size;
+    document.getElementById(`sel-${key}`).textContent = n === 0 ? '0 selected' : `${n} selected`;
+    if (key === 'company') {
+      document.getElementById('btn-assign').disabled = n === 0;
+      document.getElementById('btn-del-company').disabled = n === 0;
+    } else if (key === 'dupe') {
+      document.getElementById('btn-del-dupe').disabled = n === 0;
+    } else {
+      document.getElementById('btn-del-field').disabled = n === 0;
+    }
+  }
+
+  // ── Sort ───────────────────────────────────────────────────
+  function sortSection(key, col) {
+    const s = S[key];
+    s.sortDir = s.sortCol === col && s.sortDir === 'asc' ? 'desc' : 'asc';
+    s.sortCol = col;
+    s.rows.sort((a, b) => {
+      let va = a[col] ?? '', vb = b[col] ?? '';
+      const cmp = typeof va === 'number'
+        ? va - vb
+        : String(va).localeCompare(String(vb));
+      return s.sortDir === 'asc' ? cmp : -cmp;
+    });
+    render(key);
+  }
+
+  function updateSortIcons(key) {
+    const s = S[key];
+    document.querySelectorAll(`#table-${key} th.sortable`).forEach(th => {
+      const icon = th.querySelector('.sort-icon');
+      if (!icon) return;
+      if (th.dataset.col === s.sortCol) {
+        th.classList.add('sort-active');
+        icon.textContent = s.sortDir === 'asc' ? '▲' : '▼';
+      } else {
+        th.classList.remove('sort-active');
+        icon.textContent = '';
+      }
+    });
+  }
+
+  // ── Resolve ────────────────────────────────────────────────
+  async function resolveSection(key, action, newCId) {
+    const s = S[key];
+    if (s.selected.size === 0) return;
+    const ids = Array.from(s.selected);
+    try {
+      const body = { quarantine_ids: ids, action };
+      if (newCId) body.new_c_id = newCId;
+      const res = await fetch('/api/admin/quarantine/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast(data.detail || 'Action failed', false); return; }
+      const msg = action === 'requeued'
+        ? `Requeued ${data.requeued} record${data.requeued !== 1 ? 's' : ''} — will promote on next transform run`
+        : `Discarded ${data.resolved} record${data.resolved !== 1 ? 's' : ''}`;
+      toast(msg, true);
+      await loadSection(key);
+    } catch (_) {
+      toast('Network error — please try again', false);
+    }
+  }
+
+  // ── Wire up ────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    // Sort headers
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => sortSection(th.dataset.sec, th.dataset.col));
+    });
+    // Select-all
+    ['company', 'dupe', 'field'].forEach(key => {
+      document.getElementById(`chk-all-${key}`).addEventListener('change', () => toggleAll(key));
+    });
+    // Company section
+    document.getElementById('btn-assign').addEventListener('click', () => {
+      const cId = document.getElementById('company-dropdown').value;
+      if (!cId) { toast('Select a company first', false); return; }
+      resolveSection('company', 'requeued', cId);
+    });
+    document.getElementById('btn-del-company').addEventListener('click', () => resolveSection('company', 'deleted'));
+    // Dupe section
+    document.getElementById('btn-del-dupe').addEventListener('click', () => resolveSection('dupe', 'deleted'));
+    // Field section
+    document.getElementById('btn-del-field').addEventListener('click', () => resolveSection('field', 'deleted'));
+  });
+
+  // ── Init ───────────────────────────────────────────────────
+  (async () => {
+    await loadCompanies();
+    await Promise.all(['company', 'dupe', 'field'].map(loadSection));
+  })();
+
+})();
 </script>
 </body>
 </html>
