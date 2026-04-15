@@ -28,6 +28,32 @@
       text-align: right;
     }
 
+    /* ── Pagination bar ── */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--surface-0);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      flex-wrap: wrap;
+    }
+    .page-info { flex: 1; }
+    .page-num  { min-width: 90px; text-align: center; }
+    .perpage-sel {
+      background: var(--surface-1);
+      border: 1px solid var(--border-mid);
+      border-radius: var(--radius-md);
+      padding: 3px 8px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+    }
+
     /* ── Buttons ── */
     .rbtn {
       padding: 5px 12px;
@@ -43,18 +69,10 @@
     }
     .rbtn:hover:not(:disabled) { background: var(--surface-3); color: var(--text-primary); }
     .rbtn:disabled { opacity: 0.35; cursor: not-allowed; }
-    .rbtn-danger {
-      background: var(--red-dim);
-      border-color: var(--red-border);
-      color: var(--red);
-    }
-    .rbtn-danger:hover:not(:disabled) { background: rgba(248,113,113,0.22); }
-    .rbtn-accent {
-      background: var(--accent-dim);
-      border-color: var(--accent-border);
-      color: var(--accent);
-    }
-    .rbtn-accent:hover:not(:disabled) { background: rgba(56,189,248,0.22); }
+    .rbtn-danger  { background: var(--red-dim);    border-color: var(--red-border);    color: var(--red);    }
+    .rbtn-danger:hover:not(:disabled)  { background: rgba(248,113,113,0.22); }
+    .rbtn-accent  { background: var(--accent-dim); border-color: var(--accent-border); color: var(--accent); }
+    .rbtn-accent:hover:not(:disabled)  { background: rgba(56,189,248,0.22); }
 
     /* ── Company dropdown ── */
     .resolve-company-sel {
@@ -91,10 +109,11 @@
       letter-spacing: 0.04em;
       white-space: nowrap;
     }
-    .fc-red  { background: var(--red-dim);   color: var(--red);   border: 1px solid var(--red-border); }
-    .fc-amb  { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.3); }
+    .fc-red    { background: var(--red-dim);    color: var(--red);    border: 1px solid var(--red-border); }
+    .fc-purple { background: var(--purple-dim); color: var(--purple); border: 1px solid var(--purple-border); }
+    .fc-amb    { background: var(--amber-dim);  color: var(--amber);  border: 1px solid rgba(251,191,36,0.3); }
 
-    /* ── Empty state ── */
+    /* ── Empty / loading state ── */
     .empty-state {
       padding: 36px 0;
       text-align: center;
@@ -121,8 +140,8 @@
       pointer-events: none;
     }
     .resolve-toast.show { opacity: 1; transform: translateY(0); }
-    .toast-ok  { background: var(--green-dim); border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
-    .toast-err { background: var(--red-dim);   border: 1px solid var(--red-border);    color: var(--red);   }
+    .toast-ok  { background: var(--green-dim);  border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
+    .toast-err { background: var(--red-dim);    border: 1px solid var(--red-border);    color: var(--red);   }
   </style>
 </head>
 <body>
@@ -233,7 +252,7 @@
         <div class="card-hdr">
           <div>
             <div class="card-title">Company assignment</div>
-            <div class="card-sub">NULL_COMPANY_ID · UNKNOWN_COMPANY — assign to a known company and requeue for ingestion, or discard</div>
+            <div class="card-sub">NULL_COMPANY_ID · UNKNOWN_COMPANY — assign to a known company and requeue, or discard · sort by currency to batch-assign by known currency-company pairs</div>
           </div>
           <span class="pill red" id="count-company">—</span>
         </div>
@@ -249,7 +268,7 @@
           <table class="data-table" id="table-company">
             <thead>
               <tr>
-                <th class="col-chk"><input type="checkbox" id="chk-all-company" title="Select all"></th>
+                <th class="col-chk"><input type="checkbox" id="chk-all-company" title="Select all rows"></th>
                 <th class="sortable" data-sec="company" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
                 <th class="sortable" data-sec="company" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
                 <th class="sortable" data-sec="company" data-col="amount">Amount <span class="sort-icon"></span></th>
@@ -263,72 +282,108 @@
             </tbody>
           </table>
         </div>
+        <div class="pagination-bar" id="pager-company">
+          <span class="page-info" id="pageinfo-company">—</span>
+          <button class="rbtn" id="btn-prev-company" disabled>← Prev</button>
+          <span class="page-num" id="pagenum-company">—</span>
+          <button class="rbtn" id="btn-next-company" disabled>Next →</button>
+          <select class="perpage-sel" id="perpage-company">
+            <option value="25">25 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
+            <option value="250">250 / page</option>
+          </select>
+        </div>
       </div>
 
-      <!-- ══ Section 2: Duplicates ═══════════════════════════════ -->
+      <!-- ══ Section 2: Invalid Amount ══════════════════════════ -->
       <div class="card">
         <div class="card-hdr">
           <div>
-            <div class="card-title">Duplicate records</div>
-            <div class="card-sub">DUPLICATE_TX_ID — transactions sharing a TX ID; sort by TX ID to group copies, then delete extras</div>
+            <div class="card-title">Invalid amount</div>
+            <div class="card-sub">INVALID_AMOUNT · INVALID_BASE_CURRENCY — zero, negative, or unrecognised currency values; select all and discard</div>
           </div>
-          <span class="pill red" id="count-dupe">—</span>
+          <span class="pill purple" id="count-amount">—</span>
         </div>
         <div class="resolve-toolbar">
-          <button class="rbtn rbtn-danger" id="btn-del-dupe" disabled>Delete selected</button>
-          <span class="resolve-sel-label" id="sel-dupe">0 selected</span>
+          <button class="rbtn rbtn-danger" id="btn-del-amount" disabled>Delete selected</button>
+          <span class="resolve-sel-label" id="sel-amount">0 selected</span>
         </div>
         <div class="card-body flush" style="overflow-x:auto">
-          <table class="data-table" id="table-dupe">
+          <table class="data-table" id="table-amount">
             <thead>
               <tr>
-                <th class="col-chk"><input type="checkbox" id="chk-all-dupe" title="Select all"></th>
-                <th class="sortable" data-sec="dupe" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="dupe" data-col="c_name">Company <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="dupe" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="dupe" data-col="amount">Amount <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="dupe" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="dupe" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+                <th class="col-chk"><input type="checkbox" id="chk-all-amount" title="Select all rows"></th>
+                <th class="sortable" data-sec="amount" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="amount" data-col="c_name">Company <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="amount" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="amount" data-col="amount">Amount <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="amount" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="amount" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="amount" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
               </tr>
             </thead>
-            <tbody id="tbody-dupe">
+            <tbody id="tbody-amount">
+              <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-bar" id="pager-amount">
+          <span class="page-info" id="pageinfo-amount">—</span>
+          <button class="rbtn" id="btn-prev-amount" disabled>← Prev</button>
+          <span class="page-num" id="pagenum-amount">—</span>
+          <button class="rbtn" id="btn-next-amount" disabled>Next →</button>
+          <select class="perpage-sel" id="perpage-amount">
+            <option value="25">25 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
+            <option value="250">250 / page</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ══ Section 3: Missing Timestamp ═══════════════════════ -->
+      <div class="card">
+        <div class="card-hdr">
+          <div>
+            <div class="card-title">Missing timestamp</div>
+            <div class="card-sub">NULL_TIMESTAMP — transactions with no recorded time; cannot be promoted to analytics schema without a timestamp</div>
+          </div>
+          <span class="pill amber" id="count-timestamp">—</span>
+        </div>
+        <div class="resolve-toolbar">
+          <button class="rbtn rbtn-danger" id="btn-del-timestamp" disabled>Delete selected</button>
+          <span class="resolve-sel-label" id="sel-timestamp">0 selected</span>
+        </div>
+        <div class="card-body flush" style="overflow-x:auto">
+          <table class="data-table" id="table-timestamp">
+            <thead>
+              <tr>
+                <th class="col-chk"><input type="checkbox" id="chk-all-timestamp" title="Select all rows"></th>
+                <th class="sortable" data-sec="timestamp" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="timestamp" data-col="c_name">Company <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="timestamp" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="timestamp" data-col="amount">Amount <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="timestamp" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                <th class="sortable" data-sec="timestamp" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-timestamp">
               <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
             </tbody>
           </table>
         </div>
-      </div>
-
-      <!-- ══ Section 3: Data Field Errors ═══════════════════════ -->
-      <div class="card">
-        <div class="card-hdr">
-          <div>
-            <div class="card-title">Data field errors</div>
-            <div class="card-sub">INVALID_AMOUNT · INVALID_BASE_CURRENCY · NULL_TIMESTAMP — malformed fields; sort by failure to batch-select by type</div>
-          </div>
-          <span class="pill amber" id="count-field">—</span>
-        </div>
-        <div class="resolve-toolbar">
-          <button class="rbtn rbtn-danger" id="btn-del-field" disabled>Delete selected</button>
-          <span class="resolve-sel-label" id="sel-field">0 selected</span>
-        </div>
-        <div class="card-body flush" style="overflow-x:auto">
-          <table class="data-table" id="table-field">
-            <thead>
-              <tr>
-                <th class="col-chk"><input type="checkbox" id="chk-all-field" title="Select all"></th>
-                <th class="sortable" data-sec="field" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="field" data-col="c_name">Company <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="field" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="field" data-col="amount">Amount <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="field" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="field" data-col="failure_code">Failure <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="field" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
-              </tr>
-            </thead>
-            <tbody id="tbody-field">
-              <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
-            </tbody>
-          </table>
+        <div class="pagination-bar" id="pager-timestamp">
+          <span class="page-info" id="pageinfo-timestamp">—</span>
+          <button class="rbtn" id="btn-prev-timestamp" disabled>← Prev</button>
+          <span class="page-num" id="pagenum-timestamp">—</span>
+          <button class="rbtn" id="btn-next-timestamp" disabled>Next →</button>
+          <select class="perpage-sel" id="perpage-timestamp">
+            <option value="25">25 / page</option>
+            <option value="50">50 / page</option>
+            <option value="100">100 / page</option>
+            <option value="250">250 / page</option>
+          </select>
         </div>
       </div>
 
@@ -336,7 +391,6 @@
   </div><!-- /.main -->
 </div><!-- /.shell -->
 
-<!-- Toast notification -->
 <div class="resolve-toast" id="resolve-toast"></div>
 
 <script src="shared.js"></script>
@@ -349,55 +403,55 @@
 <script>
 (function () {
 
-  // ── Per-section state ──────────────────────────────────────
-  const S = {
-    company: { rows: [], selected: new Set(), sortCol: null, sortDir: 'asc' },
-    dupe:    { rows: [], selected: new Set(), sortCol: null, sortDir: 'asc' },
-    field:   { rows: [], selected: new Set(), sortCol: null, sortDir: 'asc' },
-  };
-
+  // ── Section config ─────────────────────────────────────────
   const CODES = {
-    company: 'NULL_COMPANY_ID,UNKNOWN_COMPANY',
-    dupe:    'DUPLICATE_TX_ID',
-    field:   'INVALID_AMOUNT,INVALID_BASE_CURRENCY,NULL_TIMESTAMP',
+    company:   'NULL_COMPANY_ID,UNKNOWN_COMPANY',
+    amount:    'INVALID_AMOUNT,INVALID_BASE_CURRENCY',
+    timestamp: 'NULL_TIMESTAMP',
   };
 
-  const COL_COUNT = { company: 7, dupe: 7, field: 8 };
+  const COL_COUNT = { company: 7, amount: 8, timestamp: 7 };
+
+  // ── State (one entry per section) ──────────────────────────
+  const S = {};
+  Object.keys(CODES).forEach(k => {
+    S[k] = { rows: [], selected: new Set(), sortCol: null, sortDir: 'asc', page: 1, perPage: 25 };
+  });
 
   // ── Formatters ─────────────────────────────────────────────
-  function fmtUuid(v)   { return v ? `<span title="${v}">${v.slice(0,8)}…</span>` : '—'; }
+  function fmtUuid(v)   { return v ? `<span title="${v}">${v.slice(0, 8)}…</span>` : '—'; }
   function fmtDate(iso) {
     if (!iso) return '<span class="muted">—</span>';
     const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' })
-         + ' ' + d.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+         + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   }
   function fmtAmt(v) {
     if (v == null) return '<span class="muted">—</span>';
     return '$' + parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   const FC_CLASS = {
-    NULL_COMPANY_ID: 'fc-red', INVALID_AMOUNT: 'fc-red', DUPLICATE_TX_ID: 'fc-red',
-    NULL_TIMESTAMP: 'fc-amb', INVALID_BASE_CURRENCY: 'fc-amb', UNKNOWN_COMPANY: 'fc-amb',
+    NULL_COMPANY_ID: 'fc-red', UNKNOWN_COMPANY: 'fc-red',
+    INVALID_AMOUNT: 'fc-purple', INVALID_BASE_CURRENCY: 'fc-purple',
+    NULL_TIMESTAMP: 'fc-amb',
   };
   function fmtFc(code) {
-    if (!code) return '—';
-    return `<span class="fc-pill ${FC_CLASS[code] || ''}">${code}</span>`;
+    return code ? `<span class="fc-pill ${FC_CLASS[code] || ''}">${code}</span>` : '—';
   }
 
   // ── Toast ──────────────────────────────────────────────────
-  let _toastTimer;
+  let _tt;
   function toast(msg, ok = true) {
     const el = document.getElementById('resolve-toast');
     el.textContent = msg;
     el.className = `resolve-toast show ${ok ? 'toast-ok' : 'toast-err'}`;
-    clearTimeout(_toastTimer);
-    _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+    clearTimeout(_tt);
+    _tt = setTimeout(() => el.classList.remove('show'), 3500);
   }
 
   // ── Total counter ──────────────────────────────────────────
   function updateTotal() {
-    const n = S.company.rows.length + S.dupe.rows.length + S.field.rows.length;
+    const n = Object.values(S).reduce((sum, s) => sum + s.rows.length, 0);
     document.getElementById('total-unresolved').textContent = n;
   }
 
@@ -425,26 +479,55 @@
       const { rows } = await res.json();
       S[key].rows = rows;
       S[key].selected.clear();
+      S[key].page = 1;
     } catch (_) {}
     render(key);
     document.getElementById(`count-${key}`).textContent = S[key].rows.length;
     updateTotal();
   }
 
-  // ── Render a section table ─────────────────────────────────
+  // ── Pagination helpers ─────────────────────────────────────
+  function pageRows(key) {
+    const s = S[key];
+    const start = (s.page - 1) * s.perPage;
+    return s.rows.slice(start, start + s.perPage);
+  }
+
+  function totalPages(key) {
+    const s = S[key];
+    return Math.max(1, Math.ceil(s.rows.length / s.perPage));
+  }
+
+  function updatePager(key) {
+    const s = S[key];
+    const total = s.rows.length;
+    const pages = totalPages(key);
+    const start = total === 0 ? 0 : (s.page - 1) * s.perPage + 1;
+    const end   = Math.min(s.page * s.perPage, total);
+
+    document.getElementById(`pageinfo-${key}`).textContent =
+      total === 0 ? 'No records' : `${start}–${end} of ${total.toLocaleString()}`;
+    document.getElementById(`pagenum-${key}`).textContent = `Page ${s.page} of ${pages}`;
+    document.getElementById(`btn-prev-${key}`).disabled = s.page <= 1;
+    document.getElementById(`btn-next-${key}`).disabled = s.page >= pages;
+  }
+
+  // ── Render a section ───────────────────────────────────────
   function render(key) {
     const s = S[key];
     const tbody = document.getElementById(`tbody-${key}`);
-    const cols = COL_COUNT[key];
+    const cols  = COL_COUNT[key];
+    const pr    = pageRows(key);
 
     if (s.rows.length === 0) {
       tbody.innerHTML = `<tr><td colspan="${cols}"><div class="empty-state">
         <span class="empty-icon">✓</span>No unresolved records in this category</div></td></tr>`;
       updateSelLabel(key);
+      updatePager(key);
       return;
     }
 
-    tbody.innerHTML = s.rows.map(r => {
+    tbody.innerHTML = pr.map(r => {
       const sel = s.selected.has(r.quarantine_id);
       return `<tr class="${sel ? 'row-sel' : ''}" data-id="${r.quarantine_id}">
         <td class="col-chk"><input type="checkbox" class="rchk" data-id="${r.quarantine_id}" ${sel ? 'checked' : ''}></td>
@@ -461,19 +544,28 @@
 
     updateSelLabel(key);
     updateSortIcons(key);
+    updatePager(key);
+
+    // Sync select-all checkbox state
+    const allChk = document.getElementById(`chk-all-${key}`);
+    allChk.indeterminate = s.selected.size > 0 && s.selected.size < s.rows.length;
+    allChk.checked = s.rows.length > 0 && s.selected.size === s.rows.length;
   }
 
   function buildCells(key, r) {
     if (key === 'company') {
-      return [fmtUuid(r.tx_id), r.base_cncy||'—', fmtAmt(r.amount), fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+      return [fmtUuid(r.tx_id), r.base_cncy || '—', fmtAmt(r.amount),
+              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
         .map(v => `<td>${v}</td>`).join('');
     }
-    if (key === 'dupe') {
-      return [fmtUuid(r.tx_id), r.c_name||'—', r.base_cncy||'—', fmtAmt(r.amount), fmtDate(r.tx_timestamp), fmtDate(r.ingestion_timestamp)]
+    if (key === 'amount') {
+      return [fmtUuid(r.tx_id), r.c_name || '—', r.base_cncy || '—', fmtAmt(r.amount),
+              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
         .map(v => `<td>${v}</td>`).join('');
     }
-    // field
-    return [fmtUuid(r.tx_id), r.c_name||'—', r.base_cncy||'—', fmtAmt(r.amount), fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+    // timestamp
+    return [fmtUuid(r.tx_id), r.c_name || '—', r.base_cncy || '—', fmtAmt(r.amount),
+            fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
       .map(v => `<td>${v}</td>`).join('');
   }
 
@@ -488,26 +580,36 @@
       if (chk) chk.checked = s.selected.has(id);
     }
     updateSelLabel(key);
+    // Update indeterminate state on header checkbox
+    const allChk = document.getElementById(`chk-all-${key}`);
+    allChk.indeterminate = s.selected.size > 0 && s.selected.size < s.rows.length;
+    allChk.checked = s.rows.length > 0 && s.selected.size === s.rows.length;
   }
 
   function toggleAll(key) {
     const s = S[key];
     const allSelected = s.selected.size === s.rows.length && s.rows.length > 0;
-    if (allSelected) s.selected.clear(); else s.rows.forEach(r => s.selected.add(r.quarantine_id));
+    if (allSelected) {
+      s.selected.clear();
+    } else {
+      s.rows.forEach(r => s.selected.add(r.quarantine_id));
+    }
     render(key);
-    document.getElementById(`chk-all-${key}`).checked = !allSelected && s.rows.length > 0;
   }
 
   function updateSelLabel(key) {
     const n = S[key].selected.size;
-    document.getElementById(`sel-${key}`).textContent = n === 0 ? '0 selected' : `${n} selected`;
+    const total = S[key].rows.length;
+    document.getElementById(`sel-${key}`).textContent =
+      n === 0 ? '0 selected' : `${n.toLocaleString()} of ${total.toLocaleString()} selected`;
+
     if (key === 'company') {
-      document.getElementById('btn-assign').disabled = n === 0;
+      document.getElementById('btn-assign').disabled    = n === 0;
       document.getElementById('btn-del-company').disabled = n === 0;
-    } else if (key === 'dupe') {
-      document.getElementById('btn-del-dupe').disabled = n === 0;
+    } else if (key === 'amount') {
+      document.getElementById('btn-del-amount').disabled = n === 0;
     } else {
-      document.getElementById('btn-del-field').disabled = n === 0;
+      document.getElementById('btn-del-timestamp').disabled = n === 0;
     }
   }
 
@@ -518,11 +620,10 @@
     s.sortCol = col;
     s.rows.sort((a, b) => {
       let va = a[col] ?? '', vb = b[col] ?? '';
-      const cmp = typeof va === 'number'
-        ? va - vb
-        : String(va).localeCompare(String(vb));
+      const cmp = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb));
       return s.sortDir === 'asc' ? cmp : -cmp;
     });
+    s.page = 1;
     render(key);
   }
 
@@ -573,27 +674,42 @@
     document.querySelectorAll('th.sortable').forEach(th => {
       th.addEventListener('click', () => sortSection(th.dataset.sec, th.dataset.col));
     });
-    // Select-all
-    ['company', 'dupe', 'field'].forEach(key => {
+
+    // Select-all checkboxes
+    Object.keys(CODES).forEach(key => {
       document.getElementById(`chk-all-${key}`).addEventListener('change', () => toggleAll(key));
     });
-    // Company section
+
+    // Pagination buttons and per-page selectors
+    Object.keys(CODES).forEach(key => {
+      document.getElementById(`btn-prev-${key}`).addEventListener('click', () => {
+        if (S[key].page > 1) { S[key].page--; render(key); }
+      });
+      document.getElementById(`btn-next-${key}`).addEventListener('click', () => {
+        if (S[key].page < totalPages(key)) { S[key].page++; render(key); }
+      });
+      document.getElementById(`perpage-${key}`).addEventListener('change', e => {
+        S[key].perPage = parseInt(e.target.value);
+        S[key].page = 1;
+        render(key);
+      });
+    });
+
+    // Company section action buttons
     document.getElementById('btn-assign').addEventListener('click', () => {
       const cId = document.getElementById('company-dropdown').value;
       if (!cId) { toast('Select a company first', false); return; }
       resolveSection('company', 'requeued', cId);
     });
-    document.getElementById('btn-del-company').addEventListener('click', () => resolveSection('company', 'deleted'));
-    // Dupe section
-    document.getElementById('btn-del-dupe').addEventListener('click', () => resolveSection('dupe', 'deleted'));
-    // Field section
-    document.getElementById('btn-del-field').addEventListener('click', () => resolveSection('field', 'deleted'));
+    document.getElementById('btn-del-company').addEventListener('click',   () => resolveSection('company',   'deleted'));
+    document.getElementById('btn-del-amount').addEventListener('click',    () => resolveSection('amount',    'deleted'));
+    document.getElementById('btn-del-timestamp').addEventListener('click', () => resolveSection('timestamp', 'deleted'));
   });
 
   // ── Init ───────────────────────────────────────────────────
   (async () => {
     await loadCompanies();
-    await Promise.all(['company', 'dupe', 'field'].map(loadSection));
+    await Promise.all(Object.keys(CODES).map(loadSection));
   })();
 
 })();
