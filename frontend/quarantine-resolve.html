@@ -354,6 +354,10 @@
         <!-- ══ Panel: Invalid amount ══ -->
         <div class="q-panel hidden" id="panel-amount">
           <div class="resolve-toolbar">
+            <input type="number" id="amount-input" class="resolve-company-sel"
+              min="0.01" step="0.01" placeholder="Corrected amount…"
+              style="max-width:180px" oninput="updateAmountBtn()">
+            <button class="rbtn rbtn-accent" id="btn-assign-amount" disabled>Assign &amp; requeue</button>
             <button class="rbtn rbtn-danger" id="btn-del-amount" disabled>Delete selected</button>
             <span class="resolve-sel-label" id="sel-amount">0 selected</span>
           </div>
@@ -393,6 +397,11 @@
         <!-- ══ Panel: Missing timestamp ══ -->
         <div class="q-panel hidden" id="panel-timestamp">
           <div class="resolve-toolbar">
+            <input type="date" id="timestamp-date" class="resolve-company-sel"
+              style="max-width:160px" oninput="updateTimestampBtn()">
+            <input type="time" id="timestamp-time" class="resolve-company-sel"
+              style="max-width:120px" placeholder="12:00 (optional)" oninput="updateTimestampBtn()">
+            <button class="rbtn rbtn-accent" id="btn-assign-timestamp" disabled>Assign &amp; requeue</button>
             <button class="rbtn rbtn-danger" id="btn-del-timestamp" disabled>Delete selected</button>
             <span class="resolve-sel-label" id="sel-timestamp">0 selected</span>
           </div>
@@ -665,13 +674,36 @@
       n === 0 ? '0 selected' : `${n.toLocaleString()} of ${total.toLocaleString()} selected`;
 
     if (key === 'company') {
-      document.getElementById('btn-assign').disabled    = n === 0;
-      document.getElementById('btn-del-company').disabled = n === 0;
+      document.getElementById('btn-assign').disabled       = n === 0;
+      document.getElementById('btn-del-company').disabled  = n === 0;
     } else if (key === 'amount') {
-      document.getElementById('btn-del-amount').disabled = n === 0;
+      document.getElementById('btn-del-amount').disabled   = n === 0;
+      updateAmountBtn();
     } else {
       document.getElementById('btn-del-timestamp').disabled = n === 0;
+      updateTimestampBtn();
     }
+  }
+
+  // ── Amount input validation ────────────────────────────────
+  function updateAmountBtn() {
+    const n    = S['amount'].selected.size;
+    const val  = parseFloat(document.getElementById('amount-input').value);
+    document.getElementById('btn-assign-amount').disabled = !(n > 0 && val > 0 && isFinite(val));
+  }
+
+  // ── Timestamp input validation ─────────────────────────────
+  function updateTimestampBtn() {
+    const n    = S['timestamp'].selected.size;
+    const date = document.getElementById('timestamp-date').value;
+    document.getElementById('btn-assign-timestamp').disabled = !(n > 0 && date);
+  }
+
+  // ── Build ISO timestamp (default noon if no time given) ────
+  function buildTimestamp() {
+    const date = document.getElementById('timestamp-date').value;
+    const time = document.getElementById('timestamp-time').value || '12:00';
+    return `${date}T${time}:00`;
   }
 
   // ── Sort ───────────────────────────────────────────────────
@@ -704,13 +736,15 @@
   }
 
   // ── Resolve ────────────────────────────────────────────────
-  async function resolveSection(key, action, newCId) {
+  async function resolveSection(key, action, { newCId, newAmount, newTimestamp } = {}) {
     const s = S[key];
     if (s.selected.size === 0) return;
     const ids = Array.from(s.selected);
     try {
       const body = { quarantine_ids: ids, action };
-      if (newCId) body.new_c_id = newCId;
+      if (newCId)        body.new_c_id      = newCId;
+      if (newAmount != null) body.new_amount = newAmount;
+      if (newTimestamp)  body.new_timestamp  = newTimestamp;
       const res = await fetch('/api/admin/quarantine/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -761,14 +795,28 @@
       });
     });
 
-    // Company section action buttons
+    // Company section
     document.getElementById('btn-assign').addEventListener('click', () => {
       const cId = document.getElementById('company-dropdown').value;
       if (!cId) { toast('Select a company first', false); return; }
-      resolveSection('company', 'requeued', cId);
+      resolveSection('company', 'requeued', { newCId: cId });
     });
-    document.getElementById('btn-del-company').addEventListener('click',   () => resolveSection('company',   'deleted'));
-    document.getElementById('btn-del-amount').addEventListener('click',    () => resolveSection('amount',    'deleted'));
+    document.getElementById('btn-del-company').addEventListener('click', () => resolveSection('company', 'deleted'));
+
+    // Amount section
+    document.getElementById('btn-assign-amount').addEventListener('click', () => {
+      const val = parseFloat(document.getElementById('amount-input').value);
+      if (!(val > 0)) { toast('Enter a valid positive amount', false); return; }
+      resolveSection('amount', 'requeued', { newAmount: val });
+    });
+    document.getElementById('btn-del-amount').addEventListener('click', () => resolveSection('amount', 'deleted'));
+
+    // Timestamp section
+    document.getElementById('btn-assign-timestamp').addEventListener('click', () => {
+      const date = document.getElementById('timestamp-date').value;
+      if (!date) { toast('Select a date first', false); return; }
+      resolveSection('timestamp', 'requeued', { newTimestamp: buildTimestamp() });
+    });
     document.getElementById('btn-del-timestamp').addEventListener('click', () => resolveSection('timestamp', 'deleted'));
   });
 

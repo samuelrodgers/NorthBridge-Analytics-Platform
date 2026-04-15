@@ -132,7 +132,9 @@ class ChangePasswordRequest(BaseModel):
 class ResolveRequest(BaseModel):
     quarantine_ids: List[str]
     action: str
-    new_c_id: Optional[str] = None
+    new_c_id:        Optional[str]   = None
+    new_amount:      Optional[float] = None
+    new_timestamp:   Optional[str]   = None
 
 # ---------------------------------------------------------------------------
 # Auth routes
@@ -592,8 +594,10 @@ def resolve_quarantine(body: ResolveRequest, payload: dict = Depends(require_adm
     """
     if body.action not in ("deleted", "requeued"):
         raise HTTPException(status_code=400, detail="action must be 'deleted' or 'requeued'")
-    if body.action == "requeued" and not body.new_c_id:
-        raise HTTPException(status_code=400, detail="new_c_id required for requeue action")
+    if body.action == "requeued" and not any([
+        body.new_c_id, body.new_amount is not None, body.new_timestamp
+    ]):
+        raise HTTPException(status_code=400, detail="At least one corrected value required for requeue")
 
     user_id = int(payload["sub"])
     requeued = 0
@@ -603,20 +607,23 @@ def resolve_quarantine(body: ResolveRequest, payload: dict = Depends(require_adm
 
         if body.action == "requeued":
             cur.execute("""
-                SELECT tx_id, base_cncy, quote_cncy, amount, fee_amount, tx_timestamp, batch_id
+                SELECT tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount, tx_timestamp, batch_id
                 FROM raw.quarantine_event
                 WHERE quarantine_id = ANY(%s::uuid[])
                   AND tx_id IS NOT NULL
             """, (body.quarantine_ids,))
             for qrow in cur.fetchall():
+                use_c_id        = body.new_c_id        or (str(qrow["c_id"]) if qrow["c_id"] else None)
+                use_amount      = body.new_amount       if body.new_amount is not None else qrow["amount"]
+                use_timestamp   = body.new_timestamp    or qrow["tx_timestamp"]
                 cur.execute("""
                     INSERT INTO raw.transaction_event
                         (tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
                          tx_timestamp, ingestion_timestamp, batch_id)
                     VALUES (%s, %s::uuid, %s, %s, %s, %s, %s, NOW(), %s)
                 """, (
-                    qrow["tx_id"], body.new_c_id, qrow["base_cncy"], qrow["quote_cncy"],
-                    qrow["amount"], qrow["fee_amount"], qrow["tx_timestamp"], qrow["batch_id"],
+                    qrow["tx_id"], use_c_id, qrow["base_cncy"], qrow["quote_cncy"],
+                    use_amount, qrow["fee_amount"], use_timestamp, qrow["batch_id"],
                 ))
                 requeued += 1
 
