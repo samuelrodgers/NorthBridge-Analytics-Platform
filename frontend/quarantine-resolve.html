@@ -142,6 +142,47 @@
     .resolve-toast.show { opacity: 1; transform: translateY(0); }
     .toast-ok  { background: var(--green-dim);  border: 1px solid rgba(74,222,128,0.3); color: var(--green); }
     .toast-err { background: var(--red-dim);    border: 1px solid var(--red-border);    color: var(--red);   }
+
+    /* ── Purple variables (fallback) ── */
+    :root {
+      --purple:        #c084fc;
+      --purple-dim:    rgba(192,132,252,0.12);
+      --purple-border: rgba(192,132,252,0.3);
+    }
+
+    /* ── Tabs ── */
+    .q-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .q-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .q-tab:hover { color: var(--text-primary); }
+    .q-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .q-tab-sub {
+      padding: 8px 20px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      border-bottom: 1px solid var(--border-subtle);
+      min-height: 32px;
+      line-height: 1.5;
+    }
+    .q-panel.hidden { display: none; }
   </style>
 </head>
 <body>
@@ -247,146 +288,147 @@
 
     <div class="content">
 
-      <!-- ══ Section 1: Company Assignment ══════════════════════ -->
-      <div class="card">
-        <div class="card-hdr">
-          <div>
-            <div class="card-title">Company assignment</div>
-            <div class="card-sub">NULL_COMPANY_ID · UNKNOWN_COMPANY — assign to a known company and requeue, or discard · sort by currency to batch-assign by known currency-company pairs</div>
-          </div>
-          <span class="pill red" id="count-company">—</span>
-        </div>
-        <div class="resolve-toolbar">
-          <select class="resolve-company-sel" id="company-dropdown">
-            <option value="">Select company…</option>
-          </select>
-          <button class="rbtn rbtn-accent" id="btn-assign" disabled>Assign &amp; requeue</button>
-          <button class="rbtn rbtn-danger" id="btn-del-company" disabled>Delete selected</button>
-          <span class="resolve-sel-label" id="sel-company">0 selected</span>
-        </div>
-        <div class="card-body flush" style="overflow-x:auto">
-          <table class="data-table" id="table-company">
-            <thead>
-              <tr>
-                <th class="col-chk"><input type="checkbox" id="chk-all-company" title="Select all rows"></th>
-                <th class="sortable" data-sec="company" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="company" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="company" data-col="amount">Amount <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="company" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="company" data-col="failure_code">Failure <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="company" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
-              </tr>
-            </thead>
-            <tbody id="tbody-company">
-              <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination-bar" id="pager-company">
-          <span class="page-info" id="pageinfo-company">—</span>
-          <button class="rbtn" id="btn-prev-company" disabled>← Prev</button>
-          <span class="page-num" id="pagenum-company">—</span>
-          <button class="rbtn" id="btn-next-company" disabled>Next →</button>
-          <select class="perpage-sel" id="perpage-company">
-            <option value="25">25 / page</option>
-            <option value="50">50 / page</option>
-            <option value="100">100 / page</option>
-            <option value="250">250 / page</option>
-          </select>
-        </div>
-      </div>
+      <div class="card" style="padding:0; overflow:hidden">
 
-      <!-- ══ Section 2: Invalid Amount ══════════════════════════ -->
-      <div class="card">
-        <div class="card-hdr">
-          <div>
-            <div class="card-title">Invalid amount</div>
-            <div class="card-sub">INVALID_AMOUNT · INVALID_BASE_CURRENCY — zero, negative, or unrecognised currency values; select all and discard</div>
-          </div>
-          <span class="pill purple" id="count-amount">—</span>
+        <!-- ══ Tab bar ══ -->
+        <div class="q-tabs">
+          <button class="q-tab active" data-key="company">
+            Company assignment
+            <span class="pill red" id="count-company">—</span>
+          </button>
+          <button class="q-tab" data-key="amount">
+            Invalid amount
+            <span class="pill purple" id="count-amount">—</span>
+          </button>
+          <button class="q-tab" data-key="timestamp">
+            Missing timestamp
+            <span class="pill amber" id="count-timestamp">—</span>
+          </button>
         </div>
-        <div class="resolve-toolbar">
-          <button class="rbtn rbtn-danger" id="btn-del-amount" disabled>Delete selected</button>
-          <span class="resolve-sel-label" id="sel-amount">0 selected</span>
-        </div>
-        <div class="card-body flush" style="overflow-x:auto">
-          <table class="data-table" id="table-amount">
-            <thead>
-              <tr>
-                <th class="col-chk"><input type="checkbox" id="chk-all-amount" title="Select all rows"></th>
-                <th class="sortable" data-sec="amount" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="amount" data-col="c_name">Company <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="amount" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="amount" data-col="amount">Amount <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="amount" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="amount" data-col="failure_code">Failure <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="amount" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
-              </tr>
-            </thead>
-            <tbody id="tbody-amount">
-              <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination-bar" id="pager-amount">
-          <span class="page-info" id="pageinfo-amount">—</span>
-          <button class="rbtn" id="btn-prev-amount" disabled>← Prev</button>
-          <span class="page-num" id="pagenum-amount">—</span>
-          <button class="rbtn" id="btn-next-amount" disabled>Next →</button>
-          <select class="perpage-sel" id="perpage-amount">
-            <option value="25">25 / page</option>
-            <option value="50">50 / page</option>
-            <option value="100">100 / page</option>
-            <option value="250">250 / page</option>
-          </select>
-        </div>
-      </div>
 
-      <!-- ══ Section 3: Missing Timestamp ═══════════════════════ -->
-      <div class="card">
-        <div class="card-hdr">
-          <div>
-            <div class="card-title">Missing timestamp</div>
-            <div class="card-sub">NULL_TIMESTAMP — transactions with no recorded time; cannot be promoted to analytics schema without a timestamp</div>
-          </div>
-          <span class="pill amber" id="count-timestamp">—</span>
-        </div>
-        <div class="resolve-toolbar">
-          <button class="rbtn rbtn-danger" id="btn-del-timestamp" disabled>Delete selected</button>
-          <span class="resolve-sel-label" id="sel-timestamp">0 selected</span>
-        </div>
-        <div class="card-body flush" style="overflow-x:auto">
-          <table class="data-table" id="table-timestamp">
-            <thead>
-              <tr>
-                <th class="col-chk"><input type="checkbox" id="chk-all-timestamp" title="Select all rows"></th>
-                <th class="sortable" data-sec="timestamp" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="timestamp" data-col="c_name">Company <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="timestamp" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="timestamp" data-col="amount">Amount <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="timestamp" data-col="failure_code">Failure <span class="sort-icon"></span></th>
-                <th class="sortable" data-sec="timestamp" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
-              </tr>
-            </thead>
-            <tbody id="tbody-timestamp">
-              <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination-bar" id="pager-timestamp">
-          <span class="page-info" id="pageinfo-timestamp">—</span>
-          <button class="rbtn" id="btn-prev-timestamp" disabled>← Prev</button>
-          <span class="page-num" id="pagenum-timestamp">—</span>
-          <button class="rbtn" id="btn-next-timestamp" disabled>Next →</button>
-          <select class="perpage-sel" id="perpage-timestamp">
-            <option value="25">25 / page</option>
-            <option value="50">50 / page</option>
-            <option value="100">100 / page</option>
-            <option value="250">250 / page</option>
-          </select>
-        </div>
-      </div>
+        <!-- ══ Active tab subtitle ══ -->
+        <div class="q-tab-sub" id="tab-subtitle"></div>
 
+        <!-- ══ Panel: Company assignment ══ -->
+        <div class="q-panel" id="panel-company">
+          <div class="resolve-toolbar">
+            <select class="resolve-company-sel" id="company-dropdown">
+              <option value="">Select company…</option>
+            </select>
+            <button class="rbtn rbtn-accent" id="btn-assign" disabled>Assign &amp; requeue</button>
+            <button class="rbtn rbtn-danger" id="btn-del-company" disabled>Delete selected</button>
+            <span class="resolve-sel-label" id="sel-company">0 selected</span>
+          </div>
+          <div class="card-body flush" style="overflow-x:auto">
+            <table class="data-table" id="table-company">
+              <thead>
+                <tr>
+                  <th class="col-chk"><input type="checkbox" id="chk-all-company" title="Select all rows"></th>
+                  <th class="sortable" data-sec="company" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="company" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="company" data-col="amount">Amount <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="company" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="company" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="company" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-company">
+                <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination-bar" id="pager-company">
+            <span class="page-info" id="pageinfo-company">—</span>
+            <button class="rbtn" id="btn-prev-company" disabled>← Prev</button>
+            <span class="page-num" id="pagenum-company">—</span>
+            <button class="rbtn" id="btn-next-company" disabled>Next →</button>
+            <select class="perpage-sel" id="perpage-company">
+              <option value="25">25 / page</option>
+              <option value="50">50 / page</option>
+              <option value="100">100 / page</option>
+              <option value="250">250 / page</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ══ Panel: Invalid amount ══ -->
+        <div class="q-panel hidden" id="panel-amount">
+          <div class="resolve-toolbar">
+            <button class="rbtn rbtn-danger" id="btn-del-amount" disabled>Delete selected</button>
+            <span class="resolve-sel-label" id="sel-amount">0 selected</span>
+          </div>
+          <div class="card-body flush" style="overflow-x:auto">
+            <table class="data-table" id="table-amount">
+              <thead>
+                <tr>
+                  <th class="col-chk"><input type="checkbox" id="chk-all-amount" title="Select all rows"></th>
+                  <th class="sortable" data-sec="amount" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="amount" data-col="c_name">Company <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="amount" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="amount" data-col="amount">Amount <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="amount" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="amount" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="amount" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-amount">
+                <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination-bar" id="pager-amount">
+            <span class="page-info" id="pageinfo-amount">—</span>
+            <button class="rbtn" id="btn-prev-amount" disabled>← Prev</button>
+            <span class="page-num" id="pagenum-amount">—</span>
+            <button class="rbtn" id="btn-next-amount" disabled>Next →</button>
+            <select class="perpage-sel" id="perpage-amount">
+              <option value="25">25 / page</option>
+              <option value="50">50 / page</option>
+              <option value="100">100 / page</option>
+              <option value="250">250 / page</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ══ Panel: Missing timestamp ══ -->
+        <div class="q-panel hidden" id="panel-timestamp">
+          <div class="resolve-toolbar">
+            <button class="rbtn rbtn-danger" id="btn-del-timestamp" disabled>Delete selected</button>
+            <span class="resolve-sel-label" id="sel-timestamp">0 selected</span>
+          </div>
+          <div class="card-body flush" style="overflow-x:auto">
+            <table class="data-table" id="table-timestamp">
+              <thead>
+                <tr>
+                  <th class="col-chk"><input type="checkbox" id="chk-all-timestamp" title="Select all rows"></th>
+                  <th class="sortable" data-sec="timestamp" data-col="tx_id">TX ID <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="timestamp" data-col="c_name">Company <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="timestamp" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="timestamp" data-col="amount">Amount <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="timestamp" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th class="sortable" data-sec="timestamp" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
+                </tr>
+              </thead>
+              <tbody id="tbody-timestamp">
+                <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination-bar" id="pager-timestamp">
+            <span class="page-info" id="pageinfo-timestamp">—</span>
+            <button class="rbtn" id="btn-prev-timestamp" disabled>← Prev</button>
+            <span class="page-num" id="pagenum-timestamp">—</span>
+            <button class="rbtn" id="btn-next-timestamp" disabled>Next →</button>
+            <select class="perpage-sel" id="perpage-timestamp">
+              <option value="25">25 / page</option>
+              <option value="50">50 / page</option>
+              <option value="100">100 / page</option>
+              <option value="250">250 / page</option>
+            </select>
+          </div>
+        </div><!-- /.q-panel timestamp -->
+
+      </div><!-- /.card -->
     </div><!-- /.content -->
   </div><!-- /.main -->
 </div><!-- /.shell -->
@@ -410,7 +452,26 @@
     timestamp: 'NULL_TIMESTAMP',
   };
 
+  const SUBTITLES = {
+    company:   'NULL_COMPANY_ID · UNKNOWN_COMPANY — assign to a known company and requeue, or discard · sort by currency to batch-assign by known currency-company pairs',
+    amount:    'INVALID_AMOUNT · INVALID_BASE_CURRENCY — zero, negative, or unrecognised currency values; select all and discard',
+    timestamp: 'NULL_TIMESTAMP — transactions with no recorded time; cannot be promoted to analytics schema without a timestamp',
+  };
+
   const COL_COUNT = { company: 7, amount: 8, timestamp: 7 };
+
+  let activeTab = 'company';
+
+  // ── Tab switching ──────────────────────────────────────────
+  function switchTab(key) {
+    activeTab = key;
+    document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.key === key));
+    document.getElementById('tab-subtitle').textContent = SUBTITLES[key];
+    Object.keys(CODES).forEach(k => {
+      document.getElementById(`panel-${k}`).classList.toggle('hidden', k !== key);
+    });
+    loadSection(key);
+  }
 
   // ── State (one entry per section) ──────────────────────────
   const S = {};
@@ -670,6 +731,11 @@
 
   // ── Wire up ────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
+    // Tab clicks
+    document.querySelectorAll('.q-tab').forEach(tab => {
+      tab.addEventListener('click', () => switchTab(tab.dataset.key));
+    });
+
     // Sort headers
     document.querySelectorAll('th.sortable').forEach(th => {
       th.addEventListener('click', () => sortSection(th.dataset.sec, th.dataset.col));
@@ -708,7 +774,10 @@
 
   // ── Init ───────────────────────────────────────────────────
   (async () => {
+    // Set initial subtitle before data arrives
+    document.getElementById('tab-subtitle').textContent = SUBTITLES['company'];
     await loadCompanies();
+    // Load all sections so count pills in inactive tabs populate immediately
     await Promise.all(Object.keys(CODES).map(loadSection));
   })();
 
