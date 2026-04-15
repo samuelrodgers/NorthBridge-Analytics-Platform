@@ -7,6 +7,84 @@
   <title>Add company — DataPlatform</title>
   <link rel="stylesheet" href="shared.css">
   <style>body{visibility:hidden}</style>
+  <style>
+    /* ── Form layout ── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+    .form-row  { display: flex; flex-direction: column; gap: 5px; margin-bottom: 18px; }
+    .form-row.full { grid-column: 1 / -1; }
+    .form-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.04em;
+    }
+    .form-input, .form-select {
+      background: var(--surface-1);
+      border: 1px solid var(--border-mid);
+      border-radius: var(--radius-md);
+      padding: 8px 12px;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+      width: 100%;
+      box-sizing: border-box;
+      transition: border-color 0.15s;
+    }
+    .form-input:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .form-hint {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-tertiary);
+      margin-top: 2px;
+    }
+    .form-actions {
+      margin-top: 8px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-submit {
+      padding: 8px 22px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--accent-border);
+      background: var(--accent-dim);
+      color: var(--accent);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-submit:hover:not(:disabled) { background: rgba(56,189,248,0.22); }
+    .btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+    /* ── Result card ── */
+    .result-card {
+      margin-top: 16px;
+      padding: 18px 20px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(74,222,128,0.3);
+      background: var(--green-dim);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--green);
+      display: none;
+    }
+    .result-card.show { display: block; }
+    .result-key   { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+    .result-meta  { color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
+    .result-uuid  { color: var(--text-tertiary); }
+    /* ── Error state ── */
+    .form-error {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--red);
+      margin-left: auto;
+    }
+  </style>
 </head>
 <body>
 <div class="shell">
@@ -105,17 +183,127 @@
     </header>
 
     <div class="content">
-      <div class="card" style="max-width:560px">
+      <div class="card" style="max-width:620px">
         <div class="card-hdr">
           <div>
             <div class="card-title">Add company</div>
-            <div class="card-sub">Register a new company in the analytics schema</div>
+            <div class="card-sub">Registers in analytics.d_company · appended to config.py for next cron run</div>
           </div>
         </div>
-        <div class="card-body" style="padding:32px;text-align:center;color:var(--text-tertiary);font-family:var(--font-mono);font-size:12px;line-height:2">
-          — not yet implemented —<br>
-          company registration form will go here
-        </div>
+        <div class="card-body" style="padding:24px 28px">
+
+          <form id="add-company-form" autocomplete="off">
+            <div class="form-grid">
+
+              <!-- Company name — full width -->
+              <div class="form-row full">
+                <label class="form-label" for="f-name">COMPANY NAME</label>
+                <input class="form-input" id="f-name" type="text" placeholder="e.g. Meridian Financial Ltd" required>
+              </div>
+
+              <!-- Industry -->
+              <div class="form-row">
+                <label class="form-label" for="f-industry">INDUSTRY</label>
+                <select class="form-select" id="f-industry">
+                  <option value="Technology">Technology</option>
+                  <option value="Retail">Retail</option>
+                  <option value="Fintech">Fintech</option>
+                  <option value="Logistics">Logistics</option>
+                </select>
+              </div>
+
+              <!-- Default currency -->
+              <div class="form-row">
+                <label class="form-label" for="f-cncy">DEFAULT CURRENCY</label>
+                <select class="form-select" id="f-cncy">
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="EUR">EUR — Euro</option>
+                  <option value="GBP">GBP — British Pound</option>
+                  <option value="JPY">JPY — Japanese Yen</option>
+                  <option value="AUD">AUD — Australian Dollar</option>
+                  <option value="CAD">CAD — Canadian Dollar</option>
+                  <option value="CHF">CHF — Swiss Franc</option>
+                  <option value="SEK">SEK — Swedish Krona</option>
+                  <option value="NOK">NOK — Norwegian Krone</option>
+                  <option value="MXN">MXN — Mexican Peso</option>
+                  <option value="BRL">BRL — Brazilian Real</option>
+                  <option value="SGD">SGD — Singapore Dollar</option>
+                  <option value="HKD">HKD — Hong Kong Dollar</option>
+                  <option value="AED">AED — UAE Dirham</option>
+                </select>
+              </div>
+
+              <!-- HQ Country -->
+              <div class="form-row">
+                <label class="form-label" for="f-country">HQ COUNTRY</label>
+                <select class="form-select" id="f-country">
+                  <option>Argentina</option><option>Australia</option>
+                  <option>Austria</option><option>Bahrain</option>
+                  <option>Belgium</option><option>Brazil</option>
+                  <option>Canada</option><option>Chile</option>
+                  <option>China</option><option>Colombia</option>
+                  <option>Czech Republic</option><option>Denmark</option>
+                  <option>Egypt</option><option>Finland</option>
+                  <option>France</option><option>Germany</option>
+                  <option>Greece</option><option>Hong Kong</option>
+                  <option>Hungary</option><option>India</option>
+                  <option>Indonesia</option><option>Ireland</option>
+                  <option>Israel</option><option>Italy</option>
+                  <option>Japan</option><option>Kenya</option>
+                  <option>Kuwait</option><option>Malaysia</option>
+                  <option>Mexico</option><option>Netherlands</option>
+                  <option>New Zealand</option><option>Nigeria</option>
+                  <option>Norway</option><option>Peru</option>
+                  <option>Philippines</option><option>Poland</option>
+                  <option>Portugal</option><option>Qatar</option>
+                  <option>Saudi Arabia</option><option>Singapore</option>
+                  <option>South Africa</option><option>South Korea</option>
+                  <option>Spain</option><option>Sweden</option>
+                  <option>Switzerland</option><option>Taiwan</option>
+                  <option>Thailand</option><option>Turkey</option>
+                  <option>UAE</option><option selected>United States</option>
+                  <option>United Kingdom</option><option>Vietnam</option>
+                </select>
+              </div>
+
+              <!-- Region tag -->
+              <div class="form-row">
+                <label class="form-label" for="f-region">REGION TAG</label>
+                <input class="form-input" id="f-region" type="text" placeholder="e.g. EU_RETAIL" required>
+                <span class="form-hint">Used for grouping in analytics views</span>
+              </div>
+
+              <!-- Transaction weight -->
+              <div class="form-row">
+                <label class="form-label" for="f-weight">TRANSACTION WEIGHT</label>
+                <input class="form-input" id="f-weight" type="number" value="0.05" min="0.01" max="1.0" step="0.01" required>
+                <span class="form-hint">Relative sampling frequency · normalised automatically</span>
+              </div>
+
+            </div><!-- /.form-grid -->
+
+            <div class="form-actions">
+              <button class="btn-submit" type="submit" id="btn-submit">Register company</button>
+              <span class="form-error" id="form-error"></span>
+            </div>
+          </form>
+
+          <!-- Success result -->
+          <div class="result-card" id="result-card">
+            <div class="result-key" id="result-key"></div>
+            <div class="result-meta">
+              <span id="result-name"></span><br>
+              <span class="result-uuid" id="result-uuid"></span><br>
+              Inserted into <code>analytics.d_company</code> · config.py updated ·
+              transactions will generate on next cron run (~2 hr)
+            </div>
+            <div style="margin-top:14px; display:flex; gap:10px">
+              <button class="btn-submit" id="btn-another">Add another</button>
+              <a href="company.html" class="btn">View companies →</a>
+            </div>
+          </div>
+
+        </div><!-- /.card-body -->
       </div>
     </div>
 
@@ -128,6 +316,62 @@
   const user = await requireAuth();
   if (user.role !== 'admin') window.location.replace('/index.html');
   document.getElementById("logout-btn").addEventListener("click", logout);
+</script>
+<script>
+  document.getElementById('add-company-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-submit');
+    const errEl = document.getElementById('form-error');
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Registering…';
+
+    const body = {
+      name:         document.getElementById('f-name').value.trim(),
+      industry:     document.getElementById('f-industry').value,
+      hq_country:   document.getElementById('f-country').value,
+      region:       document.getElementById('f-region').value.trim(),
+      default_cncy: document.getElementById('f-cncy').value,
+      weight:       parseFloat(document.getElementById('f-weight').value),
+    };
+
+    try {
+      const res  = await fetch('/api/admin/company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errEl.textContent = data.detail || 'Registration failed.';
+        btn.disabled = false;
+        btn.textContent = 'Register company';
+        return;
+      }
+
+      // Show success state
+      document.getElementById('add-company-form').style.display = 'none';
+      const card = document.getElementById('result-card');
+      document.getElementById('result-key').textContent  = data.key + ' — ' + data.name;
+      document.getElementById('result-name').textContent = body.industry + ' · ' + body.hq_country + ' · ' + body.default_cncy;
+      document.getElementById('result-uuid').textContent = 'c_id: ' + data.c_id;
+      card.classList.add('show');
+
+    } catch (_) {
+      errEl.textContent = 'Network error — please try again.';
+      btn.disabled = false;
+      btn.textContent = 'Register company';
+    }
+  });
+
+  document.getElementById('btn-another').addEventListener('click', function () {
+    document.getElementById('add-company-form').reset();
+    document.getElementById('add-company-form').style.display = '';
+    document.getElementById('result-card').classList.remove('show');
+    document.getElementById('btn-submit').disabled = false;
+    document.getElementById('btn-submit').textContent = 'Register company';
+  });
 </script>
 </body>
 </html>

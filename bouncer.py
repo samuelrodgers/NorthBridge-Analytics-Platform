@@ -1,5 +1,7 @@
 import os
+import re
 import secrets
+import uuid as _uuid_mod
 import psycopg2
 import psycopg2.extras
 import requests
@@ -25,6 +27,29 @@ DATABASE_URL      = os.getenv("DATABASE_URL", "")
 JWT_SECRET_KEY    = os.getenv("JWT_SECRET_KEY", "changeme")
 ALGORITHM         = "HS256"
 TOKEN_EXPIRE_MINS = 60 * 8
+
+# Mirrors the namespaces in config.py — must never change after first run.
+_COMPANY_NS  = _uuid_mod.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+_INDUSTRY_NS = _uuid_mod.UUID("b2c3d4e5-f6a7-8901-bcde-f12345678901")
+
+def _company_uuid(key: str) -> str:
+    return str(_uuid_mod.uuid5(_COMPANY_NS, key))
+
+def _industry_uuid(name: str) -> str:
+    return str(_uuid_mod.uuid5(_INDUSTRY_NS, name))
+
+# Absolute path to config.py on this host — used by add_company() to persist
+# new entries so the next main.py cron run picks them up automatically.
+CONFIG_PY_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "scripts", "NAP_ingestion", "src", "config.py",
+)
+
+VALID_INDUSTRIES = ["Technology", "Retail", "Fintech", "Logistics"]
+VALID_CURRENCIES = [
+    "USD","EUR","GBP","JPY","AUD","CAD","CHF",
+    "SEK","NOK","MXN","BRL","SGD","HKD","AED",
+]
 
 ALLOWED_DASHBOARDS = [
     "4f55a708-c316-406e-8480-1aa3d071631f",  # mainTx
@@ -128,6 +153,14 @@ class ResetPasswordRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+class AddCompanyRequest(BaseModel):
+    name:         str
+    industry:     str
+    hq_country:   str
+    region:       str
+    default_cncy: str
+    weight:       float = 0.05
 
 class ResolveRequest(BaseModel):
     quarantine_ids: List[str]
@@ -539,6 +572,74 @@ def list_companies(payload: dict = Depends(require_admin)):
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("SELECT c_id::text, c_name FROM analytics.d_company ORDER BY c_name")
         return {"companies": [dict(r) for r in cur.fetchall()]}
+
+
+@app.post("/api/admin/company")
+def add_company(body: AddCompanyRequest, payload: dict = Depends(require_admin)):
+    """
+    Register a new company in analytics.d_company and append it to config.py
+    so the next main.py cron run starts generating transactions for it.
+    """
+    name    = body.name.strip()
+    region  = body.region.strip()
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Company name is required.")
+    if body.industry not in VALID_INDUSTRIES:
+        raise HTTPException(status_code=400, detail=f"Invalid industry. Choose from: {VALID_INDUSTRIES}")
+    if body.default_cncy not in VALID_CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"Invalid currency.")
+    if not 0.01 <= body.weight <= 1.0:
+        raise HTTPException(status_code=400, detail="Weight must be between 0.01 and 1.0.")
+
+    # Determine next COMP key from config.py
+    try:
+        with open(CONFIG_PY_PATH, "r", encoding="utf-8") as f:
+            config_text = f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="config.py not found on server.")
+
+    existing_nums = [int(m[4:]) for m in re.findall(r'"(COMP\d+)"', config_text)]
+    next_num = max(existing_nums) + 1 if existing_nums else 13
+    key = f"COMP{next_num:03d}"
+
+    c_uuid      = _company_uuid(key)
+    industry_id = _industry_uuid(body.industry)
+
+    # Insert into analytics.d_company
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO analytics.d_company (c_id, c_name, industry_id, hq_country, region, default_cncy)
+            VALUES (%s::uuid, %s, %s::uuid, %s, %s, %s)
+        """, (c_uuid, name, industry_id, body.hq_country, region, body.default_cncy))
+
+    # Append entry to config.py so main.py picks it up on next cron run.
+    # Insertion point: just before the closing } of COMPANIES dict.
+    # Anchor on the _rebuild_company_caches function definition which immediately
+    # follows the dict — ASCII, unique, stable.
+    safe_name   = name.replace("\\", "\\\\").replace('"', '\\"')
+    safe_region = region.replace("\\", "\\\\").replace('"', '\\"')
+    safe_country = body.hq_country.replace("\\", "\\\\").replace('"', '\\"')
+    new_line = (
+        f'    "{key}": {{"c_uuid": _company_uuid("{key}"), '
+        f'"name": "{safe_name}", '
+        f'"industry_id": INDUSTRY_NAME_TO_ID["{body.industry}"], '
+        f'"hq_country": "{safe_country}", '
+        f'"region": "{safe_region}", '
+        f'"default_cncy": "{body.default_cncy}", '
+        f'"weight": {body.weight}}},\n'
+    )
+    anchor = "\ndef _rebuild_company_caches():"
+    if anchor in config_text:
+        updated = config_text.replace(anchor, f"\n{new_line}{anchor}", 1)
+        try:
+            with open(CONFIG_PY_PATH, "w", encoding="utf-8") as f:
+                f.write(updated)
+        except OSError:
+            pass  # DB insert succeeded; file write failure is non-fatal for this request
+
+    return {"key": key, "c_id": c_uuid, "name": name}
 
 
 @app.get("/api/admin/quarantine/unresolved")
