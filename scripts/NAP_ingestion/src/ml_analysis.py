@@ -250,23 +250,23 @@ def plot_scree(explained_variance: np.ndarray, cumulative_variance: np.ndarray) 
 
 def plot_scatter(X_reduced: np.ndarray, y: pd.Series) -> None:
     """
-    2D scatter plot of PC1 vs PC2, colored by failure_code.
+    Side-by-side scatter plots: PC1 vs PC2 (left) and PC2 vs PC3 (right),
+    colored by failure_code for Analysis 1 records.
 
     Args:
         X_reduced: PCA-transformed array, shape (n_samples, n_components)
         y:         failure_code Series aligned to X_reduced rows
     """
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
     colors = {
-        'INVALID_AMOUNT':  'steelblue',
-        'NULL_COMPANY_ID': 'darkorange',
-        'NULL_TIMESTAMP':  'green',
+        'INVALID_AMOUNT': 'steelblue',
+        'NULL_TIMESTAMP': 'green',
     }
 
     for failure_code, color in colors.items():
         mask = y == failure_code
-        ax.scatter(
+        ax1.scatter(
             X_reduced[mask, 0],
             X_reduced[mask, 1],
             c=color,
@@ -274,13 +274,28 @@ def plot_scatter(X_reduced: np.ndarray, y: pd.Series) -> None:
             alpha=0.3,
             s=5,
         )
+        ax2.scatter(
+            X_reduced[mask, 1],
+            X_reduced[mask, 2],
+            c=color,
+            label=failure_code,
+            alpha=0.3,
+            s=5,
+        )
 
-    ax.set_xlabel('Principal Component 1')
-    ax.set_ylabel('Principal Component 2')
-    ax.set_title('PCA Scatter Plot — Quarantine Records by Failure Code (Analysis 1)')
-    ax.legend(markerscale=3)
+    ax1.set_xlabel('Principal Component 1')
+    ax1.set_ylabel('Principal Component 2')
+    ax1.set_title('PC1 vs PC2 — Failure Code Separation')
+    ax1.legend(markerscale=3)
+
+    ax2.set_xlabel('Principal Component 2')
+    ax2.set_ylabel('Principal Component 3')
+    ax2.set_title('PC2 vs PC3 — Failure Code Separation')
+    ax2.legend(markerscale=3)
+
+    plt.suptitle('PCA Feature Space — Analysis 1', fontsize=13)
     plt.tight_layout()
-    plt.savefig('pca_scatter.png', dpi=150)
+    plt.savefig('pca_scatter_comparison.png', dpi=150)
     plt.show()
 
 
@@ -400,8 +415,8 @@ def project_analysis2(
 ) -> np.ndarray:
     """
     Project Analysis 2 records into the PCA space fitted on Analysis 1.
-    Produces two plots: a standalone Analysis 2 view and an overlay with
-    Analysis 1, plus a PC2/PC3 view.
+    Produces a single figure: Analysis 1 alone (left) and Analysis 1 +
+    Analysis 2 overlay (right), both in PC1/PC2 space.
 
     Args:
         pca:        PCA object already fitted on Analysis 1
@@ -414,29 +429,31 @@ def project_analysis2(
     """
     X2_reduced = pca.transform(X2)
 
-    # Plot Analysis 2 projections alongside Analysis 1 for reference
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
 
-    # Left — Analysis 2 records in PC1/PC2 space
-    ax1.scatter(
-        X2_reduced[:, 0],
-        X2_reduced[:, 1],
-        c='purple',
-        alpha=0.3,
-        s=5,
-        label='NULL_COMPANY_ID',
-    )
-    ax1.set_xlabel('Principal Component 1')
-    ax1.set_ylabel('Principal Component 2')
-    ax1.set_title('Analysis 2 — NULL_COMPANY_ID Records in PCA Space')
-    ax1.legend(markerscale=3)
-
-    # Right — overlay Analysis 1 and Analysis 2 together
-    colors_failure = {
+    colors_a1 = {
         'INVALID_AMOUNT': 'steelblue',
         'NULL_TIMESTAMP': 'green',
     }
-    for failure_code, color in colors_failure.items():
+
+    # Left — Analysis 1 only
+    for failure_code, color in colors_a1.items():
+        mask = y1 == failure_code
+        ax1.scatter(
+            X1_reduced[mask, 0],
+            X1_reduced[mask, 1],
+            c=color,
+            label=failure_code,
+            alpha=0.2,
+            s=5,
+        )
+    ax1.set_xlabel('Principal Component 1')
+    ax1.set_ylabel('Principal Component 2')
+    ax1.set_title('Analysis 1 — Known Company Records')
+    ax1.legend(markerscale=3)
+
+    # Right — Analysis 1 + Analysis 2 overlay
+    for failure_code, color in colors_a1.items():
         mask = y1 == failure_code
         ax2.scatter(
             X1_reduced[mask, 0],
@@ -456,30 +473,12 @@ def project_analysis2(
     )
     ax2.set_xlabel('Principal Component 1')
     ax2.set_ylabel('Principal Component 2')
-    ax2.set_title('Analysis 1 + Analysis 2 Overlay')
+    ax2.set_title('Analysis 2 — NULL_COMPANY_ID Projection Overlay')
     ax2.legend(markerscale=3)
 
-    plt.suptitle('NULL_COMPANY_ID Projection into PCA Space', fontsize=13)
+    plt.suptitle('NULL_COMPANY_ID Records in PCA Space', fontsize=13)
     plt.tight_layout()
-    plt.savefig('analysis2_projection.png', dpi=150)
-    plt.show()
-
-    # PC2/PC3 view
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(
-        X2_reduced[:, 1],  # PC2
-        X2_reduced[:, 2],  # PC3
-        c='purple',
-        alpha=0.3,
-        s=5,
-        label='NULL_COMPANY_ID',
-    )
-    ax.set_xlabel('Principal Component 2')
-    ax.set_ylabel('Principal Component 3')
-    ax.set_title('Analysis 2 — NULL_COMPANY_ID in PC2/PC3 Space')
-    ax.legend(markerscale=3)
-    plt.tight_layout()
-    plt.savefig('analysis2_pc2pc3.png', dpi=150)
+    plt.savefig('analysis2_overlay.png', dpi=150)
     plt.show()
 
     return X2_reduced
@@ -496,29 +495,29 @@ def run_kmeans(X1_reduced: np.ndarray, y1: pd.Series) -> None:
         y1:         failure_code Series aligned to X1_reduced rows
     """
     # Elbow method to justify k (commented out — run manually if needed)
-    inertias = []
-    silhouette_scores = []
-    k_range = range(2, 9)
-
-    for k in k_range:
-        km = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = km.fit_predict(X1_reduced)
-        inertias.append(km.inertia_)
-        silhouette_scores.append(silhouette_score(X1_reduced, labels))
-        print(f"  k={k} — inertia: {km.inertia_:.1f}, silhouette: {silhouette_scores[-1]:.3f}")
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-    ax1.plot(k_range, inertias, marker='o', color='steelblue')
-    ax1.set_xlabel('Number of Clusters (k)')
-    ax1.set_ylabel('Inertia')
-    ax1.set_title('Elbow Method')
-    ax2.plot(k_range, silhouette_scores, marker='o', color='darkorange')
-    ax2.set_xlabel('Number of Clusters (k)')
-    ax2.set_ylabel('Silhouette Score')
-    ax2.set_title('Silhouette Score by k')
-    plt.tight_layout()
-    plt.savefig('kmeans_selection.png', dpi=150)
-    plt.show()
+    # inertias = []
+    # silhouette_scores = []
+    # k_range = range(2, 9)
+    #
+    # for k in k_range:
+    #     km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    #     labels = km.fit_predict(X1_reduced)
+    #     inertias.append(km.inertia_)
+    #     silhouette_scores.append(silhouette_score(X1_reduced, labels))
+    #     print(f"  k={k} — inertia: {km.inertia_:.1f}, silhouette: {silhouette_scores[-1]:.3f}")
+    #
+    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    # ax1.plot(k_range, inertias, marker='o', color='steelblue')
+    # ax1.set_xlabel('Number of Clusters (k)')
+    # ax1.set_ylabel('Inertia')
+    # ax1.set_title('Elbow Method')
+    # ax2.plot(k_range, silhouette_scores, marker='o', color='darkorange')
+    # ax2.set_xlabel('Number of Clusters (k)')
+    # ax2.set_ylabel('Silhouette Score')
+    # ax2.set_title('Silhouette Score by k')
+    # plt.tight_layout()
+    # plt.savefig('kmeans_selection.png', dpi=150)
+    # plt.show()
 
     # Fit final k-means with k=3
     km_final = KMeans(n_clusters=3, random_state=42, n_init=10)
