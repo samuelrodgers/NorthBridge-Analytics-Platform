@@ -458,6 +458,29 @@ def quarantine_summary(payload: dict = Depends(require_auth_cookie)):
     }
 
 
+@app.get("/api/quarantine/resolution-stats")
+def quarantine_resolution_stats(payload: dict = Depends(require_auth_cookie)):
+    """
+    Cleaned data stats — counts of resolved quarantine records by action.
+    Used by governance.html to display the cleaned data card.
+    """
+    with get_db() as conn:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT
+                COUNT(*)                                        AS total_resolved,
+                COUNT(*) FILTER (WHERE action = 'requeued')    AS requeued,
+                COUNT(*) FILTER (WHERE action = 'deleted')     AS deleted
+            FROM raw.quarantine_resolution
+        """)
+        row = dict(cur.fetchone())
+    return {
+        "total_resolved": row["total_resolved"],
+        "requeued":       row["requeued"],
+        "deleted":        row["deleted"],
+    }
+
+
 @app.get("/api/quarantine/rows")
 def quarantine_rows(
     page: int = Query(default=1, ge=1),
@@ -664,6 +687,7 @@ def get_unresolved(
                 qe.failure_code,
                 qe.failure_reason,
                 qe.ingestion_timestamp,
+                qe.dirty_value,
                 dc.c_name
             FROM raw.quarantine_event qe
             LEFT JOIN analytics.d_company dc ON qe.c_id = dc.c_id

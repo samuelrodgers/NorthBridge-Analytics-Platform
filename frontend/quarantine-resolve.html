@@ -329,11 +329,12 @@
                   <th class="sortable" data-sec="company" data-col="amount">Amount <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="company" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="company" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th>Raw value</th>
                   <th class="sortable" data-sec="company" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
                 </tr>
               </thead>
               <tbody id="tbody-company">
-                <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+                <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -372,11 +373,12 @@
                   <th class="sortable" data-sec="amount" data-col="amount">Amount <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="amount" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="amount" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th>Raw value</th>
                   <th class="sortable" data-sec="amount" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
                 </tr>
               </thead>
               <tbody id="tbody-amount">
-                <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
+                <tr><td colspan="9"><div class="empty-state">Loading…</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -415,11 +417,12 @@
                   <th class="sortable" data-sec="timestamp" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="timestamp" data-col="amount">Amount <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="timestamp" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th>Raw value</th>
                   <th class="sortable" data-sec="timestamp" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
                 </tr>
               </thead>
               <tbody id="tbody-timestamp">
-                <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+                <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -467,7 +470,7 @@
     timestamp: 'NULL_TIMESTAMP — transactions with no recorded time; cannot be promoted to analytics schema without a timestamp',
   };
 
-  const COL_COUNT = { company: 7, amount: 8, timestamp: 7 };
+  const COL_COUNT = { company: 8, amount: 9, timestamp: 8 };
 
   let activeTab = 'company';
 
@@ -507,6 +510,11 @@
   };
   function fmtFc(code) {
     return code ? `<span class="fc-pill ${FC_CLASS[code] || ''}">${code}</span>` : '—';
+  }
+  function fmtDirty(v) {
+    if (v == null) return '<span class="muted">—</span>';
+    const escaped = v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<code style="font-size:10px;word-break:break-all">${escaped}</code>`;
   }
 
   // ── Toast ──────────────────────────────────────────────────
@@ -625,17 +633,17 @@
   function buildCells(key, r) {
     if (key === 'company') {
       return [fmtUuid(r.tx_id), r.base_cncy || '—', fmtAmt(r.amount),
-              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDirty(r.dirty_value), fmtDate(r.ingestion_timestamp)]
         .map(v => `<td>${v}</td>`).join('');
     }
     if (key === 'amount') {
       return [fmtUuid(r.tx_id), r.c_name || '—', r.base_cncy || '—', fmtAmt(r.amount),
-              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDirty(r.dirty_value), fmtDate(r.ingestion_timestamp)]
         .map(v => `<td>${v}</td>`).join('');
     }
     // timestamp
     return [fmtUuid(r.tx_id), r.c_name || '—', r.base_cncy || '—', fmtAmt(r.amount),
-            fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+            fmtFc(r.failure_code), fmtDirty(r.dirty_value), fmtDate(r.ingestion_timestamp)]
       .map(v => `<td>${v}</td>`).join('');
   }
 
