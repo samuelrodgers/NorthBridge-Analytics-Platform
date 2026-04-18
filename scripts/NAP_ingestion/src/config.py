@@ -515,7 +515,7 @@ NOISE_RATES = {
     "timestamp_null":    0.02,   # 2%  of rows get a null timestamp
     "currency_dirty":    0.10,   # 10% of rows get a currency alias/variant
     "amount_dirty":      0.15,   # 15% of rows get a formatted amount string
-    "company_id_null":   0.03,   # 3%  of rows get null company_id
+    "company_id_null":   0.01,   # 1%  of rows get null company_id (reduced to limit <NULL> quarantine dominance)
     "company_id_name":   0.04,   # 4%  of rows get company name instead of ID
     "fee_missing":       0.05,   # 5%  of rows have no fee
     "fee_as_percent":    0.03,   # 3%  of rows express fee as "2%"

@@ -377,7 +377,8 @@ def load_all(conn, fx_df, tx_df, expense_df=None, quarantine_df=None,
 # ── Batch log ─────────────────────────────────────────────────────────────────
 
 def log_batch(conn, batch_id, window_start, window_end,
-              rows_received, rows_loaded, rows_quarantined, noise_level):
+              rows_received, rows_loaded, rows_quarantined, noise_level,
+              run_timestamp=None):
     """
     Write one row to raw.batch_log recording stats for a completed pipeline run.
 
@@ -393,20 +394,40 @@ def log_batch(conn, batch_id, window_start, window_end,
         rows_loaded:      clean rows inserted into raw.transaction_event
         rows_quarantined: rows diverted to raw.quarantine_event
         noise_level:      'low' | 'medium' | 'high'
+        run_timestamp:    datetime | None — when provided, overrides the DB
+                          default (NOW()). Pass window_end during historical
+                          seed runs so the ingestion timeline spreads across
+                          the seeded date range instead of spiking on seed day.
     """
-    sql = """
-        INSERT INTO raw.batch_log
-            (batch_id, window_start, window_end,
-             rows_received, rows_loaded, rows_quarantined, noise_level)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (batch_id) DO NOTHING
-    """
+    if run_timestamp is not None:
+        sql = """
+            INSERT INTO raw.batch_log
+                (batch_id, window_start, window_end,
+                 rows_received, rows_loaded, rows_quarantined, noise_level,
+                 run_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (batch_id) DO NOTHING
+        """
+        params = (
+            batch_id, window_start, window_end,
+            rows_received, rows_loaded, rows_quarantined, noise_level,
+            run_timestamp,
+        )
+    else:
+        sql = """
+            INSERT INTO raw.batch_log
+                (batch_id, window_start, window_end,
+                 rows_received, rows_loaded, rows_quarantined, noise_level)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (batch_id) DO NOTHING
+        """
+        params = (
+            batch_id, window_start, window_end,
+            rows_received, rows_loaded, rows_quarantined, noise_level,
+        )
     try:
         with conn.cursor() as cur:
-            cur.execute(sql, (
-                batch_id, window_start, window_end,
-                rows_received, rows_loaded, rows_quarantined, noise_level,
-            ))
+            cur.execute(sql, params)
         conn.commit()
         logger.info(f"batch_log: recorded batch {batch_id} — "
                     f"{rows_loaded} loaded, {rows_quarantined} quarantined")

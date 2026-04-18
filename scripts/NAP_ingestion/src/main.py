@@ -224,6 +224,7 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
             rows_loaded      = raw_counts['transactions'],
             rows_quarantined = raw_counts['quarantine'],
             noise_level      = noise_level,
+            run_timestamp    = end,
         )
     finally:
         conn.close()

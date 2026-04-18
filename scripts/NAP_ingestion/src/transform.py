@@ -539,8 +539,9 @@ def generate_expense_events(
             offset_seconds = rng.uniform(0, window_seconds)
             expense_ts = window_start + timedelta(seconds=float(offset_seconds))
 
-            # Log-normal: median ~$500, sigma=0.8 gives a realistic spread
-            amount = round(float(rng.lognormal(mean=6.2, sigma=0.8)), 4)
+            # Log-normal: median ~$2000, sigma=0.8 — sized so daily expenses
+            # land at roughly 15-30% of company revenue (BR-031).
+            amount = round(float(rng.lognormal(mean=7.6, sigma=0.8)), 4)
 
             category_id = str(rng.choice(category_ids))
 
