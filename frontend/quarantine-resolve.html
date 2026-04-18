@@ -686,7 +686,8 @@
       n === 0 ? '0 selected' : `${n.toLocaleString()} of ${total.toLocaleString()} selected`;
 
     if (key === 'company') {
-      document.getElementById('btn-assign').disabled       = n === 0;
+      const hasCo = !!document.getElementById('company-dropdown').value;
+      document.getElementById('btn-assign').disabled       = n === 0 || !hasCo;
       document.getElementById('btn-del-company').disabled  = n === 0;
     } else if (key === 'amount') {
       document.getElementById('btn-del-amount').disabled   = n === 0;
@@ -806,6 +807,9 @@
         render(key);
       });
     });
+
+    // Re-evaluate assign button when company selection changes
+    document.getElementById('company-dropdown').addEventListener('change', () => updateSelLabel('company'));
 
     // Company section
     document.getElementById('btn-assign').addEventListener('click', () => {

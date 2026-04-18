@@ -99,7 +99,10 @@ def run_backfill(start: datetime, end: datetime, per_day: int, seed: int = 42):
             company = random.choice(COMPANY_LIST)
             base_cncy = company["default_cncy"]
             c_id = company["c_uuid"] if failure_code != "NULL_COMPANY_ID" else None
-            amount = round(float(rng_np.lognormal(mean=8, sigma=1.2)), 4)
+            # INVALID_AMOUNT means normalization produced NULL — store NULL to match
+            # what the real pipeline puts in quarantine_event.amount.
+            # Other failure types have a valid amount (the transaction amount was fine).
+            amount = None if failure_code == "INVALID_AMOUNT" else round(float(rng_np.lognormal(mean=8, sigma=1.2)), 4)
 
             quarantine_id = str(uuid.uuid5(
                 uuid.UUID("a7c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e"),
