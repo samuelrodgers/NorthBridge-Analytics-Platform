@@ -283,7 +283,7 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
     sql = """
         INSERT INTO raw.quarantine_event
             (quarantine_id, tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
-             tx_timestamp, failure_code, failure_reason, batch_id)
+             tx_timestamp, failure_code, failure_reason, batch_id, dirty_value)
         VALUES %s
         ON CONFLICT (quarantine_id) DO NOTHING
     """
@@ -291,7 +291,7 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
     cols = [
         "quarantine_id", "tx_id", "c_id", "base_cncy", "quote_cncy",
         "amount", "fee_amount", "tx_timestamp",
-        "failure_code", "failure_reason", "batch_id",
+        "failure_code", "failure_reason", "batch_id", "dirty_value",
     ]
 
     required = ["failure_code", "failure_reason"]
@@ -372,3 +372,43 @@ def load_all(conn, fx_df, tx_df, expense_df=None, quarantine_df=None,
         f"fx: {fx_count}, tx: {tx_count}, expenses: {exp_count}, quarantine: {q_count}"
     )
     return {"fx_rates": fx_count, "transactions": tx_count, "expenses": exp_count, "quarantine": q_count}
+
+
+# ── Batch log ─────────────────────────────────────────────────────────────────
+
+def log_batch(conn, batch_id, window_start, window_end,
+              rows_received, rows_loaded, rows_quarantined, noise_level):
+    """
+    Write one row to raw.batch_log recording stats for a completed pipeline run.
+
+    Called by main.py at the end of run() after load_all() completes.
+    Non-fatal if it fails — a logging write should never abort a successful load.
+
+    Args:
+        conn:             psycopg2 connection (same one used for load_all)
+        batch_id:         UUID string for this run
+        window_start:     datetime — synthetic tx window start
+        window_end:       datetime — synthetic tx window end
+        rows_received:    total transactions generated before noise/normalisation
+        rows_loaded:      clean rows inserted into raw.transaction_event
+        rows_quarantined: rows diverted to raw.quarantine_event
+        noise_level:      'low' | 'medium' | 'high'
+    """
+    sql = """
+        INSERT INTO raw.batch_log
+            (batch_id, window_start, window_end,
+             rows_received, rows_loaded, rows_quarantined, noise_level)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (batch_id) DO NOTHING
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, (
+                batch_id, window_start, window_end,
+                rows_received, rows_loaded, rows_quarantined, noise_level,
+            ))
+        conn.commit()
+        logger.info(f"batch_log: recorded batch {batch_id} — "
+                    f"{rows_loaded} loaded, {rows_quarantined} quarantined")
+    except Exception as e:
+        logger.warning(f"batch_log: write failed (non-fatal) — {e}")

@@ -8,6 +8,10 @@ SELECT COUNT(*) FROM raw.fx_rate;
 
 TRUNCATE TABLE raw.transaction_event CASCADE;
 TRUNCATE TABLE raw.fx_rate CASCADE;
+TRUNCATE TABLE raw.pipeline_run CASCADE;
+TRUNCATE TABLE raw.quarantine_event CASCADE;
+TRUNCATE TABLE raw.expense_event CASCADE;
+TRUNCATE TABLE raw.batch_log CASCADE;
 
 
 
