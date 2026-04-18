@@ -111,6 +111,24 @@ Expected: 15–30%.
 
 ---
 
+## Section 6b — Backfill revenue_growth_rate
+
+The seed inserts all 1936 industry-days in a single `INSERT ... SELECT`. The LATERAL join
+that computes `revenue_growth_rate` can't see rows being inserted in the same statement,
+so nearly all rows land with NULL. Fix with a post-seed UPDATE:
+
+```bash
+PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "UPDATE analytics.f_industry fi SET revenue_growth_rate = sub.grr FROM (SELECT fi2.industry_id, fi2.time_id, CASE WHEN LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) IS NULL THEN NULL WHEN LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) = 0 THEN NULL ELSE LEAST(999.9999, GREATEST(-999.9999, ROUND((fi2.total_revenue - LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp)) / LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) * 100, 4))) END AS grr FROM analytics.f_industry fi2 JOIN analytics.d_time dt ON dt.time_id = fi2.time_id) sub WHERE fi.industry_id = sub.industry_id AND fi.time_id = sub.time_id AND sub.grr IS NOT NULL;"
+```
+
+**Verify:**
+```bash
+PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "SELECT industry_id, COUNT(*) AS total_rows, COUNT(revenue_growth_rate) AS non_null_rows FROM analytics.f_industry GROUP BY industry_id ORDER BY industry_id;"
+```
+Expected: `non_null_rows = 1935` for each industry (all rows except the first).
+
+---
+
 ## Section 7 — Quarantine backfill (last 30 days only)
 
 Fill the governance page with 30 days of realistic quarantine data:

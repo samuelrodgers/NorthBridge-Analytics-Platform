@@ -4,6 +4,8 @@ the company vs industry avg comparison, name reflects it joins transactions to t
 */
 SELECT
   dt.t_stamp,
+  co.c_id,
+  co.c_name,
   SUM(t.amount)              AS company_revenue,
   AVG(fi.avg_revenue_per_co) AS industry_avg
 FROM analytics.f_transaction t
@@ -11,7 +13,7 @@ JOIN analytics.d_time     dt ON t.time_id    = dt.time_id
 JOIN analytics.d_company  co ON t.c_id       = co.c_id
 JOIN analytics.f_industry fi ON co.industry_id = fi.industry_id
   AND fi.time_id = t.time_id
-GROUP BY dt.t_stamp
+GROUP BY dt.t_stamp, co.c_id, co.c_name
 
 -- expense_detail
 /*
