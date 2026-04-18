@@ -211,6 +211,7 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
             quarantine_df=quarantined if not clean else None,
             batch_size=batch_size,
             batch_id=batch_id,
+            ingestion_timestamp=end,
         )
         logger.info(
             f"✅ Load complete — "
