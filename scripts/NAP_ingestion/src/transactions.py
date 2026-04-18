@@ -74,7 +74,22 @@ def generate_transactions(
         raw_dt      = pd.to_datetime(raw_seconds, unit='s', utc=True)
         hour_w = np.where((raw_dt.hour >= 9) & (raw_dt.hour <= 17), 3.0, 1.0)
         dow_w  = np.where(raw_dt.dayofweek < 5, 2.0, 0.5)
-        weights = (hour_w * dow_w).astype(float)
+
+        # Growth trend: linear ramp from 1.0 at window start → 1.5 at window end.
+        # Produces a gentle upward curve in cumulative charts — later periods are
+        # naturally busier than earlier ones without a sharp inflection.
+        progress = (raw_seconds - start_epoch) / max(end_epoch - start_epoch, 1)
+        growth_w = 1.0 + 0.5 * progress
+
+        # Per-day noise: each calendar day gets an independent log-normal multiplier
+        # (sigma=0.35 → ≈0.7x–1.4x spread), giving visible day-to-day volume
+        # variation so cumulative lines curve rather than going ruler-straight.
+        window_days = max(1, int((end_epoch - start_epoch) / 86_400) + 1)
+        day_noise   = np.exp(rng.normal(0, 0.35, size=window_days))
+        day_index   = ((raw_seconds - start_epoch) / 86_400).astype(int).clip(0, window_days - 1)
+        day_w       = day_noise[day_index]
+
+        weights = (hour_w * dow_w * growth_w * day_w).astype(float)
         weights /= weights.sum()
         idx      = rng.choice(pool_size, size=n_transactions, replace=True, p=weights)
         tx_times = raw_dt[idx]
