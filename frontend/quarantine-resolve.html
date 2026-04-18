@@ -624,10 +624,11 @@
     updateSortIcons(key);
     updatePager(key);
 
-    // Sync select-all checkbox state
+    // Sync select-all checkbox — reflects current page only
     const allChk = document.getElementById(`chk-all-${key}`);
-    allChk.indeterminate = s.selected.size > 0 && s.selected.size < s.rows.length;
-    allChk.checked = s.rows.length > 0 && s.selected.size === s.rows.length;
+    const pageSelected = pr.filter(r => s.selected.has(r.quarantine_id)).length;
+    allChk.indeterminate = pageSelected > 0 && pageSelected < pr.length;
+    allChk.checked = pr.length > 0 && pageSelected === pr.length;
   }
 
   function buildCells(key, r) {
@@ -658,19 +659,22 @@
       if (chk) chk.checked = s.selected.has(id);
     }
     updateSelLabel(key);
-    // Update indeterminate state on header checkbox
+    // Update indeterminate state on header checkbox — current page only
     const allChk = document.getElementById(`chk-all-${key}`);
-    allChk.indeterminate = s.selected.size > 0 && s.selected.size < s.rows.length;
-    allChk.checked = s.rows.length > 0 && s.selected.size === s.rows.length;
+    const pr2 = pageRows(key);
+    const pageSelected2 = pr2.filter(r => s.selected.has(r.quarantine_id)).length;
+    allChk.indeterminate = pageSelected2 > 0 && pageSelected2 < pr2.length;
+    allChk.checked = pr2.length > 0 && pageSelected2 === pr2.length;
   }
 
   function toggleAll(key) {
-    const s = S[key];
-    const allSelected = s.selected.size === s.rows.length && s.rows.length > 0;
-    if (allSelected) {
-      s.selected.clear();
+    const s  = S[key];
+    const pr = pageRows(key);
+    const allPageSelected = pr.length > 0 && pr.every(r => s.selected.has(r.quarantine_id));
+    if (allPageSelected) {
+      pr.forEach(r => s.selected.delete(r.quarantine_id));
     } else {
-      s.rows.forEach(r => s.selected.add(r.quarantine_id));
+      pr.forEach(r => s.selected.add(r.quarantine_id));
     }
     render(key);
   }
