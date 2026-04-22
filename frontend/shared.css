@@ -930,3 +930,6 @@ code, pre { font-family: var(--font-mono); }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .col-3 { grid-template-columns: 1fr; }
 }
+
+/* ── Force Superset embeds to always render in dark mode ── */
+[id$="-mount"] { color-scheme: dark; }
