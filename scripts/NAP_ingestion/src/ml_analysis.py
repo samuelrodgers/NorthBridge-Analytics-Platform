@@ -12,6 +12,7 @@
 
 import numpy as np
 import pandas as pd
+from sklearn.manifold import TSNE
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -216,6 +217,80 @@ def preprocess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]
 # ============================================================
 # STAGE 3 — PCA SUPPORT FUNCTIONS
 # ============================================================
+
+def plot_tsne(
+    X1_reduced: np.ndarray,
+    y1: pd.Series,
+    X1: pd.DataFrame,
+) -> None:
+    """
+    Three-panel t-SNE visualization of PCA-reduced Analysis 1 data.
+
+    Fits t-SNE on X1_reduced and plots the embedding colored three ways:
+      - Left:   failure code (INVALID_AMOUNT / NULL_TIMESTAMP)
+      - Centre: noise level (low / medium / high)
+      - Right:  failure count (scaled 0–1 bucketed into three groups)
+
+    Args:
+        X1_reduced: PCA-transformed Analysis 1 array, shape (n_samples, n_components)
+        y1:         failure_code Series aligned to X1_reduced rows
+        X1:         Analysis 1 feature DataFrame (must contain noise_level and
+                    failure_count columns, already filtered and reset_index'd)
+    """
+    print("Fitting t-SNE on Analysis 1 PCA-reduced data (this may take a few minutes)...")
+    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+    X1_tsne = tsne.fit_transform(X1_reduced)
+
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+
+    # --- Plot 1: colored by failure code
+    colors_failure = {
+        'INVALID_AMOUNT': 'steelblue',
+        'NULL_TIMESTAMP': 'green',
+    }
+    ax = axes[0]
+    for failure_code, color in colors_failure.items():
+        mask = y1 == failure_code
+        ax.scatter(X1_tsne[mask, 0], X1_tsne[mask, 1],
+                   c=color, label=failure_code, alpha=0.3, s=5)
+    ax.set_title('t-SNE — Colored by Failure Code')
+    ax.set_xlabel('t-SNE Dimension 1')
+    ax.set_ylabel('t-SNE Dimension 2')
+    ax.legend(markerscale=3)
+
+    # --- Plot 2: colored by noise level
+    noise_colors = {0.0: 'green', 0.5: 'orange', 1.0: 'red'}
+    noise_labels = {0.0: 'low', 0.5: 'medium', 1.0: 'high'}
+    noise_vals = X1['noise_level'].reset_index(drop=True)
+    ax = axes[1]
+    for val, color in noise_colors.items():
+        mask = noise_vals == val
+        ax.scatter(X1_tsne[mask, 0], X1_tsne[mask, 1],
+                   c=color, label=noise_labels[val], alpha=0.3, s=5)
+    ax.set_title('t-SNE — Colored by Noise Level')
+    ax.set_xlabel('t-SNE Dimension 1')
+    ax.set_ylabel('t-SNE Dimension 2')
+    ax.legend(markerscale=3)
+
+    # --- Plot 3: colored by failure count
+    failure_count_vals = X1['failure_count'].reset_index(drop=True)
+    colors_fc = {0.0: 'steelblue', 0.5: 'darkorange', 1.0: 'red'}
+    labels_fc = {0.0: 'single failure', 0.5: 'two failures', 1.0: 'three failures'}
+    ax = axes[2]
+    for val, color in colors_fc.items():
+        mask = (failure_count_vals - failure_count_vals.min()) / \
+               (failure_count_vals.max() - failure_count_vals.min()) == val
+        ax.scatter(X1_tsne[mask, 0], X1_tsne[mask, 1],
+                   c=color, label=labels_fc[val], alpha=0.3, s=5)
+    ax.set_title('t-SNE — Colored by Failure Count')
+    ax.set_xlabel('t-SNE Dimension 1')
+    ax.set_ylabel('t-SNE Dimension 2')
+    ax.legend(markerscale=3)
+
+    plt.suptitle('t-SNE Visualization of PCA-Reduced Quarantine Records', fontsize=13)
+    plt.tight_layout()
+    plt.savefig('tsne_analysis1.png', dpi=150)
+    plt.show()
 
 def plot_scree(explained_variance: np.ndarray, cumulative_variance: np.ndarray) -> None:
     """
@@ -662,22 +737,25 @@ def run_pca(
     pca_full, explained_variance, cumulative_variance = fit_full_pca(X1)
 
     # --- Scree plot: explained variance per component
-    plot_scree(explained_variance, cumulative_variance)
+    #plot_scree(explained_variance, cumulative_variance)
 
     # --- Refit PCA with chosen n_components
     pca, X1_reduced = refit_pca(X1)
 
     # --- 2D scatter plot: PC1 vs PC2 colored by failure_code
-    plot_scatter(X1_reduced, y1)
+    #plot_scatter(X1_reduced, y1)
 
     # --- Loadings heatmap: original features vs top components
-    plot_loadings(pca, feature_names=list(X1.columns))
+    #plot_loadings(pca, feature_names=list(X1.columns))
 
     # --- Project Analysis 2 records into PCA space
     X2_reduced = project_analysis2(pca, X2, X1_reduced, y1)
 
     # --- K-means clustering on PCA-reduced Analysis 1 data
-    run_kmeans(X1_reduced, y1)
+    #run_kmeans(X1_reduced, y1)
+
+    # --- t-SNE plot
+    plot_tsne(X1_reduced, y1, X1)
 
 
 # ============================================================

@@ -11,6 +11,10 @@ SELECT COUNT(*) FROM raw.quarantine_event;
 TRUNCATE TABLE raw.transaction_event CASCADE;
 TRUNCATE TABLE raw.fx_rate CASCADE;
 TRUNCATE TABLE raw.quarantine_event CASCADE;
+TRUNCATE TABLE raw.batch_log CASCADE;
+TRUNCATE TABLE raw.expense_event CASCADE;
+TRUNCATE TABLE raw.quarantine_resolution CASCADE;
+TRUNCATE TABLE raw.pipeline_run CASCADE;
 
 
 
