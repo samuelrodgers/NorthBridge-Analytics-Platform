@@ -1,13 +1,13 @@
 # NAP Re-seed Suite
 
-Complete command reference for wiping and re-seeding the EC2 database.
+Complete command reference for wiping and re-seeding the database.
 Run each section in order. Verify before proceeding to the next section.
 
 All psql commands use:
 ```
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name>
 ```
-Aliased below as `$PSQL` for brevity.
+Aliased below as `$PSQL` for brevity. Set your actual values in a `.env` file (see `.env.example`).
 
 ---
 
@@ -30,12 +30,12 @@ sudo systemctl stop bouncer
 ## Section 2 — Truncate all data tables
 
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "TRUNCATE raw.fx_rate, raw.transaction_event, raw.quarantine_event, raw.expense_event, raw.quarantine_resolution, raw.batch_log, analytics.f_fx_rate, analytics.f_transaction, analytics.f_conversion, analytics.f_expense, analytics.f_industry, analytics.d_time, analytics.d_company, analytics.d_industry, analytics.d_currency, analytics.d_expense_category CASCADE;"
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "TRUNCATE raw.fx_rate, raw.transaction_event, raw.quarantine_event, raw.expense_event, raw.quarantine_resolution, raw.batch_log, analytics.f_fx_rate, analytics.f_transaction, analytics.f_conversion, analytics.f_expense, analytics.f_industry, analytics.d_time, analytics.d_company, analytics.d_industry, analytics.d_currency, analytics.d_expense_category CASCADE;"
 ```
 
 **Verify empty:**
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "SELECT (SELECT COUNT(*) FROM raw.transaction_event) AS tx, (SELECT COUNT(*) FROM analytics.f_transaction) AS f_tx, (SELECT COUNT(*) FROM raw.quarantine_event) AS quarantine, (SELECT COUNT(*) FROM raw.batch_log) AS batch_log;"
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "SELECT (SELECT COUNT(*) FROM raw.transaction_event) AS tx, (SELECT COUNT(*) FROM analytics.f_transaction) AS f_tx, (SELECT COUNT(*) FROM raw.quarantine_event) AS quarantine, (SELECT COUNT(*) FROM raw.batch_log) AS batch_log;"
 ```
 Expected: all zeros.
 
@@ -44,14 +44,14 @@ Expected: all zeros.
 ## Section 3 — Verify migrations are applied
 
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "\d raw.batch_log"
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "\d raw.quarantine_event" | grep dirty_value
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "\d raw.batch_log"
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "\d raw.quarantine_event" | grep dirty_value
 ```
 
 Both must return results. If either fails, apply the missing migration before proceeding:
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -f ~/northbridge-analytics-platform/scripts/SQL/Migrations/015_add_batch_log.sql
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -f ~/northbridge-analytics-platform/scripts/SQL/Migrations/016_quarantine_dirty_value.sql
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -f ~/northbridge-analytics-platform/scripts/SQL/Migrations/015_add_batch_log.sql
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -f ~/northbridge-analytics-platform/scripts/SQL/Migrations/016_quarantine_dirty_value.sql
 ```
 
 ---
@@ -99,13 +99,13 @@ python transform.py --seed
 Then truncate f_industry and rerun so it calculates net_profit using the backfilled expenses:
 
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "TRUNCATE analytics.f_industry;"
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "TRUNCATE analytics.f_industry;"
 python transform.py --seed
 ```
 
 **Verify expense ratio:**
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "SELECT ROUND(AVG(total_expenses/NULLIF(total_revenue,0)*100)::numeric,2) AS avg_expense_pct FROM analytics.f_industry;"
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "SELECT ROUND(AVG(total_expenses/NULLIF(total_revenue,0)*100)::numeric,2) AS avg_expense_pct FROM analytics.f_industry;"
 ```
 Expected: 15–30%.
 
@@ -118,12 +118,12 @@ that computes `revenue_growth_rate` can't see rows being inserted in the same st
 so nearly all rows land with NULL. Fix with a post-seed UPDATE:
 
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "UPDATE analytics.f_industry fi SET revenue_growth_rate = sub.grr FROM (SELECT fi2.industry_id, fi2.time_id, CASE WHEN LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) IS NULL THEN NULL WHEN LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) = 0 THEN NULL ELSE LEAST(999.9999, GREATEST(-999.9999, ROUND((fi2.total_revenue - LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp)) / LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) * 100, 4))) END AS grr FROM analytics.f_industry fi2 JOIN analytics.d_time dt ON dt.time_id = fi2.time_id) sub WHERE fi.industry_id = sub.industry_id AND fi.time_id = sub.time_id AND sub.grr IS NOT NULL;"
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "UPDATE analytics.f_industry fi SET revenue_growth_rate = sub.grr FROM (SELECT fi2.industry_id, fi2.time_id, CASE WHEN LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) IS NULL THEN NULL WHEN LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) = 0 THEN NULL ELSE LEAST(999.9999, GREATEST(-999.9999, ROUND((fi2.total_revenue - LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp)) / LAG(fi2.total_revenue) OVER (PARTITION BY fi2.industry_id ORDER BY dt.t_stamp) * 100, 4))) END AS grr FROM analytics.f_industry fi2 JOIN analytics.d_time dt ON dt.time_id = fi2.time_id) sub WHERE fi.industry_id = sub.industry_id AND fi.time_id = sub.time_id AND sub.grr IS NOT NULL;"
 ```
 
 **Verify:**
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "SELECT industry_id, COUNT(*) AS total_rows, COUNT(revenue_growth_rate) AS non_null_rows FROM analytics.f_industry GROUP BY industry_id ORDER BY industry_id;"
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "SELECT industry_id, COUNT(*) AS total_rows, COUNT(revenue_growth_rate) AS non_null_rows FROM analytics.f_industry GROUP BY industry_id ORDER BY industry_id;"
 ```
 Expected: `non_null_rows = 1935` for each industry (all rows except the first).
 
@@ -168,7 +168,7 @@ Cron lines should look like:
 ## Section 9 — Final verification
 
 ```bash
-PGPASSWORD='1a14g2F1!' psql -h localhost -p 5433 -U superset_admin -d postgres -c "
+PGPASSWORD='<your_db_password>' psql -h localhost -p <db_port> -U <db_user> -d <db_name> -c "
 SELECT
     (SELECT COUNT(*) FROM raw.transaction_event)   AS raw_tx,
     (SELECT COUNT(*) FROM analytics.f_transaction) AS f_tx,
