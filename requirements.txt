@@ -1,5 +1,18 @@
-numpy==2.4.3
-pandas==3.0.1
+# Northbridge Analytics Platform — Python dependencies
+# Covers both bouncer.py (FastAPI) and scripts/NAP_ingestion/ (pipeline).
+# Install with: pip install -r requirements.txt
+
+# API (bouncer.py)
+fastapi==0.115.6
+uvicorn==0.34.0
+bcrypt==4.2.1
+python-jose[cryptography]==3.3.0
+pydantic[email]==2.10.6
+
+# Pipeline (ingestion / transform / ML)
+numpy==2.2.3
+pandas==2.2.3
 psycopg2-binary==2.9.11
-python-dotenv==1.2.2
-requests==2.31.0
+python-dotenv==1.1.0
+requests==2.32.3
+scikit-learn==1.6.1

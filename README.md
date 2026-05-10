@@ -1,93 +1,205 @@
-# NorthBridge-Analytics-Platform
+# Northbridge Analytics Platform
 
+A synthetic financial analytics platform built as a senior capstone project (CPSC 498, Christopher Newport University, Spring 2026). It generates realistic multi-currency transaction data, runs it through a data quality pipeline, and surfaces the results through a custom dashboard backed by Apache Superset.
 
+## What it does
 
-## Getting started
+- **Synthetic data pipeline** — generates transactions across 12 fictional companies in 4 industries and 14 currencies, injects realistic data quality issues (malformed timestamps, currency aliases, missing fields), and routes records through a quarantine/resolution workflow
+- **Star-schema data warehouse** — PostgreSQL with `raw` (append-only ingestion), `analytics` (transformed fact/dimension tables), and `auth` schemas
+- **FastAPI backend** (`bouncer.py`) — proxies Superset embeds, handles authentication (JWT + bcrypt), exposes data quality and governance APIs
+- **Dashboard frontend** — HTML/CSS/JS pages for FX rates, transaction volume, data governance, and quarantine resolution
+- **ML analysis** (`scripts/NAP_ingestion/src/ml_analysis.py`) — PCA, k-means clustering, and t-SNE on the generated transaction data
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Prerequisites
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- Python 3.11+
+- PostgreSQL 14+
+- Apache Superset (optional — dashboards embed Superset charts; the rest of the app works without it)
 
-## Add your files
+## Local setup
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### 1. Clone and create a virtual environment
+
+```bash
+git clone https://github.com/samuelrodgers24-web/NorthBridge-Analytics-Platform.git
+cd NorthBridge-Analytics-Platform
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Create the PostgreSQL database
+
+```bash
+psql -U postgres -c "CREATE DATABASE northbridge;"
+psql -U postgres -c "CREATE USER nap_user WITH PASSWORD 'your_password';"
+psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE northbridge TO nap_user;"
+```
+
+### 3. Apply the base schema and migrations
+
+Run the base schema scripts first (order matters — `analytics_create_tables.sql` before `Create_auth.sql`):
+
+```bash
+psql -U nap_user -d northbridge -f scripts/SQL/Scripts/analytics_create_tables.sql
+psql -U nap_user -d northbridge -f scripts/SQL/Scripts/Create_auth.sql
+```
+
+Then apply all migrations in order:
+
+```bash
+for f in scripts/SQL/Migrations/0*.sql; do
+    echo "Applying $f..."
+    psql -U nap_user -d northbridge -f "$f"
+done
+```
+
+On Windows (PowerShell):
+
+```powershell
+Get-ChildItem scripts\SQL\Migrations\0*.sql | Sort-Object Name | ForEach-Object {
+    Write-Host "Applying $($_.Name)..."
+    psql -U nap_user -d northbridge -f $_.FullName
+}
+```
+
+### 4. Configure environment variables
+
+Copy the example files and fill in your values:
+
+```bash
+cp .env.example .env
+cp scripts/NAP_ingestion/.env.example scripts/NAP_ingestion/.env
+```
+
+Edit `.env` (for `bouncer.py`):
 
 ```
-cd existing_repo
-git remote add origin https://student-gitlab.sec.cnu.edu/samuel.rodgers.24-cpsc498-s26/northbridge-analytics-platform.git
-git branch -M main
-git push -uf origin main
+DATABASE_URL=postgresql://nap_user:your_password@localhost:5432/northbridge
+JWT_SECRET_KEY=<output of: openssl rand -hex 32>
+SUPERSET_URL=http://127.0.0.1:8088    # omit if not running Superset
+SUPERSET_ADMIN_USER=admin
+SUPERSET_ADMIN_PASS=
 ```
 
-## Integrate with your tools
+Edit `scripts/NAP_ingestion/.env` (for the pipeline):
 
-- [ ] [Set up project integrations](https://student-gitlab.sec.cnu.edu/samuel.rodgers.24-cpsc498-s26/northbridge-analytics-platform/-/settings/integrations)
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=northbridge
+DB_USER=nap_user
+DB_PASS=your_password
+TWELVE_DATA_API_KEY=          # optional — only needed for live FX ingestion
+```
 
-## Collaborate with your team
+### 5. Seed the database
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Navigate to the ingestion source directory:
 
-## Test and Deploy
+```bash
+cd scripts/NAP_ingestion/src
+```
 
-Use the built-in continuous integration in GitLab.
+Seed dimension tables (industries, companies, currencies, expense categories):
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+```bash
+python transform.py --seed
+```
 
-***
+Run the historical transaction seed (~2.3M rows, 60 monthly batches from 2021–2026, takes 20–40 min):
 
-# Editing this README
+```bash
+python seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Backfill expense events (required — the seed alone generates too few):
 
-## Suggestions for a good README
+```bash
+python expense_backfill.py
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Re-run the analytics transform now that expenses are populated:
 
-## Name
-Choose a self-explaining name for your project.
+```bash
+python transform.py --seed
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Fix `revenue_growth_rate` nulls (a single-pass UPDATE — see `scripts/RESEED.md` for the full SQL):
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```bash
+python -c "
+import os; from dotenv import load_dotenv; load_dotenv(); import psycopg2
+conn = psycopg2.connect(host=os.getenv('DB_HOST'), port=os.getenv('DB_PORT'), dbname=os.getenv('DB_NAME'), user=os.getenv('DB_USER'), password=os.getenv('DB_PASS'))
+cur = conn.cursor()
+cur.execute(open('../SQL/Scripts/Workbook3.sql').read())
+conn.commit(); conn.close()
+"
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Or just paste the UPDATE query from `scripts/RESEED.md` Section 6b directly into psql.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+### 6. Start the API
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+From the project root:
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```bash
+python bouncer.py
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+The API runs at `http://localhost:8000`. Open `frontend/index.html` in a browser to use the dashboard.
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+## Project structure
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+```
+.
+├── bouncer.py                          # FastAPI backend
+├── frontend/                           # Dashboard HTML/CSS/JS
+│   ├── index.html
+│   ├── fx.html
+│   ├── governance.html
+│   ├── quarantine-resolve.html
+│   └── shared.css
+├── scripts/
+│   ├── NAP_ingestion/
+│   │   └── src/
+│   │       ├── main.py                 # Continuous ingestion entry point
+│   │       ├── seed.py                 # Historical bulk seed
+│   │       ├── transform.py            # Analytics layer ETL
+│   │       ├── pipeline.py             # Normalization and quarantine logic
+│   │       ├── noise.py                # Data quality issue injection
+│   │       ├── transactions.py         # Synthetic transaction generation
+│   │       ├── loader.py               # Raw schema loaders
+│   │       ├── config.py               # Company / industry / currency reference data
+│   │       ├── ml_analysis.py          # PCA, k-means, t-SNE
+│   │       └── ml_main.py              # ML pipeline entry point
+│   └── SQL/
+│       ├── Migrations/                 # 001–018 incremental schema changes
+│       └── Scripts/                    # Base schema creation and utility queries
+└── requirements.txt
+```
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## Ongoing ingestion (optional)
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+To keep data flowing after the seed, run `main.py` on a schedule. Each call generates one batch of transactions for a 10-minute synthetic window:
 
-## License
-For open source projects, say how it is licensed.
+```bash
+python scripts/NAP_ingestion/src/main.py -n 100
+```
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## Apache Superset (optional)
+
+The dashboard embeds Superset charts. To use them you need Superset running locally via Docker:
+
+```bash
+# Clone the Superset repo and start it
+git clone https://github.com/apache/superset.git
+cd superset
+docker compose up -d
+```
+
+Then import the dashboard backup from `superset_dashboard_backup.zip` via the Superset UI (Settings → Import dashboards). Update `SUPERSET_URL` and credentials in `.env` to match.
+
+## Author
+
+Samuel Rodgers — CPSC 498 Senior Capstone, Christopher Newport University, Spring 2026
