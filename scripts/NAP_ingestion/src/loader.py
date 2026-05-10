@@ -286,12 +286,20 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None,
     )
     df["batch_id"] = batch_id
 
+    # Compute failure_count: how many quarantine records share the same tx_id
+    # within this batch.  A tx that violates N rules produces N rows here,
+    # so counting tx_id occurrences gives exactly the violation count.
+    # Rows with a null tx_id each get failure_count = 1 (they cannot be
+    # grouped meaningfully since we have no stable identifier for them).
+    tx_id_counts = df["tx_id"].value_counts(dropna=True)
+    df["failure_count"] = df["tx_id"].map(tx_id_counts).fillna(1).astype(int)
+
     if ingestion_timestamp is not None:
         sql = """
             INSERT INTO raw.quarantine_event
                 (quarantine_id, tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
                  tx_timestamp, failure_code, failure_reason, batch_id, dirty_value,
-                 ingestion_timestamp)
+                 failure_count, ingestion_timestamp)
             VALUES %s
             ON CONFLICT (quarantine_id) DO NOTHING
         """
@@ -299,14 +307,15 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None,
             "quarantine_id", "tx_id", "c_id", "base_cncy", "quote_cncy",
             "amount", "fee_amount", "tx_timestamp",
             "failure_code", "failure_reason", "batch_id", "dirty_value",
-            "ingestion_timestamp",
+            "failure_count", "ingestion_timestamp",
         ]
         df["ingestion_timestamp"] = ingestion_timestamp
     else:
         sql = """
             INSERT INTO raw.quarantine_event
                 (quarantine_id, tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
-                 tx_timestamp, failure_code, failure_reason, batch_id, dirty_value)
+                 tx_timestamp, failure_code, failure_reason, batch_id, dirty_value,
+                 failure_count)
             VALUES %s
             ON CONFLICT (quarantine_id) DO NOTHING
         """
@@ -314,6 +323,7 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None,
             "quarantine_id", "tx_id", "c_id", "base_cncy", "quote_cncy",
             "amount", "fee_amount", "tx_timestamp",
             "failure_code", "failure_reason", "batch_id", "dirty_value",
+            "failure_count",
         ]
 
     required = ["failure_code", "failure_reason"]
@@ -456,3 +466,72 @@ def log_batch(conn, batch_id, window_start, window_end,
                     f"{rows_loaded} loaded, {rows_quarantined} quarantined")
     except Exception as e:
         logger.warning(f"batch_log: write failed (non-fatal) — {e}")
+
+
+# ── Pipeline Run Loader ───────────────────────────────────────────────────────
+
+def load_pipeline_run(conn, record: dict) -> None:
+    """
+    Insert one record into raw.pipeline_run.
+
+    This is the "header" row for a pipeline batch.  It should be called
+    after run() has completed so that clean_count and quarantine_count are
+    known.  The batch_id in the record must match the UUID that run()
+    stamped on raw.transaction_event and raw.quarantine_event for this run.
+
+    Expected keys in record:
+        batch_id          (str)  UUID — matches transaction_event.batch_id
+        noise_level       (str)  'low' | 'medium' | 'high'
+        n_transactions    (int)  rows requested from generate_transactions()
+        fx_source         (str)  'synthetic' | 'live'
+        run_timestamp     (datetime | str | None)  defaults to CURRENT_TIMESTAMP
+        duration_seconds  (float | None)
+        clean_count       (int | None)
+        quarantine_count  (int | None)
+        notes             (str | None)
+
+    Args:
+        conn:    psycopg2 connection — caller controls lifecycle
+        record:  dict containing the fields listed above
+
+    Returns:
+        None.  Raises on any DB error so the caller can log and continue.
+    """
+    sql = """
+        INSERT INTO raw.pipeline_run
+            (batch_id, noise_level, n_transactions, fx_source,
+             run_timestamp, duration_seconds,
+             clean_count, quarantine_count, notes)
+        VALUES (
+            %(batch_id)s,
+            %(noise_level)s,
+            %(n_transactions)s,
+            %(fx_source)s,
+            COALESCE(%(run_timestamp)s, CURRENT_TIMESTAMP),
+            %(duration_seconds)s,
+            %(clean_count)s,
+            %(quarantine_count)s,
+            %(notes)s
+        )
+        ON CONFLICT (batch_id) DO NOTHING
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(sql, {
+            "batch_id":         record.get("batch_id"),
+            "noise_level":      record.get("noise_level"),
+            "n_transactions":   record.get("n_transactions"),
+            "fx_source":        record.get("fx_source"),
+            "run_timestamp":    record.get("run_timestamp"),
+            "duration_seconds": record.get("duration_seconds"),
+            "clean_count":      record.get("clean_count"),
+            "quarantine_count": record.get("quarantine_count"),
+            "notes":            record.get("notes"),
+        })
+    conn.commit()
+    logger.info(
+        f"pipeline_run: recorded batch {record.get('batch_id')} "
+        f"({record.get('noise_level')} noise, "
+        f"{record.get('clean_count')} clean, "
+        f"{record.get('quarantine_count')} quarantined)"
+    )

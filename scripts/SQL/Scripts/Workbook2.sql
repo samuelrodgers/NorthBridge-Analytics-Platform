@@ -1,9 +1,11 @@
 -- Update raw tables
 SELECT * FROM raw.transaction_event;
 SELECT * FROM raw.fx_rate;
+SELECT * FROM raw.quarantine_event;
 
 SELECT COUNT(*) FROM raw.transaction_event;
 SELECT COUNT(*) FROM raw.fx_rate;
+SELECT COUNT(*) FROM raw.quarantine_event;
 
 
 TRUNCATE TABLE raw.transaction_event CASCADE;
@@ -12,6 +14,7 @@ TRUNCATE TABLE raw.pipeline_run CASCADE;
 TRUNCATE TABLE raw.quarantine_event CASCADE;
 TRUNCATE TABLE raw.expense_event CASCADE;
 TRUNCATE TABLE raw.batch_log CASCADE;
+TRUNCATE TABLE raw.quarantine_resolution CASCADE;
 
 
 
