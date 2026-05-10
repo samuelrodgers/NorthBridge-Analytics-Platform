@@ -4,7 +4,7 @@
 
 # API (bouncer.py)
 fastapi==0.115.6
-uvicorn==0.34.0
+uvicorn==0.33.0
 bcrypt==4.2.1
 python-jose[cryptography]==3.3.0
 pydantic[email]==2.10.6
