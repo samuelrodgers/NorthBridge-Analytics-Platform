@@ -268,8 +268,8 @@ CURRENCIES = {
     "CHF": {"name": "Swiss Franc",         "fx_start_rate": 0.89,   "region": "EU"},
     "SEK": {"name": "Swedish Krona",       "fx_start_rate": 10.4,   "region": "EU"},
     "NOK": {"name": "Norwegian Krone",     "fx_start_rate": 10.6,   "region": "EU"},
-    "MXN": {"name": "Mexican Peso",        "fx_start_rate": 17.1,   "region": "LATAM"},
-    "BRL": {"name": "Brazilian Real",      "fx_start_rate": 4.97,   "region": "LATAM"},
+    "MXN": {"name": "Mexican Peso",        "fx_start_rate": 19.5,   "region": "LATAM"},
+    "BRL": {"name": "Brazilian Real",      "fx_start_rate": 5.70,   "region": "LATAM"},
     "SGD": {"name": "Singapore Dollar",    "fx_start_rate": 1.34,   "region": "APAC"},
     "HKD": {"name": "Hong Kong Dollar",    "fx_start_rate": 7.82,   "region": "APAC"},
     "AED": {"name": "UAE Dirham",          "fx_start_rate": 3.67,   "region": "ME"},
@@ -515,7 +515,7 @@ NOISE_RATES = {
     "timestamp_null":    0.02,   # 2%  of rows get a null timestamp
     "currency_dirty":    0.10,   # 10% of rows get a currency alias/variant
     "amount_dirty":      0.15,   # 15% of rows get a formatted amount string
-    "company_id_null":   0.03,   # 3%  of rows get null company_id
+    "company_id_null":   0.01,   # 1%  of rows get null company_id (reduced to limit <NULL> quarantine dominance)
     "company_id_name":   0.04,   # 4%  of rows get company name instead of ID
     "fee_missing":       0.05,   # 5%  of rows have no fee
     "fee_as_percent":    0.03,   # 3%  of rows express fee as "2%"

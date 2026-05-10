@@ -18,7 +18,7 @@ from noise import apply_noise
 from pipeline import normalize_receipts, validate_normalization_report
 import fx_source
 from transactions import generate_transactions
-from loader import get_connection, load_all
+from loader import get_connection, load_all, log_batch
 import transform
 import os
 from dotenv import load_dotenv
@@ -211,12 +211,21 @@ def run(n_transactions=10_000, window_minutes=10, batch_size=10_000,
             quarantine_df=quarantined if not clean else None,
             batch_size=batch_size,
             batch_id=batch_id,
+            ingestion_timestamp=end,
         )
         logger.info(
             f"✅ Load complete — "
             f"fx_rate: {raw_counts['fx_rates']:,} rows, "
             f"transaction_event: {raw_counts['transactions']:,} rows, "
             f"quarantine_event: {raw_counts['quarantine']:,} rows"
+        )
+        log_batch(
+            conn, batch_id, start, end,
+            rows_received    = n_transactions,
+            rows_loaded      = raw_counts['transactions'],
+            rows_quarantined = raw_counts['quarantine'],
+            noise_level      = noise_level,
+            run_timestamp    = end,
         )
     finally:
         conn.close()

@@ -329,11 +329,12 @@
                   <th class="sortable" data-sec="company" data-col="amount">Amount <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="company" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="company" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th>Raw value</th>
                   <th class="sortable" data-sec="company" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
                 </tr>
               </thead>
               <tbody id="tbody-company">
-                <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+                <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -372,11 +373,12 @@
                   <th class="sortable" data-sec="amount" data-col="amount">Amount <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="amount" data-col="tx_timestamp">TX Timestamp <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="amount" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th>Raw value</th>
                   <th class="sortable" data-sec="amount" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
                 </tr>
               </thead>
               <tbody id="tbody-amount">
-                <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
+                <tr><td colspan="9"><div class="empty-state">Loading…</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -415,11 +417,12 @@
                   <th class="sortable" data-sec="timestamp" data-col="base_cncy">Currency <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="timestamp" data-col="amount">Amount <span class="sort-icon"></span></th>
                   <th class="sortable" data-sec="timestamp" data-col="failure_code">Failure <span class="sort-icon"></span></th>
+                  <th>Raw value</th>
                   <th class="sortable" data-sec="timestamp" data-col="ingestion_timestamp">Ingested <span class="sort-icon"></span></th>
                 </tr>
               </thead>
               <tbody id="tbody-timestamp">
-                <tr><td colspan="7"><div class="empty-state">Loading…</div></td></tr>
+                <tr><td colspan="8"><div class="empty-state">Loading…</div></td></tr>
               </tbody>
             </table>
           </div>
@@ -467,7 +470,7 @@
     timestamp: 'NULL_TIMESTAMP — transactions with no recorded time; cannot be promoted to analytics schema without a timestamp',
   };
 
-  const COL_COUNT = { company: 7, amount: 8, timestamp: 7 };
+  const COL_COUNT = { company: 8, amount: 9, timestamp: 8 };
 
   let activeTab = 'company';
 
@@ -507,6 +510,11 @@
   };
   function fmtFc(code) {
     return code ? `<span class="fc-pill ${FC_CLASS[code] || ''}">${code}</span>` : '—';
+  }
+  function fmtDirty(v) {
+    if (v == null) return '<span class="muted">—</span>';
+    const escaped = v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<code style="font-size:10px;word-break:break-all">${escaped}</code>`;
   }
 
   // ── Toast ──────────────────────────────────────────────────
@@ -616,26 +624,27 @@
     updateSortIcons(key);
     updatePager(key);
 
-    // Sync select-all checkbox state
+    // Sync select-all checkbox — reflects current page only
     const allChk = document.getElementById(`chk-all-${key}`);
-    allChk.indeterminate = s.selected.size > 0 && s.selected.size < s.rows.length;
-    allChk.checked = s.rows.length > 0 && s.selected.size === s.rows.length;
+    const pageSelected = pr.filter(r => s.selected.has(r.quarantine_id)).length;
+    allChk.indeterminate = pageSelected > 0 && pageSelected < pr.length;
+    allChk.checked = pr.length > 0 && pageSelected === pr.length;
   }
 
   function buildCells(key, r) {
     if (key === 'company') {
       return [fmtUuid(r.tx_id), r.base_cncy || '—', fmtAmt(r.amount),
-              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDirty(r.dirty_value), fmtDate(r.ingestion_timestamp)]
         .map(v => `<td>${v}</td>`).join('');
     }
     if (key === 'amount') {
       return [fmtUuid(r.tx_id), r.c_name || '—', r.base_cncy || '—', fmtAmt(r.amount),
-              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+              fmtDate(r.tx_timestamp), fmtFc(r.failure_code), fmtDirty(r.dirty_value), fmtDate(r.ingestion_timestamp)]
         .map(v => `<td>${v}</td>`).join('');
     }
     // timestamp
     return [fmtUuid(r.tx_id), r.c_name || '—', r.base_cncy || '—', fmtAmt(r.amount),
-            fmtFc(r.failure_code), fmtDate(r.ingestion_timestamp)]
+            fmtFc(r.failure_code), fmtDirty(r.dirty_value), fmtDate(r.ingestion_timestamp)]
       .map(v => `<td>${v}</td>`).join('');
   }
 
@@ -650,19 +659,22 @@
       if (chk) chk.checked = s.selected.has(id);
     }
     updateSelLabel(key);
-    // Update indeterminate state on header checkbox
+    // Update indeterminate state on header checkbox — current page only
     const allChk = document.getElementById(`chk-all-${key}`);
-    allChk.indeterminate = s.selected.size > 0 && s.selected.size < s.rows.length;
-    allChk.checked = s.rows.length > 0 && s.selected.size === s.rows.length;
+    const pr2 = pageRows(key);
+    const pageSelected2 = pr2.filter(r => s.selected.has(r.quarantine_id)).length;
+    allChk.indeterminate = pageSelected2 > 0 && pageSelected2 < pr2.length;
+    allChk.checked = pr2.length > 0 && pageSelected2 === pr2.length;
   }
 
   function toggleAll(key) {
-    const s = S[key];
-    const allSelected = s.selected.size === s.rows.length && s.rows.length > 0;
-    if (allSelected) {
-      s.selected.clear();
+    const s  = S[key];
+    const pr = pageRows(key);
+    const allPageSelected = pr.length > 0 && pr.every(r => s.selected.has(r.quarantine_id));
+    if (allPageSelected) {
+      pr.forEach(r => s.selected.delete(r.quarantine_id));
     } else {
-      s.rows.forEach(r => s.selected.add(r.quarantine_id));
+      pr.forEach(r => s.selected.add(r.quarantine_id));
     }
     render(key);
   }
@@ -674,7 +686,8 @@
       n === 0 ? '0 selected' : `${n.toLocaleString()} of ${total.toLocaleString()} selected`;
 
     if (key === 'company') {
-      document.getElementById('btn-assign').disabled       = n === 0;
+      const hasCo = !!document.getElementById('company-dropdown').value;
+      document.getElementById('btn-assign').disabled       = n === 0 || !hasCo;
       document.getElementById('btn-del-company').disabled  = n === 0;
     } else if (key === 'amount') {
       document.getElementById('btn-del-amount').disabled   = n === 0;
@@ -794,6 +807,9 @@
         render(key);
       });
     });
+
+    // Re-evaluate assign button when company selection changes
+    document.getElementById('company-dropdown').addEventListener('change', () => updateSelLabel('company'));
 
     // Company section
     document.getElementById('btn-assign').addEventListener('click', () => {

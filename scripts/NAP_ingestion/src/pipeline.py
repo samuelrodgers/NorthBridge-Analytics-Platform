@@ -362,8 +362,22 @@ _QUARANTINE_RULES: list[tuple[str, str, object]] = [
     ),
 ]
 
+# Maps each failure code to the pre-normalisation column whose dirty value
+# is most useful for diagnosis. Used by _split_quarantine() to populate
+# raw.quarantine_event.dirty_value.
+_DIRTY_VALUE_COLUMN: dict[str, str] = {
+    "NULL_COMPANY_ID":       "c_id",
+    "UNKNOWN_COMPANY":       "c_id",
+    "INVALID_AMOUNT":        "amount",
+    "INVALID_BASE_CURRENCY": "base_cncy",
+    "NULL_TIMESTAMP":        "tx_timestamp",
+}
 
-def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+def _split_quarantine(
+    df: pd.DataFrame,
+    pre_norm: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split DataFrame into clean and quarantined rows.
 
@@ -375,10 +389,18 @@ def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     that Python-layer and SQL-layer quarantine data share the same shape
     and failure_code vocabulary.
 
+    Args:
+        df:       Normalised DataFrame (post all parsing steps).
+        pre_norm: Optional snapshot of raw string values taken before
+                  normalisation began. When provided, each quarantine
+                  record gets a dirty_value with the original string for
+                  the failing field — e.g. "99,00.9" for INVALID_AMOUNT.
+                  Must share the same index as df.
+
     Returns:
-        clean_df     — rows that passed all rules, ready for raw insert
-        quarantine_df — one row per violation, with failure_code and
-                        failure_reason columns
+        clean_df      — rows that passed all rules, ready for raw insert
+        quarantine_df — one row per violation, with failure_code,
+                        failure_reason, and dirty_value columns
     """
     df = df.copy()
 
@@ -399,6 +421,17 @@ def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                 record = row_dict.copy()
                 record["failure_code"]   = failure_code
                 record["failure_reason"] = failure_reason
+
+                # Capture the original dirty string for admin diagnosis
+                dirty = None
+                if pre_norm is not None:
+                    col = _DIRTY_VALUE_COLUMN.get(failure_code)
+                    if col and col in pre_norm.columns:
+                        raw_val = pre_norm.at[idx, col]
+                        if not _is_null(raw_val):
+                            dirty = str(raw_val)
+                record["dirty_value"] = dirty
+
                 quarantine_records.append(record)
 
     clean = df[~df.index.isin(violated_indices)].reset_index(drop=True)
@@ -410,6 +443,7 @@ def _split_quarantine(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         quarantine = df.iloc[0:0].copy()
         quarantine["failure_code"]   = pd.Series(dtype="object")
         quarantine["failure_reason"] = pd.Series(dtype="object")
+        quarantine["dirty_value"]    = pd.Series(dtype="object")
 
     return clean, quarantine
 
@@ -439,8 +473,13 @@ def normalize_receipts(df: pd.DataFrame, collect_stats: bool = False) -> tuple[p
     df = df.copy()
 
     df = _rename_columns(df)
-    # Snapshot only taken when stats are requested
-    original = df[["tx_timestamp", "base_cncy", "amount", "c_id"]].copy() if collect_stats else None
+
+    # Always snapshot the four fields that quarantine rules test, before any
+    # parsing mutates them. Used to populate dirty_value on quarantine records
+    # so admins can see the original bad string (e.g. "99,00.9", "14-32-2026").
+    # Also used for stats collection when collect_stats=True.
+    pre_norm = df[["tx_timestamp", "base_cncy", "amount", "c_id"]].copy()
+    original = pre_norm if collect_stats else None
 
     df = _parse_timestamps(df)
     df = _resolve_currencies(df)
@@ -449,7 +488,7 @@ def normalize_receipts(df: pd.DataFrame, collect_stats: bool = False) -> tuple[p
     df = _parse_fees(df)
     df = _coerce_types(df)
 
-    clean, quarantine = _split_quarantine(df)
+    clean, quarantine = _split_quarantine(df, pre_norm=pre_norm)
     stats = _collect_stats(original, clean, quarantine) if collect_stats else None
 
     logger.info(

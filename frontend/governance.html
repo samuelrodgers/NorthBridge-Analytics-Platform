@@ -143,6 +143,28 @@
         </div>
       </div>
 
+      <!-- ── Cleaned data card ── -->
+      <div style="margin-top:16px">
+        <div class="section-hdr"><h2>Cleaned data</h2><span class="section-sub">— raw.quarantine_resolution</span></div>
+        <div class="kpi-grid" style="margin-top:8px">
+          <div class="kpi-card">
+            <div class="kpi-label">Total resolved</div>
+            <div class="kpi-value" id="res-total" style="color:var(--green)">—</div>
+            <div class="kpi-delta muted">quarantine records actioned</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Requeued to analytics</div>
+            <div class="kpi-value" id="res-requeued">—</div>
+            <div class="kpi-delta up">corrected &amp; promoted</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Discarded</div>
+            <div class="kpi-value" id="res-deleted" style="color:var(--text-tertiary)">—</div>
+            <div class="kpi-delta muted">permanently removed</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Active notice (shown only when recent quarantine rows exist) -->
       <div class="notice danger" id="gov-notice" style="display:none">
         <span class="notice-icon">⚠</span>
@@ -243,6 +265,19 @@
       }
     } catch (err) {
       console.error('Governance health fetch failed:', err);
+    }
+  })();
+
+  (async function loadResolutionStats() {
+    try {
+      const res = await fetch('/api/quarantine/resolution-stats', { credentials: 'include' });
+      if (!res.ok) return;
+      const d = await res.json();
+      document.getElementById('res-total').textContent    = d.total_resolved.toLocaleString('en-US');
+      document.getElementById('res-requeued').textContent = d.requeued.toLocaleString('en-US');
+      document.getElementById('res-deleted').textContent  = d.deleted.toLocaleString('en-US');
+    } catch (err) {
+      console.error('Resolution stats fetch failed:', err);
     }
   })();
 </script>

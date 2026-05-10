@@ -240,7 +240,8 @@ def load_expense_events(conn, expense_df, batch_size=10_000):
 
 # ── Quarantine Loader ─────────────────────────────────────────────────────────
 
-def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
+def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None,
+                    ingestion_timestamp=None):
     """
     Insert quarantine records into raw.quarantine_event.
 
@@ -252,13 +253,18 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
         tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
         tx_timestamp, failure_code, failure_reason
 
-    quarantine_id and ingestion_timestamp are DB-generated defaults.
+    quarantine_id is DB-generated. ingestion_timestamp defaults to NOW()
+    unless overridden — pass the window end timestamp during historical
+    seed runs so records appear ingested at their historical window time
+    rather than all landing on the seed date.
 
     Args:
-        conn:           psycopg2 connection
-        quarantine_df:  pd.DataFrame — output of _split_quarantine()
-        batch_size:     rows per execute_values call
-        batch_id:       optional UUID string identifying this pipeline run
+        conn:                psycopg2 connection
+        quarantine_df:       pd.DataFrame — output of _split_quarantine()
+        batch_size:          rows per execute_values call
+        batch_id:            optional UUID string identifying this pipeline run
+        ingestion_timestamp: datetime | None — overrides DB default (NOW()).
+                             Pass window end during historical seeds.
 
     Returns:
         Total number of rows processed.
@@ -280,19 +286,35 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
     )
     df["batch_id"] = batch_id
 
-    sql = """
-        INSERT INTO raw.quarantine_event
-            (quarantine_id, tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
-             tx_timestamp, failure_code, failure_reason, batch_id)
-        VALUES %s
-        ON CONFLICT (quarantine_id) DO NOTHING
-    """
-
-    cols = [
-        "quarantine_id", "tx_id", "c_id", "base_cncy", "quote_cncy",
-        "amount", "fee_amount", "tx_timestamp",
-        "failure_code", "failure_reason", "batch_id",
-    ]
+    if ingestion_timestamp is not None:
+        sql = """
+            INSERT INTO raw.quarantine_event
+                (quarantine_id, tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
+                 tx_timestamp, failure_code, failure_reason, batch_id, dirty_value,
+                 ingestion_timestamp)
+            VALUES %s
+            ON CONFLICT (quarantine_id) DO NOTHING
+        """
+        cols = [
+            "quarantine_id", "tx_id", "c_id", "base_cncy", "quote_cncy",
+            "amount", "fee_amount", "tx_timestamp",
+            "failure_code", "failure_reason", "batch_id", "dirty_value",
+            "ingestion_timestamp",
+        ]
+        df["ingestion_timestamp"] = ingestion_timestamp
+    else:
+        sql = """
+            INSERT INTO raw.quarantine_event
+                (quarantine_id, tx_id, c_id, base_cncy, quote_cncy, amount, fee_amount,
+                 tx_timestamp, failure_code, failure_reason, batch_id, dirty_value)
+            VALUES %s
+            ON CONFLICT (quarantine_id) DO NOTHING
+        """
+        cols = [
+            "quarantine_id", "tx_id", "c_id", "base_cncy", "quote_cncy",
+            "amount", "fee_amount", "tx_timestamp",
+            "failure_code", "failure_reason", "batch_id", "dirty_value",
+        ]
 
     required = ["failure_code", "failure_reason"]
     missing = [c for c in required if c not in quarantine_df.columns]
@@ -324,7 +346,7 @@ def load_quarantine(conn, quarantine_df, batch_size=10_000, batch_id=None):
 # ── Convenience: load all raw tables ─────────────────────────────────────────
 
 def load_all(conn, fx_df, tx_df, expense_df=None, quarantine_df=None,
-             batch_size=10_000, batch_id=None):
+             batch_size=10_000, batch_id=None, ingestion_timestamp=None):
     """
     Load FX rates, transactions, and optionally expense/quarantine events.
 
@@ -365,10 +387,72 @@ def load_all(conn, fx_df, tx_df, expense_df=None, quarantine_df=None,
 
     q_count = 0
     if quarantine_df is not None:
-        q_count = load_quarantine(conn, quarantine_df, batch_size=batch_size, batch_id=batch_id)
+        q_count = load_quarantine(conn, quarantine_df, batch_size=batch_size,
+                                  batch_id=batch_id, ingestion_timestamp=ingestion_timestamp)
 
     logger.info(
         f"load_all complete — "
         f"fx: {fx_count}, tx: {tx_count}, expenses: {exp_count}, quarantine: {q_count}"
     )
     return {"fx_rates": fx_count, "transactions": tx_count, "expenses": exp_count, "quarantine": q_count}
+
+
+# ── Batch log ─────────────────────────────────────────────────────────────────
+
+def log_batch(conn, batch_id, window_start, window_end,
+              rows_received, rows_loaded, rows_quarantined, noise_level,
+              run_timestamp=None):
+    """
+    Write one row to raw.batch_log recording stats for a completed pipeline run.
+
+    Called by main.py at the end of run() after load_all() completes.
+    Non-fatal if it fails — a logging write should never abort a successful load.
+
+    Args:
+        conn:             psycopg2 connection (same one used for load_all)
+        batch_id:         UUID string for this run
+        window_start:     datetime — synthetic tx window start
+        window_end:       datetime — synthetic tx window end
+        rows_received:    total transactions generated before noise/normalisation
+        rows_loaded:      clean rows inserted into raw.transaction_event
+        rows_quarantined: rows diverted to raw.quarantine_event
+        noise_level:      'low' | 'medium' | 'high'
+        run_timestamp:    datetime | None — when provided, overrides the DB
+                          default (NOW()). Pass window_end during historical
+                          seed runs so the ingestion timeline spreads across
+                          the seeded date range instead of spiking on seed day.
+    """
+    if run_timestamp is not None:
+        sql = """
+            INSERT INTO raw.batch_log
+                (batch_id, window_start, window_end,
+                 rows_received, rows_loaded, rows_quarantined, noise_level,
+                 run_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (batch_id) DO NOTHING
+        """
+        params = (
+            batch_id, window_start, window_end,
+            rows_received, rows_loaded, rows_quarantined, noise_level,
+            run_timestamp,
+        )
+    else:
+        sql = """
+            INSERT INTO raw.batch_log
+                (batch_id, window_start, window_end,
+                 rows_received, rows_loaded, rows_quarantined, noise_level)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (batch_id) DO NOTHING
+        """
+        params = (
+            batch_id, window_start, window_end,
+            rows_received, rows_loaded, rows_quarantined, noise_level,
+        )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+        conn.commit()
+        logger.info(f"batch_log: recorded batch {batch_id} — "
+                    f"{rows_loaded} loaded, {rows_quarantined} quarantined")
+    except Exception as e:
+        logger.warning(f"batch_log: write failed (non-fatal) — {e}")
