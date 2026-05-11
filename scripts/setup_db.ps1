@@ -96,20 +96,11 @@ Get-ChildItem "$PSScriptRoot\SQL\Migrations\0*.sql" | Sort-Object Name | ForEach
 
 Write-Host "`n[4/4] Granting schema access to $AppUser..." -ForegroundColor Cyan
 
-$grants = @"
-GRANT USAGE, CREATE ON SCHEMA analytics TO $AppUser;
-GRANT ALL ON ALL TABLES IN SCHEMA analytics TO $AppUser;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA analytics TO $AppUser;
-GRANT USAGE, CREATE ON SCHEMA raw TO $AppUser;
-GRANT ALL ON ALL TABLES IN SCHEMA raw TO $AppUser;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA raw TO $AppUser;
-GRANT USAGE, CREATE ON SCHEMA auth TO $AppUser;
-GRANT ALL ON ALL TABLES IN SCHEMA auth TO $AppUser;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO $AppUser;
-"@
-
-& $PsqlPath -U $DbUser -d $DbName -c $grants
-if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: grants failed" -ForegroundColor Red; exit 1 }
+foreach ($schema in @("analytics", "raw", "auth")) {
+    Invoke-Psql "GRANT USAGE, CREATE ON SCHEMA $schema TO $AppUser;" $DbName
+    Invoke-Psql "GRANT ALL ON ALL TABLES IN SCHEMA $schema TO $AppUser;" $DbName
+    Invoke-Psql "GRANT ALL ON ALL SEQUENCES IN SCHEMA $schema TO $AppUser;" $DbName
+}
 
 # ── Write .env files ──────────────────────────────────────────────────────────
 
