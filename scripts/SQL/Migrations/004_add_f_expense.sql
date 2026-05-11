@@ -40,8 +40,6 @@ CREATE TABLE analytics.f_expense (
         REFERENCES analytics.d_currency (cncy_code)
 );
 
-ALTER TABLE analytics.f_expense OWNER TO alex_analytics;
-
 COMMENT ON TABLE  analytics.f_expense             IS 'Expense fact table. Grain: one expense event for one company at one point in time (BR-019). USD only until multi-currency support is implemented (BR-022).';
 COMMENT ON COLUMN analytics.f_expense.amount      IS 'Expense amount in the recorded currency. Currently expected to be USD (BR-022).';
 COMMENT ON COLUMN analytics.f_expense.cncy        IS 'Currency of the expense amount. FK to d_currency (BR-005).';

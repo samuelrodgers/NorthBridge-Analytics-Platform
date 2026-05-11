@@ -29,8 +29,6 @@ CREATE TABLE raw.expense_event (
         PRIMARY KEY (expense_id)
 );
 
-ALTER TABLE raw.expense_event OWNER TO alex_analytics;
-
 -- BRIN index on expense_timestamp mirrors the pattern used on
 -- raw.fx_rate.fx_timestamp. Efficient for append-only time-ordered
 -- data where physical row order correlates with timestamp order.

@@ -32,8 +32,6 @@ CREATE TABLE analytics.f_industry (
         REFERENCES analytics.d_time (time_id)
 );
 
-ALTER TABLE analytics.f_industry OWNER TO alex_analytics;
-
 COMMENT ON TABLE  analytics.f_industry                     IS 'Industry aggregate fact table. Grain: one row per industry per day (BR-023). Populated by scheduled daily refresh — never updated in place (BR-024).';
 COMMENT ON COLUMN analytics.f_industry.total_revenue       IS 'Sum of f_transaction.amount across all member companies for the period (BR-025).';
 COMMENT ON COLUMN analytics.f_industry.total_expenses      IS 'Sum of f_expense.amount across all member companies for the period (BR-025).';

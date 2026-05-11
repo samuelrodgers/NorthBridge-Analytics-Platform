@@ -64,7 +64,7 @@ function Invoke-PsqlFile {
     param([string]$File)
     Write-Host "  Applying $([System.IO.Path]::GetFileName($File))..."
     $env:PGPASSWORD = $AppPassword
-    & $PsqlPath -U $AppUser -d $DbName -f $File
+    & $PsqlPath -U $AppUser -d $DbName -v ON_ERROR_STOP=1 -f $File
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: failed on $File (exit $LASTEXITCODE)" -ForegroundColor Red
         exit 1

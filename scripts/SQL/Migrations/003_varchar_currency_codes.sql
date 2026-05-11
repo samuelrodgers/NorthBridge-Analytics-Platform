@@ -69,6 +69,4 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION analytics.validate_conversion_currency() OWNER TO alex_analytics;
-
 COMMIT;

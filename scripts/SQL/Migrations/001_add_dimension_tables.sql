@@ -27,8 +27,6 @@ CREATE TABLE analytics.d_industry (
         REFERENCES analytics.d_currency (cncy_code)
 );
 
-ALTER TABLE analytics.d_industry OWNER TO alex_analytics;
-
 COMMENT ON TABLE  analytics.d_industry              IS 'Industry dimension. One row per industry.';
 COMMENT ON COLUMN analytics.d_industry.display_cncy IS 'Display currency inherited by member companies in comparison views (BR-007, BR-008).';
 
@@ -48,8 +46,6 @@ CREATE TABLE analytics.d_expense_category (
     CONSTRAINT d_expense_category_name_unique
         UNIQUE (category_name)
 );
-
-ALTER TABLE analytics.d_expense_category OWNER TO alex_analytics;
 
 COMMENT ON TABLE analytics.d_expense_category IS 'Expense category dimension. One row per category. Managed as data to allow additions without schema migrations (BR-021).';
 

@@ -23,7 +23,7 @@ psql_super() {
 # Helper: run a SQL file as the app user (nap_user owns all created objects)
 psql_file() {
     echo "  Applying $(basename "$1")..."
-    PGPASSWORD="$APP_PASSWORD" psql -U "$APP_USER" -d "$DB_NAME" -f "$1"
+    PGPASSWORD="$APP_PASSWORD" psql -U "$APP_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$1"
 }
 
 # ── Create database and user ──────────────────────────────────────────────────
