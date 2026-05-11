@@ -24,11 +24,29 @@ A synthetic financial analytics platform built as a senior capstone project (CPS
 git clone https://github.com/samuelrodgers24-web/NorthBridge-Analytics-Platform.git
 cd NorthBridge-Analytics-Platform
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+```
+
+Activate the venv:
+- **Windows:** `.venv\Scripts\activate`
+- **Mac/Linux:** `source .venv/bin/activate`
+
+```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Create the PostgreSQL database
+
+Open a separate terminal (outside the venv). All `psql` commands in this section run from the **project root**.
+
+**If you have an existing PostgreSQL install**, use your superuser credentials. On Windows, `psql` may not be on PATH — use the full path to the pgAdmin runtime, e.g.:
+
+```
+"C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -c "CREATE DATABASE northbridge;"
+```
+
+**First-time install:** use whatever superuser you set up during installation.
+
+Create the database and a user:
 
 ```bash
 psql -U postgres -c "CREATE DATABASE northbridge;"
@@ -36,36 +54,61 @@ psql -U postgres -c "CREATE USER nap_user WITH PASSWORD 'your_password';"
 psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE northbridge TO nap_user;"
 ```
 
-### 3. Apply the base schema and migrations
-
-Run the base schema scripts first (order matters — `analytics_create_tables.sql` before `Create_auth.sql`):
+Then grant schema-level access (required for PostgreSQL 15+):
 
 ```bash
-psql -U nap_user -d northbridge -f scripts/SQL/Scripts/analytics_create_tables.sql
-psql -U nap_user -d northbridge -f scripts/SQL/Scripts/Create_auth.sql
+psql -U postgres -d northbridge -c "GRANT USAGE, CREATE ON SCHEMA public TO nap_user;"
 ```
 
-Then apply all migrations in order:
+> **Tip (Windows):** If you prefer a GUI, all of the above can be done in pgAdmin's Query Tool. Connect to your server, open the Query Tool, and paste the SQL statements directly.
+
+### 3. Apply the base schema and migrations
+
+Run all SQL from the **project root** in a terminal where `psql` is available. Apply the base schema first, then migrations in order.
+
+**Mac/Linux:**
 
 ```bash
+psql -U postgres -d northbridge -f scripts/SQL/Scripts/analytics_create_tables.sql
+psql -U postgres -d northbridge -f scripts/SQL/Scripts/Create_auth.sql
+
 for f in scripts/SQL/Migrations/0*.sql; do
     echo "Applying $f..."
-    psql -U nap_user -d northbridge -f "$f"
+    psql -U postgres -d northbridge -f "$f"
 done
 ```
 
-On Windows (PowerShell):
+**Windows (PowerShell):**
 
 ```powershell
+$env:PGPASSWORD = "your_postgres_password"
+$psql = "C:\Program Files\PostgreSQL\17\bin\psql.exe"   # adjust path to match your install
+
+& $psql -U postgres -d northbridge -f "scripts\SQL\Scripts\analytics_create_tables.sql"
+& $psql -U postgres -d northbridge -f "scripts\SQL\Scripts\Create_auth.sql"
+
 Get-ChildItem scripts\SQL\Migrations\0*.sql | Sort-Object Name | ForEach-Object {
     Write-Host "Applying $($_.Name)..."
-    psql -U nap_user -d northbridge -f $_.FullName
+    & $psql -U postgres -d northbridge -f "$($_.FullName)"
 }
 ```
 
+After applying the schema, grant the pipeline user access to the new schemas:
+
+```sql
+GRANT USAGE, CREATE ON SCHEMA analytics TO nap_user;
+GRANT ALL ON ALL TABLES IN SCHEMA analytics TO nap_user;
+GRANT USAGE, CREATE ON SCHEMA raw TO nap_user;
+GRANT ALL ON ALL TABLES IN SCHEMA raw TO nap_user;
+GRANT USAGE, CREATE ON SCHEMA auth TO nap_user;
+GRANT ALL ON ALL TABLES IN SCHEMA auth TO nap_user;
+```
+
+Verify both `analytics` and `raw` schemas exist before continuing — if they're missing, the base schema script didn't run successfully.
+
 ### 4. Configure environment variables
 
-Copy the example files and fill in your values:
+Copy the example files and fill in your values in a text editor:
 
 ```bash
 cp .env.example .env
@@ -76,8 +119,8 @@ Edit `.env` (for `bouncer.py`):
 
 ```
 DATABASE_URL=postgresql://nap_user:your_password@localhost:5432/northbridge
-JWT_SECRET_KEY=<output of: openssl rand -hex 32>
-SUPERSET_URL=http://127.0.0.1:8088    # omit if not running Superset
+JWT_SECRET_KEY=any_long_random_string
+SUPERSET_URL=http://127.0.0.1:8088
 SUPERSET_ADMIN_USER=admin
 SUPERSET_ADMIN_PASS=
 ```
@@ -90,18 +133,18 @@ DB_PORT=5432
 DB_NAME=northbridge
 DB_USER=nap_user
 DB_PASS=your_password
-TWELVE_DATA_API_KEY=          # optional — only needed for live FX ingestion
+TWELVE_DATA_API_KEY=
 ```
 
 ### 5. Seed the database
 
-Navigate to the ingestion source directory:
+Navigate to the ingestion source directory from the **project root** (with venv active):
 
 ```bash
 cd scripts/NAP_ingestion/src
 ```
 
-Seed dimension tables (industries, companies, currencies, expense categories):
+Seed dimension tables (industries, companies, currencies, expense categories — takes a few seconds):
 
 ```bash
 python transform.py --seed
@@ -125,35 +168,23 @@ Re-run the analytics transform now that expenses are populated:
 python transform.py --seed
 ```
 
-Fix `revenue_growth_rate` nulls (a single-pass UPDATE — see `scripts/RESEED.md` for the full SQL):
-
-```bash
-python -c "
-import os; from dotenv import load_dotenv; load_dotenv(); import psycopg2
-conn = psycopg2.connect(host=os.getenv('DB_HOST'), port=os.getenv('DB_PORT'), dbname=os.getenv('DB_NAME'), user=os.getenv('DB_USER'), password=os.getenv('DB_PASS'))
-cur = conn.cursor()
-cur.execute(open('../SQL/Scripts/Workbook3.sql').read())
-conn.commit(); conn.close()
-"
-```
-
-Or just paste the UPDATE query from `scripts/RESEED.md` Section 6b directly into psql.
+Fix `revenue_growth_rate` nulls (paste the UPDATE query from `scripts/RESEED.md` Section 6b into psql or pgAdmin).
 
 ### 6. Start the API
 
-From the project root:
+From the project root (with venv active):
 
 ```bash
 python bouncer.py
 ```
 
-The API runs at `http://localhost:8000`. Open `frontend/index.html` in a browser to use the dashboard.
+Open `http://localhost:8000` in a browser. Register a new account to log in — the demo button requires a pre-seeded guest account which is not created by default.
 
 ## Project structure
 
 ```
 .
-├── bouncer.py                          # FastAPI backend
+├── bouncer.py                          # FastAPI backend + static file server
 ├── frontend/                           # Dashboard HTML/CSS/JS
 │   ├── index.html
 │   ├── fx.html
@@ -181,7 +212,7 @@ The API runs at `http://localhost:8000`. Open `frontend/index.html` in a browser
 
 ## Ongoing ingestion (optional)
 
-To keep data flowing after the seed, run `main.py` on a schedule. Each call generates one batch of transactions for a 10-minute synthetic window:
+To keep data flowing after the seed, run `main.py` on a schedule from the project root. Each call generates one batch of transactions for a 10-minute synthetic window:
 
 ```bash
 python scripts/NAP_ingestion/src/main.py -n 100
@@ -192,7 +223,6 @@ python scripts/NAP_ingestion/src/main.py -n 100
 The dashboard embeds Superset charts. To use them you need Superset running locally via Docker:
 
 ```bash
-# Clone the Superset repo and start it
 git clone https://github.com/apache/superset.git
 cd superset
 docker compose up -d

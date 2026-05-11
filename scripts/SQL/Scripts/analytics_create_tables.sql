@@ -26,7 +26,6 @@ CREATE TABLE analytics.d_currency (
     CONSTRAINT d_currency_pkey PRIMARY KEY (cncy_code)
 );
 
-ALTER TABLE analytics.d_currency OWNER TO alex_analytics;
 
 
 CREATE TABLE analytics.d_company (
@@ -39,7 +38,6 @@ CREATE TABLE analytics.d_company (
     CONSTRAINT d_company_pkey PRIMARY KEY (c_id)
 );
 
-ALTER TABLE analytics.d_company OWNER TO alex_analytics;
 
 
 CREATE TABLE analytics.d_time (
@@ -51,7 +49,6 @@ CREATE TABLE analytics.d_time (
     CONSTRAINT d_time_pkey PRIMARY KEY (time_id)
 );
 
-ALTER TABLE analytics.d_time OWNER TO alex_analytics;
 
 -- ============================================================
 -- Fact tables  (analytics)
@@ -73,7 +70,7 @@ CREATE TABLE analytics.f_transaction (
         FOREIGN KEY (time_id) REFERENCES analytics.d_time (time_id)
 );
 
-ALTER TABLE analytics.f_transaction OWNER TO alex_analytics;
+
 
 CREATE INDEX idx_f_transaction_c_id    ON analytics.f_transaction (c_id);
 CREATE INDEX idx_f_transaction_time_id ON analytics.f_transaction (time_id);
@@ -94,9 +91,6 @@ CREATE TABLE analytics.f_fx_rate (
         FOREIGN KEY (quote_cncy) REFERENCES analytics.d_currency (cncy_code)
 );
 
-ALTER TABLE analytics.f_fx_rate OWNER TO alex_analytics;
-
-
 CREATE TABLE analytics.f_conversion (
     cx_id        UUID           DEFAULT gen_random_uuid() NOT NULL,
     base_amount  NUMERIC(18,4)  NOT NULL,
@@ -111,8 +105,6 @@ CREATE TABLE analytics.f_conversion (
     CONSTRAINT f_transaction_tx_id_fkey
         FOREIGN KEY (tx_id) REFERENCES analytics.f_transaction (tx_id)
 );
-
-ALTER TABLE analytics.f_conversion OWNER TO alex_analytics;
 
 CREATE INDEX idx_f_conversion_tx_id ON analytics.f_conversion (tx_id);
 
@@ -151,9 +143,6 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION analytics.validate_conversion_currency() OWNER TO alex_analytics;
-
-
 -- apply_conversion — trigger function that was used to overwrite
 -- f_transaction.amount with a converted value.  Removed by migration 006.
 -- The original function body is not preserved in version control; this
@@ -167,8 +156,6 @@ BEGIN
     RAISE EXCEPTION 'apply_conversion stub — should be dropped by migration 006';
 END;
 $$;
-
-ALTER FUNCTION analytics.apply_conversion() OWNER TO alex_analytics;
 
 -- ============================================================
 -- Triggers  (analytics)
@@ -195,8 +182,6 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION raw.prevent_modification() OWNER TO alex_analytics;
-
 -- ============================================================
 -- Raw ingestion tables
 -- ============================================================
@@ -215,8 +200,6 @@ CREATE TABLE raw.fx_rate (
     CONSTRAINT idx_fx_rate_cncy_ts
         UNIQUE (base_cncy, quote_cncy, fx_timestamp)
 );
-
-ALTER TABLE raw.fx_rate OWNER TO alex_analytics;
 
 CREATE INDEX idx_fx_rate_ts_brin
     ON raw.fx_rate USING brin (fx_timestamp);
@@ -239,8 +222,6 @@ CREATE TABLE raw.transaction_event (
 
     CONSTRAINT transaction_pkey PRIMARY KEY (tx_id)
 );
-
-ALTER TABLE raw.transaction_event OWNER TO alex_analytics;
 
 CREATE INDEX idx_tx_event_cncy_timestamp
     ON raw.transaction_event USING btree (base_cncy, quote_cncy, tx_timestamp);
