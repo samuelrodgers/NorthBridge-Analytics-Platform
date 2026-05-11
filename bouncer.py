@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, Response, Cookie, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 from jose import JWTError, jwt
@@ -69,11 +71,17 @@ ALLOWED_DASHBOARDS = [
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://samrodgers.site", "https://superset.samrodgers.site"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
+
+@app.get("/")
+def root():
+    return FileResponse(os.path.join(_FRONTEND_DIR, "index.html"))
 
 # ---------------------------------------------------------------------------
 # Password hashing
@@ -762,6 +770,9 @@ def resolve_quarantine(body: ResolveRequest, payload: dict = Depends(require_adm
 
     return {"resolved": len(body.quarantine_ids), "requeued": requeued}
 
+
+# Serve frontend static files — must be mounted after all API routes
+app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
 
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
