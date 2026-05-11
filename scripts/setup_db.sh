@@ -15,59 +15,41 @@ APP_USER="nap_user"
 read -rsp "PostgreSQL superuser ($DB_SUPERUSER) password: " PG_PASSWORD; echo
 read -rsp "Password to set for new '$APP_USER' DB user: " APP_PASSWORD; echo
 
-export PGPASSWORD="$PG_PASSWORD"
-
-psql_run() {
-    psql -U "$DB_SUPERUSER" -d "${2:-postgres}" -c "$1"
+# Helper: run SQL as the postgres superuser
+psql_super() {
+    PGPASSWORD="$PG_PASSWORD" psql -U "$DB_SUPERUSER" -d "${2:-postgres}" -c "$1"
 }
 
+# Helper: run a SQL file as the app user (nap_user owns all created objects)
 psql_file() {
     echo "  Applying $(basename "$1")..."
-    psql -U "$DB_SUPERUSER" -d "$DB_NAME" -f "$1"
+    PGPASSWORD="$APP_PASSWORD" psql -U "$APP_USER" -d "$DB_NAME" -f "$1"
 }
 
 # ── Create database and user ──────────────────────────────────────────────────
 
-echo -e "\n[1/4] Creating database and user..."
+echo -e "\n[1/3] Creating database and user..."
 
-psql_run "CREATE DATABASE $DB_NAME;"
-psql_run "CREATE USER $APP_USER WITH PASSWORD '$APP_PASSWORD';"
-psql_run "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $APP_USER;"
+psql_super "CREATE DATABASE $DB_NAME;"
+psql_super "CREATE USER $APP_USER WITH PASSWORD '$APP_PASSWORD';"
+psql_super "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $APP_USER;"
 
-# ── Apply base schema ─────────────────────────────────────────────────────────
+# ── Apply base schema and migrations (as app user) ────────────────────────────
+# Running as nap_user means it owns all schemas, tables, and functions.
+# No separate GRANT step is needed — owners have full access automatically.
 
-echo -e "\n[2/4] Applying base schema..."
+echo -e "\n[2/3] Applying schema and migrations..."
 
 psql_file "$SCRIPT_DIR/SQL/Scripts/analytics_create_tables.sql"
 psql_file "$SCRIPT_DIR/SQL/Scripts/Create_auth.sql"
-
-# ── Apply migrations ──────────────────────────────────────────────────────────
-
-echo -e "\n[3/4] Applying migrations..."
 
 for f in "$SCRIPT_DIR"/SQL/Migrations/0*.sql; do
     psql_file "$f"
 done
 
-# ── Grant schema access ───────────────────────────────────────────────────────
-
-echo -e "\n[4/4] Granting schema access to $APP_USER..."
-
-psql -U "$DB_SUPERUSER" -d "$DB_NAME" -c "
-GRANT USAGE, CREATE ON SCHEMA analytics TO $APP_USER;
-GRANT ALL ON ALL TABLES IN SCHEMA analytics TO $APP_USER;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA analytics TO $APP_USER;
-GRANT USAGE, CREATE ON SCHEMA raw TO $APP_USER;
-GRANT ALL ON ALL TABLES IN SCHEMA raw TO $APP_USER;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA raw TO $APP_USER;
-GRANT USAGE, CREATE ON SCHEMA auth TO $APP_USER;
-GRANT ALL ON ALL TABLES IN SCHEMA auth TO $APP_USER;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO $APP_USER;
-"
-
 # ── Write .env files ──────────────────────────────────────────────────────────
 
-echo -e "\n[5/5] Writing .env files..."
+echo -e "\n[3/3] Writing .env files..."
 
 JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null \
     || openssl rand -base64 32)

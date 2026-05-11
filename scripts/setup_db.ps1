@@ -48,10 +48,10 @@ if (-not $AppPassword) {
     )
 }
 
-$env:PGPASSWORD = $PgPassword
-
+# Helper: run SQL as the postgres superuser
 function Invoke-Psql {
     param([string]$Sql, [string]$Database = "postgres")
+    $env:PGPASSWORD = $PgPassword
     & $PsqlPath -U $DbUser -d $Database -c $Sql
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: command failed (exit $LASTEXITCODE)" -ForegroundColor Red
@@ -59,10 +59,12 @@ function Invoke-Psql {
     }
 }
 
+# Helper: run a SQL file as the app user (nap_user owns all created objects)
 function Invoke-PsqlFile {
-    param([string]$File, [string]$Database = $DbName)
+    param([string]$File)
     Write-Host "  Applying $([System.IO.Path]::GetFileName($File))..."
-    & $PsqlPath -U $DbUser -d $Database -f $File
+    $env:PGPASSWORD = $AppPassword
+    & $PsqlPath -U $AppUser -d $DbName -f $File
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: failed on $File (exit $LASTEXITCODE)" -ForegroundColor Red
         exit 1
@@ -71,40 +73,28 @@ function Invoke-PsqlFile {
 
 # ── Create database and user ──────────────────────────────────────────────────
 
-Write-Host "`n[1/4] Creating database and user..." -ForegroundColor Cyan
+Write-Host "`n[1/3] Creating database and user..." -ForegroundColor Cyan
 
 Invoke-Psql "CREATE DATABASE $DbName;"
 Invoke-Psql "CREATE USER $AppUser WITH PASSWORD '$AppPassword';"
 Invoke-Psql "GRANT ALL PRIVILEGES ON DATABASE $DbName TO $AppUser;"
 
-# ── Apply base schema ─────────────────────────────────────────────────────────
+# ── Apply base schema and migrations (as app user) ────────────────────────────
+# Running as nap_user means it owns all schemas, tables, and functions.
+# No separate GRANT step is needed — owners have full access automatically.
 
-Write-Host "`n[2/4] Applying base schema..." -ForegroundColor Cyan
+Write-Host "`n[2/3] Applying schema and migrations..." -ForegroundColor Cyan
 
 Invoke-PsqlFile "$PSScriptRoot\SQL\Scripts\analytics_create_tables.sql"
 Invoke-PsqlFile "$PSScriptRoot\SQL\Scripts\Create_auth.sql"
-
-# ── Apply migrations ──────────────────────────────────────────────────────────
-
-Write-Host "`n[3/4] Applying migrations..." -ForegroundColor Cyan
 
 Get-ChildItem "$PSScriptRoot\SQL\Migrations\0*.sql" | Sort-Object Name | ForEach-Object {
     Invoke-PsqlFile $_.FullName
 }
 
-# ── Grant schema access ───────────────────────────────────────────────────────
-
-Write-Host "`n[4/4] Granting schema access to $AppUser..." -ForegroundColor Cyan
-
-foreach ($schema in @("analytics", "raw", "auth")) {
-    Invoke-Psql "GRANT USAGE, CREATE ON SCHEMA $schema TO $AppUser;" $DbName
-    Invoke-Psql "GRANT ALL ON ALL TABLES IN SCHEMA $schema TO $AppUser;" $DbName
-    Invoke-Psql "GRANT ALL ON ALL SEQUENCES IN SCHEMA $schema TO $AppUser;" $DbName
-}
-
 # ── Write .env files ──────────────────────────────────────────────────────────
 
-Write-Host "`n[5/5] Writing .env files..." -ForegroundColor Cyan
+Write-Host "`n[3/3] Writing .env files..." -ForegroundColor Cyan
 
 $JwtSecret = [System.Convert]::ToBase64String(
     [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
