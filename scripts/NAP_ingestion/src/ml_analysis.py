@@ -17,9 +17,16 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+import os
 import matplotlib.pyplot as plt
 
 from loader import get_connection
+
+_FIGURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures")
+os.makedirs(_FIGURES_DIR, exist_ok=True)
+
+def _fig(name: str) -> str:
+    return os.path.join(_FIGURES_DIR, name)
 
 
 # ============================================================
@@ -289,7 +296,7 @@ def plot_tsne(
 
     plt.suptitle('t-SNE Visualization of PCA-Reduced Quarantine Records', fontsize=13)
     plt.tight_layout()
-    plt.savefig('tsne_analysis1.png', dpi=150)
+    plt.savefig(_fig('tsne_analysis1.png'), dpi=150)
     plt.show()
 
 def plot_scree(explained_variance: np.ndarray, cumulative_variance: np.ndarray) -> None:
@@ -319,7 +326,7 @@ def plot_scree(explained_variance: np.ndarray, cumulative_variance: np.ndarray) 
     plt.title('Scree Plot — PCA on Quarantine Records (Analysis 1)')
     fig.legend(loc='center right')
     plt.tight_layout()
-    plt.savefig('scree_plot.png', dpi=150)
+    plt.savefig(_fig('scree_plot.png'), dpi=150)
     plt.show()
 
 
@@ -370,7 +377,7 @@ def plot_scatter(X_reduced: np.ndarray, y: pd.Series) -> None:
 
     plt.suptitle('PCA Feature Space — Analysis 1', fontsize=13)
     plt.tight_layout()
-    plt.savefig('pca_scatter_comparison.png', dpi=150)
+    plt.savefig(_fig('pca_scatter_comparison.png'), dpi=150)
     plt.show()
 
 
@@ -400,7 +407,7 @@ def plot_loadings(pca, feature_names: list[str], n_display: int = 5) -> None:
     plt.colorbar(im, ax=ax, label='Loading value')
     ax.set_title(f'PCA Loadings — Top {n_display} Components')
     plt.tight_layout()
-    plt.savefig('loadings_heatmap.png', dpi=150)
+    plt.savefig(_fig('loadings_heatmap.png'), dpi=150)
     plt.show()
 
 
@@ -553,7 +560,7 @@ def project_analysis2(
 
     plt.suptitle('NULL_COMPANY_ID Records in PCA Space', fontsize=13)
     plt.tight_layout()
-    plt.savefig('analysis2_overlay.png', dpi=150)
+    plt.savefig(_fig('analysis2_overlay.png'), dpi=150)
     plt.show()
 
     return X2_reduced
@@ -638,7 +645,7 @@ def run_kmeans(X1_reduced: np.ndarray, y1: pd.Series) -> None:
 
     plt.suptitle('K-Means Clusters vs Failure Codes — Analysis 1', fontsize=13)
     plt.tight_layout()
-    plt.savefig('kmeans_clusters.png', dpi=150)
+    plt.savefig(_fig('kmeans_clusters.png'), dpi=150)
     plt.show()
 
     # Alignment table: clusters vs failure codes
@@ -710,7 +717,7 @@ def run_kmeans(X1_reduced: np.ndarray, y1: pd.Series) -> None:
 
     plt.suptitle('Targeted Clustering vs Failure Codes', fontsize=13)
     plt.tight_layout()
-    plt.savefig('kmeans_targeted.png', dpi=150)
+    plt.savefig(_fig('kmeans_targeted.png'), dpi=150)
     plt.show()
 
 
