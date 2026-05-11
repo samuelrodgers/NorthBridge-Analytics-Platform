@@ -36,7 +36,7 @@ pip install -r requirements.txt
 
 ### 2. Set up the database
 
-A setup script handles everything — creating the database, applying the schema, running all 18 migrations, and granting the right permissions. Run it from the **project root** in a separate terminal (no venv needed).
+A setup script handles everything — creating the database and `nap_user` account, applying the schema, and running all 18 migrations. Run it from the **project root** in a separate terminal (no venv needed).
 
 **Windows (PowerShell):**
 
@@ -52,7 +52,7 @@ The script will auto-detect your PostgreSQL install and prompt for passwords. If
 bash scripts/setup_db.sh
 ```
 
-Both scripts create a `northbridge` database and a `nap_user` account, then apply the full schema and migrations. Take note of the `nap_user` password you enter — you'll need it in the next step.
+Both scripts create a `northbridge` database and a `nap_user` account, then apply the full schema and migrations, and write the `.env` files automatically.
 
 ### 3. Configure environment variables
 
