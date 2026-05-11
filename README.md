@@ -14,7 +14,7 @@ A synthetic financial analytics platform built as a senior capstone project (CPS
 
 - Python 3.11+
 - PostgreSQL 14+
-- Apache Superset (optional — dashboards embed Superset charts; the rest of the app works without it)
+- Docker (required for Superset)
 
 ## Local setup
 
@@ -58,10 +58,9 @@ Both scripts create a `northbridge` database and a `nap_user` account, then appl
 
 The setup script writes both `.env` files automatically using the credentials you entered. No manual copying needed.
 
-If you want to enable optional services, open the files and fill in the remaining values:
+You will need to add your Superset admin password once Superset is running (see Frontend setup below):
 
-- **`.env`** (project root) — add `SUPERSET_ADMIN_PASS` if using Apache Superset
-- **`scripts/NAP_ingestion/.env`** — add `TWELVE_DATA_API_KEY` if using live FX data
+- **`.env`** (project root) — add `SUPERSET_ADMIN_PASS` after Superset is set up
 
 ### 4. Seed the database
 
@@ -73,7 +72,21 @@ python scripts/NAP_ingestion/src/transform.py --seed
 
 This seeds the dimension tables (companies, industries, currencies) and takes a few seconds.
 
-### 5. Start the API
+### 5. Full historical data (20–40 min)
+
+The quick seed populates dimension tables only. For meaningful chart data covering 2021–2026, run the historical seed. Bouncer does not need to be running for this — the seed scripts connect directly to PostgreSQL. This is a good time to start the Frontend setup below in parallel:
+
+```bash
+python scripts/NAP_ingestion/src/seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
+python scripts/NAP_ingestion/src/expense_backfill.py
+python scripts/NAP_ingestion/src/transform.py --seed
+```
+
+Then fix `revenue_growth_rate` nulls by pasting the UPDATE query from `scripts/RESEED.md` Section 6b into psql or pgAdmin.
+
+## Frontend setup
+
+### 1. Start the API
 
 From the **project root** (with venv active):
 
@@ -83,19 +96,29 @@ python bouncer.py
 
 Open `http://localhost:8000` in a browser and register a new account to log in.
 
-Once logged in you can navigate all four pages — FX Rates, Transaction Volume, Data Governance, and Quarantine. At this point the embedded chart panels will be blank because Superset is not yet configured. Everything else works: tables, the quarantine resolution workflow, and the governance metrics. See the Superset section at the bottom to get the charts populated.
+Once logged in you can navigate all four pages — FX Rates, Transaction Volume, Data Governance, and Quarantine. The embedded chart panels require Superset to be configured (next step). Everything else — tables, the quarantine resolution workflow, and the governance metrics — works without it.
 
-### 6. Full historical data (optional, 20–40 min)
+### 2. Superset
 
-The quick seed populates dimension tables only. For meaningful chart data covering 2021–2026, run the historical seed. Bouncer does not need to be running for this — the seed scripts connect directly to PostgreSQL. You can run this in a second terminal while the app is open, or stop bouncer first. This is also a good time to set up Superset in parallel (see below):
+Superset powers the embedded chart panels on every page. Follow these steps to get it running and connected to your local database.
 
-```bash
-python scripts/NAP_ingestion/src/seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
-python scripts/NAP_ingestion/src/expense_backfill.py
-python scripts/NAP_ingestion/src/transform.py --seed
+**Install Superset via Docker Compose** — follow the [official quick-start guide](https://superset.apache.org/docs/installation/docker-compose). Once running, Superset is available at `http://127.0.0.1:8088`.
+
+**Import the dashboard snapshot** — in the Superset UI go to **Settings → Import dashboards** and upload `superset_dashboard_backup.zip` from the project root. This restores all charts, datasets, and dashboard layouts.
+
+**Update the database connection** — the imported snapshot contains a connection pointed at the original server. Go to **Settings → Database Connections**, find the Northbridge entry, and update the SQLAlchemy URI to:
+
+```
+postgresql://nap_user:<your_password>@localhost:5432/northbridge
 ```
 
-Then fix `revenue_growth_rate` nulls by pasting the UPDATE query from `scripts/RESEED.md` Section 6b into psql or pgAdmin.
+**Update `.env`** — open `.env` in the project root and add your Superset admin password:
+
+```
+SUPERSET_ADMIN_PASS=<your Superset admin password>
+```
+
+Restart `bouncer.py` and the chart panels will populate.
 
 ## Project structure
 
@@ -129,35 +152,23 @@ Then fix `revenue_growth_rate` nulls by pasting the UPDATE query from `scripts/R
 └── requirements.txt
 ```
 
-## Ongoing ingestion (optional)
+## Ongoing data ingestion
 
-To keep data flowing after the seed, run `main.py` on a schedule from the project root. Each call generates one batch of transactions for a 10-minute synthetic window:
+To keep the project running with live data, two scripts need to run on a schedule.
+
+**Transaction batches** — each call to `main.py` generates one batch of synthetic transactions for a 10-minute window and runs the full pipeline through to the analytics schema. Run this every 10 minutes or so to simulate ongoing activity:
 
 ```bash
 python scripts/NAP_ingestion/src/main.py -n 100
 ```
 
-## Apache Superset (optional)
+**FX rate feed** — `live_synthetic.py` writes a new synthetic FX rate tick every 5 seconds to the database. This is what drives the live refresh on the FX Rates page. Run it as a persistent background process:
 
-Superset powers the embedded chart panels. You can set this up while the historical seed is running in step 6.
-
-**1. Install Superset via Docker Compose** — follow the [official quick-start guide](https://superset.apache.org/docs/installation/docker-compose). Once running, Superset is available at `http://127.0.0.1:8088`.
-
-**2. Import the dashboard snapshot** — in the Superset UI go to **Settings → Import dashboards** and upload `superset_dashboard_backup.zip` from the project root. This restores all charts, datasets, and dashboard layouts.
-
-**3. Update the database connection** — the imported snapshot contains a database connection pointed at the original server. Go to **Settings → Database Connections**, find the Northbridge entry, and update the SQLAlchemy URI to:
-
-```
-postgresql://nap_user:<your_password>@localhost:5432/northbridge
+```bash
+python scripts/NAP_ingestion/src/live_synthetic.py
 ```
 
-**4. Update `.env`** — open `.env` in the project root and fill in:
-
-```
-SUPERSET_ADMIN_PASS=<your Superset admin password>
-```
-
-Then restart `bouncer.py`. The chart panels will populate once Superset is reachable and the connection is pointing at your local database.
+On Windows you can use Task Scheduler for `main.py` and run `live_synthetic.py` in a dedicated terminal. On Mac/Linux, use `cron` for `main.py` and a background process or `systemd` service for `live_synthetic.py`.
 
 ## Author
 
