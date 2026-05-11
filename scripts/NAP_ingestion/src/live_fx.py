@@ -31,7 +31,7 @@ from psycopg2.extras import execute_values
 
 from config import CURRENCY_CODES
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env'), override=True)
 
 logging.basicConfig(
     level=logging.DEBUG,

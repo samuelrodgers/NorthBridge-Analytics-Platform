@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 
 from config import CURRENCIES
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env'), override=True)
 
 logging.basicConfig(
     level=logging.INFO,
