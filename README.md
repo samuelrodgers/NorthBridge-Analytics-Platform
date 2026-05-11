@@ -83,18 +83,11 @@ python bouncer.py
 
 Open `http://localhost:8000` in a browser and register a new account to log in.
 
-Once logged in you have access to the full frontend:
-
-- **FX Rates** — synthetic exchange rate charts across 14 currencies with 5-second live refresh
-- **Transaction Volume** — company and industry-level revenue and transaction analytics
-- **Data Governance** — pipeline run history, batch statistics, and data quality metrics
-- **Quarantine** — review and resolve transaction records flagged by the normalization pipeline
-
-Dashboard chart panels are powered by embedded Superset. Without Superset configured they will appear blank, but all navigation, tables, and governance workflows function without it.
+Once logged in you can navigate all four pages — FX Rates, Transaction Volume, Data Governance, and Quarantine. At this point the embedded chart panels will be blank because Superset is not yet configured. Everything else works: tables, the quarantine resolution workflow, and the governance metrics. See the Superset section at the bottom to get the charts populated.
 
 ### 6. Full historical data (optional, 20–40 min)
 
-The quick seed above populates dimension tables only. For meaningful chart data covering 2021–2026, kick off the historical seed — this is a good time to set up Superset in parallel (see below):
+The quick seed populates dimension tables only. For meaningful chart data covering 2021–2026, run the historical seed. Bouncer does not need to be running for this — the seed scripts connect directly to PostgreSQL. You can run this in a second terminal while the app is open, or stop bouncer first. This is also a good time to set up Superset in parallel (see below):
 
 ```bash
 python scripts/NAP_ingestion/src/seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
