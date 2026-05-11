@@ -65,21 +65,13 @@ If you want to enable optional services, open the files and fill in the remainin
 
 ### 4. Seed the database
 
-With the venv active, run these from the **project root**:
+With the venv active, run from the **project root**:
 
 ```bash
 python scripts/NAP_ingestion/src/transform.py --seed
 ```
 
-This seeds the dimension tables (companies, industries, currencies) and takes a few seconds. That's enough to run the app. To populate it with full historical transaction data (takes 20–40 min):
-
-```bash
-python scripts/NAP_ingestion/src/seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
-python scripts/NAP_ingestion/src/expense_backfill.py
-python scripts/NAP_ingestion/src/transform.py --seed
-```
-
-Then fix `revenue_growth_rate` nulls by pasting the UPDATE query from `scripts/RESEED.md` Section 6b into psql or pgAdmin.
+This seeds the dimension tables (companies, industries, currencies) and takes a few seconds.
 
 ### 5. Start the API
 
@@ -89,7 +81,28 @@ From the **project root** (with venv active):
 python bouncer.py
 ```
 
-Open `http://localhost:8000` in a browser. Register a new account to log in.
+Open `http://localhost:8000` in a browser and register a new account to log in.
+
+Once logged in you have access to the full frontend:
+
+- **FX Rates** — synthetic exchange rate charts across 14 currencies with 5-second live refresh
+- **Transaction Volume** — company and industry-level revenue and transaction analytics
+- **Data Governance** — pipeline run history, batch statistics, and data quality metrics
+- **Quarantine** — review and resolve transaction records flagged by the normalization pipeline
+
+Dashboard chart panels are powered by embedded Superset. Without Superset configured they will appear blank, but all navigation, tables, and governance workflows function without it.
+
+### 6. Full historical data (optional, 20–40 min)
+
+The quick seed above populates dimension tables only. For meaningful chart data covering 2021–2026, kick off the historical seed — this is a good time to set up Superset in parallel (see below):
+
+```bash
+python scripts/NAP_ingestion/src/seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
+python scripts/NAP_ingestion/src/expense_backfill.py
+python scripts/NAP_ingestion/src/transform.py --seed
+```
+
+Then fix `revenue_growth_rate` nulls by pasting the UPDATE query from `scripts/RESEED.md` Section 6b into psql or pgAdmin.
 
 ## Project structure
 
@@ -133,15 +146,25 @@ python scripts/NAP_ingestion/src/main.py -n 100
 
 ## Apache Superset (optional)
 
-The dashboard embeds Superset charts. To use them you need Superset running locally via Docker:
+Superset powers the embedded chart panels. You can set this up while the historical seed is running in step 6.
 
-```bash
-git clone https://github.com/apache/superset.git
-cd superset
-docker compose up -d
+**1. Install Superset via Docker Compose** — follow the [official quick-start guide](https://superset.apache.org/docs/installation/docker-compose). Once running, Superset is available at `http://127.0.0.1:8088`.
+
+**2. Import the dashboard snapshot** — in the Superset UI go to **Settings → Import dashboards** and upload `superset_dashboard_backup.zip` from the project root. This restores all charts, datasets, and dashboard layouts.
+
+**3. Update the database connection** — the imported snapshot contains a database connection pointed at the original server. Go to **Settings → Database Connections**, find the Northbridge entry, and update the SQLAlchemy URI to:
+
+```
+postgresql://nap_user:<your_password>@localhost:5432/northbridge
 ```
 
-Then import the dashboard backup from `superset_dashboard_backup.zip` via the Superset UI (Settings → Import dashboards). Update `SUPERSET_URL` and credentials in `.env` to match.
+**4. Update `.env`** — open `.env` in the project root and fill in:
+
+```
+SUPERSET_ADMIN_PASS=<your Superset admin password>
+```
+
+Then restart `bouncer.py`. The chart panels will populate once Superset is reachable and the connection is pointing at your local database.
 
 ## Author
 
