@@ -65,5 +65,31 @@ GRANT ALL ON ALL TABLES IN SCHEMA auth TO $APP_USER;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO $APP_USER;
 "
 
+# ── Write .env files ──────────────────────────────────────────────────────────
+
+echo -e "\n[5/5] Writing .env files..."
+
+JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null \
+    || openssl rand -base64 32)
+
+cat > "$SCRIPT_DIR/../.env" <<EOF
+DATABASE_URL=postgresql://${APP_USER}:${APP_PASSWORD}@localhost:5432/${DB_NAME}
+JWT_SECRET_KEY=${JWT_SECRET}
+SUPERSET_URL=http://127.0.0.1:8088
+SUPERSET_ADMIN_USER=admin
+SUPERSET_ADMIN_PASS=
+EOF
+
+cat > "$SCRIPT_DIR/NAP_ingestion/.env" <<EOF
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=${DB_NAME}
+DB_USER=${APP_USER}
+DB_PASS=${APP_PASSWORD}
+TWELVE_DATA_API_KEY=
+EOF
+
+echo "  Written: .env"
+echo "  Written: scripts/NAP_ingestion/.env"
+
 echo -e "\nDone. Database '$DB_NAME' is ready."
-echo "Update your .env files with: DB_USER=$APP_USER  DB_PASS=<the password you entered>"

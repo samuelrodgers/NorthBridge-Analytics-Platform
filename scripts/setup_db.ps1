@@ -111,5 +111,35 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO $AppUser;
 & $PsqlPath -U $DbUser -d $DbName -c $grants
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: grants failed" -ForegroundColor Red; exit 1 }
 
+# ── Write .env files ──────────────────────────────────────────────────────────
+
+Write-Host "`n[5/5] Writing .env files..." -ForegroundColor Cyan
+
+$JwtSecret = [System.Convert]::ToBase64String(
+    [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+)
+
+$RootEnvPath     = Join-Path $PSScriptRoot ".." ".env"
+$PipelineEnvPath = Join-Path $PSScriptRoot "NAP_ingestion" ".env"
+
+@"
+DATABASE_URL=postgresql://${AppUser}:${AppPassword}@localhost:5432/${DbName}
+JWT_SECRET_KEY=${JwtSecret}
+SUPERSET_URL=http://127.0.0.1:8088
+SUPERSET_ADMIN_USER=admin
+SUPERSET_ADMIN_PASS=
+"@ | Out-File -FilePath $RootEnvPath -Encoding ASCII
+
+@"
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=${DbName}
+DB_USER=${AppUser}
+DB_PASS=${AppPassword}
+TWELVE_DATA_API_KEY=
+"@ | Out-File -FilePath $PipelineEnvPath -Encoding ASCII
+
+Write-Host "  Written: .env"
+Write-Host "  Written: scripts/NAP_ingestion/.env"
+
 Write-Host "`nDone. Database '$DbName' is ready." -ForegroundColor Green
-Write-Host "Update your .env files with: DB_USER=$AppUser  DB_PASS=<the password you entered>"

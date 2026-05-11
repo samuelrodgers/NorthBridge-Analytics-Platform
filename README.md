@@ -56,32 +56,12 @@ Both scripts create a `northbridge` database and a `nap_user` account, then appl
 
 ### 3. Configure environment variables
 
-Copy the example files:
-- **Windows:** `copy .env.example .env` and `copy scripts\NAP_ingestion\.env.example scripts\NAP_ingestion\.env`
-- **Mac/Linux:** `cp .env.example .env` and `cp scripts/NAP_ingestion/.env.example scripts/NAP_ingestion/.env`
+The setup script writes both `.env` files automatically using the credentials you entered. No manual copying needed.
 
-Open each file in a text editor and fill in your values.
+If you want to enable optional services, open the files and fill in the remaining values:
 
-**`.env`** (for `bouncer.py`, in the project root):
-
-```
-DATABASE_URL=postgresql://nap_user:your_password@localhost:5432/northbridge
-JWT_SECRET_KEY=any_long_random_string
-SUPERSET_URL=http://127.0.0.1:8088
-SUPERSET_ADMIN_USER=admin
-SUPERSET_ADMIN_PASS=
-```
-
-**`scripts/NAP_ingestion/.env`** (for the pipeline):
-
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=northbridge
-DB_USER=nap_user
-DB_PASS=your_password
-TWELVE_DATA_API_KEY=
-```
+- **`.env`** (project root) — add `SUPERSET_ADMIN_PASS` if using Apache Superset
+- **`scripts/NAP_ingestion/.env`** — add `TWELVE_DATA_API_KEY` if using live FX data
 
 ### 4. Seed the database
 
