@@ -34,88 +34,35 @@ Activate the venv:
 pip install -r requirements.txt
 ```
 
-### 2. Create the PostgreSQL database
+### 2. Set up the database
 
-Open a separate terminal (outside the venv). All `psql` commands in this section run from the **project root**.
-
-**If you have an existing PostgreSQL install**, use your superuser credentials. On Windows, `psql` may not be on PATH — use the full path to the pgAdmin runtime, e.g.:
-
-```
-"C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -c "CREATE DATABASE northbridge;"
-```
-
-**First-time install:** use whatever superuser you set up during installation.
-
-Create the database and a user:
-
-```bash
-psql -U postgres -c "CREATE DATABASE northbridge;"
-psql -U postgres -c "CREATE USER nap_user WITH PASSWORD 'your_password';"
-psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE northbridge TO nap_user;"
-```
-
-Then grant schema-level access (required for PostgreSQL 15+):
-
-```bash
-psql -U postgres -d northbridge -c "GRANT USAGE, CREATE ON SCHEMA public TO nap_user;"
-```
-
-> **Tip (Windows):** If you prefer a GUI, all of the above can be done in pgAdmin's Query Tool. Connect to your server, open the Query Tool, and paste the SQL statements directly.
-
-### 3. Apply the base schema and migrations
-
-Run all SQL from the **project root** in a terminal where `psql` is available. Apply the base schema first, then migrations in order.
-
-**Mac/Linux:**
-
-```bash
-psql -U postgres -d northbridge -f scripts/SQL/Scripts/analytics_create_tables.sql
-psql -U postgres -d northbridge -f scripts/SQL/Scripts/Create_auth.sql
-
-for f in scripts/SQL/Migrations/0*.sql; do
-    echo "Applying $f..."
-    psql -U postgres -d northbridge -f "$f"
-done
-```
+A setup script handles everything — creating the database, applying the schema, running all 18 migrations, and granting the right permissions. Run it from the **project root** in a separate terminal (no venv needed).
 
 **Windows (PowerShell):**
 
 ```powershell
-$env:PGPASSWORD = "your_postgres_password"
-$psql = "C:\Program Files\PostgreSQL\17\bin\psql.exe"   # adjust path to match your install
-
-& $psql -U postgres -d northbridge -f "scripts\SQL\Scripts\analytics_create_tables.sql"
-& $psql -U postgres -d northbridge -f "scripts\SQL\Scripts\Create_auth.sql"
-
-Get-ChildItem scripts\SQL\Migrations\0*.sql | Sort-Object Name | ForEach-Object {
-    Write-Host "Applying $($_.Name)..."
-    & $psql -U postgres -d northbridge -f "$($_.FullName)"
-}
+.\scripts\setup_db.ps1
 ```
 
-After applying the schema, grant the pipeline user access to the new schemas:
+The script will auto-detect your PostgreSQL install and prompt for passwords. If it can't find `psql.exe`, enter the full path when prompted (e.g. `D:\PostgreSQL\pgAdmin 4\runtime\psql.exe`).
 
-```sql
-GRANT USAGE, CREATE ON SCHEMA analytics TO nap_user;
-GRANT ALL ON ALL TABLES IN SCHEMA analytics TO nap_user;
-GRANT USAGE, CREATE ON SCHEMA raw TO nap_user;
-GRANT ALL ON ALL TABLES IN SCHEMA raw TO nap_user;
-GRANT USAGE, CREATE ON SCHEMA auth TO nap_user;
-GRANT ALL ON ALL TABLES IN SCHEMA auth TO nap_user;
-```
-
-Verify both `analytics` and `raw` schemas exist before continuing — if they're missing, the base schema script didn't run successfully.
-
-### 4. Configure environment variables
-
-Copy the example files and fill in your values in a text editor:
+**Mac/Linux:**
 
 ```bash
-cp .env.example .env
-cp scripts/NAP_ingestion/.env.example scripts/NAP_ingestion/.env
+bash scripts/setup_db.sh
 ```
 
-Edit `.env` (for `bouncer.py`):
+Both scripts create a `northbridge` database and a `nap_user` account, then apply the full schema and migrations. Take note of the `nap_user` password you enter — you'll need it in the next step.
+
+### 3. Configure environment variables
+
+Copy the example files:
+- **Windows:** `copy .env.example .env` and `copy scripts\NAP_ingestion\.env.example scripts\NAP_ingestion\.env`
+- **Mac/Linux:** `cp .env.example .env` and `cp scripts/NAP_ingestion/.env.example scripts/NAP_ingestion/.env`
+
+Open each file in a text editor and fill in your values.
+
+**`.env`** (for `bouncer.py`, in the project root):
 
 ```
 DATABASE_URL=postgresql://nap_user:your_password@localhost:5432/northbridge
@@ -125,7 +72,7 @@ SUPERSET_ADMIN_USER=admin
 SUPERSET_ADMIN_PASS=
 ```
 
-Edit `scripts/NAP_ingestion/.env` (for the pipeline):
+**`scripts/NAP_ingestion/.env`** (for the pipeline):
 
 ```
 DB_HOST=localhost
@@ -136,49 +83,33 @@ DB_PASS=your_password
 TWELVE_DATA_API_KEY=
 ```
 
-### 5. Seed the database
+### 4. Seed the database
 
-Navigate to the ingestion source directory from the **project root** (with venv active):
-
-```bash
-cd scripts/NAP_ingestion/src
-```
-
-Seed dimension tables (industries, companies, currencies, expense categories — takes a few seconds):
+With the venv active, run these from the **project root**:
 
 ```bash
-python transform.py --seed
+python scripts/NAP_ingestion/src/transform.py --seed
 ```
 
-Run the historical transaction seed (~2.3M rows, 60 monthly batches from 2021–2026, takes 20–40 min):
+This seeds the dimension tables (companies, industries, currencies) and takes a few seconds. That's enough to run the app. To populate it with full historical transaction data (takes 20–40 min):
 
 ```bash
-python seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
+python scripts/NAP_ingestion/src/seed.py --start-date 2021-01-01 --end-date 2026-01-01 --batches 60 -n 38000
+python scripts/NAP_ingestion/src/expense_backfill.py
+python scripts/NAP_ingestion/src/transform.py --seed
 ```
 
-Backfill expense events (required — the seed alone generates too few):
+Then fix `revenue_growth_rate` nulls by pasting the UPDATE query from `scripts/RESEED.md` Section 6b into psql or pgAdmin.
 
-```bash
-python expense_backfill.py
-```
+### 5. Start the API
 
-Re-run the analytics transform now that expenses are populated:
-
-```bash
-python transform.py --seed
-```
-
-Fix `revenue_growth_rate` nulls (paste the UPDATE query from `scripts/RESEED.md` Section 6b into psql or pgAdmin).
-
-### 6. Start the API
-
-From the project root (with venv active):
+From the **project root** (with venv active):
 
 ```bash
 python bouncer.py
 ```
 
-Open `http://localhost:8000` in a browser. Register a new account to log in — the demo button requires a pre-seeded guest account which is not created by default.
+Open `http://localhost:8000` in a browser. Register a new account to log in.
 
 ## Project structure
 
@@ -192,6 +123,8 @@ Open `http://localhost:8000` in a browser. Register a new account to log in — 
 │   ├── quarantine-resolve.html
 │   └── shared.css
 ├── scripts/
+│   ├── setup_db.ps1                    # Windows database setup script
+│   ├── setup_db.sh                     # Mac/Linux database setup script
 │   ├── NAP_ingestion/
 │   │   └── src/
 │   │       ├── main.py                 # Continuous ingestion entry point
