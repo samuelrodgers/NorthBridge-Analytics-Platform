@@ -96,12 +96,13 @@ Get-ChildItem "$PSScriptRoot\SQL\Migrations\0*.sql" | Sort-Object Name | ForEach
 
 Write-Host "`n[3/3] Writing .env files..." -ForegroundColor Cyan
 
-$JwtSecret = [System.Convert]::ToBase64String(
-    [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
-)
+$rng   = [System.Security.Cryptography.RNGCryptoServiceProvider]::new()
+$bytes = New-Object byte[] 32
+$rng.GetBytes($bytes)
+$JwtSecret = [System.Convert]::ToBase64String($bytes)
 
-$RootEnvPath     = Join-Path $PSScriptRoot ".." ".env"
-$PipelineEnvPath = Join-Path $PSScriptRoot "NAP_ingestion" ".env"
+$RootEnvPath     = Join-Path (Join-Path $PSScriptRoot "..") ".env"
+$PipelineEnvPath = Join-Path (Join-Path $PSScriptRoot "NAP_ingestion") ".env"
 
 @"
 DATABASE_URL=postgresql://${AppUser}:${AppPassword}@localhost:5432/${DbName}
