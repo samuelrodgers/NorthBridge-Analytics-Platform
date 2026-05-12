@@ -10,6 +10,12 @@ A synthetic financial analytics platform built as a senior capstone project (CPS
 - **Dashboard frontend** — HTML/CSS/JS pages for FX rates, transaction volume, data governance, and quarantine resolution
 - **ML analysis** (`scripts/NAP_ingestion/src/ml_analysis.py`) — PCA, k-means clustering, and t-SNE on the generated transaction data
 
+## Demo
+
+> **[Watch the demo on YouTube](https://youtu.be/-I-33UQY6hY)**
+
+The demo walks through the dashboard pages and shows the quarantine resolution workflow in action. When this project was active, it ran on AWS (EC2 + RDS) as a fully live, publicly accessible site with real-time data ingestion and forex rate feeds running continuously. What's in this repository is the local version — all the same code, but run on your own machine against a locally seeded database rather than the hosted instance. The demo doesn't cover every technical aspect of the project, but it serves as a record of what the platform looked like when it was live.
+
 ## Prerequisites
 
 - Python 3.11+
